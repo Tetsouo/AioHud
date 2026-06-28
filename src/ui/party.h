@@ -58,7 +58,7 @@ private:
     int dhp_[MAXM] = { 100, 70, 18, 45, 0, 95 };            // % (0..100)  (overridable by config)
     int dmp_[MAXM] = {  42, 73,  0, 60, 0, 40 };            // %
     int dtp_[MAXM] = { 3000, 1000, 2000, 300, 0, 600 };     // 0..3000
-    int dbuff_[MAXM] = { 3, 10, 20, 6, 1, 16 };             // demo buff COUNT per member (16=full row, 20=overflow to 2nd) ; cfg p%d_buffs
+    int dbuff_[MAXM] = { 3, 7, 22, 6, 1, 5 };               // demo buff COUNT per member (22 -> capped at 20) ; cfg p%d_buffs
 
     // --- live-tunable style : 3 independent text elements (name / bars / badge), each with
     //     its own size, outline, weight (bold) and font face. Everything else (box width,

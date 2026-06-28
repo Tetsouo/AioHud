@@ -574,29 +574,24 @@ void Party::draw(const Frame& f) {
         dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
         dSetTSS(dev, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MIPFILTER, D3DTEXF_NONE);
         dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
-        const int   BUFFS_PER_ROW = 16;                     // ONE row up to 16 ; only 17..32 wrap to a 2nd row ABOVE
-        const float bs   = snap(rowh * 0.55f);              // single-row icons -> bigger AND naturally separated between members
-        const float bgap = snap(1.0f * S);                  // gap between icons in a row
-        const float vgap = snap(1.0f * S);                  // gap between the two rows (only when > 16 buffs)
+        const float bgap = snap(1.0f * S);                  // gap between icons
         const float bmar = snap(rowh * 1.18f);              // start the strip just LEFT of the cursor (which spans ~rowh*1.30 left of the box)
         const float au = (float)BCELL / (float)BATLAS_W;    // one cell, in UV space
         const float av = (float)BCELL / (float)BATLAS_H;
+        const int   BMAX = 20;                              // cap : at most 20 icons per member
+        const float bs = snap(rowh * 0.92f);                // ONE row only, as tall as the member row allows
         for (int i = 0; i < n; ++i) {
             const Row& r = rows[i];
             if (r.offzone || !r.buffs || r.nbuff <= 0) continue;
-            const int   nRows  = (r.nbuff > BUFFS_PER_ROW) ? 2 : 1;
-            const float blockH = (float)nRows * bs + (float)(nRows - 1) * vgap;
-            const float ry     = oy + pad + i * rowpit;
-            const float yTop   = snap(ry + (rowh - blockH) * 0.5f);   // block centred in the row
-            const float xr     = px - bmar;                 // right edge of the strip (just left of the cursor)
-            for (int j = 0; j < r.nbuff; ++j) {
-                const int   brow = j / BUFFS_PER_ROW;        // 0 = first 16, 1 = overflow
-                const int   bcol = j % BUFFS_PER_ROW;        // column within the row (grows LEFT)
-                const float x = snap(xr - (float)(bcol + 1) * bs - (float)bcol * bgap);
+            const float ry = oy + pad + i * rowpit;
+            const float y  = snap(ry + (rowh - bs) * 0.5f); // icon centred in the row
+            const float xr = px - bmar;                     // right edge of the strip (just left of the cursor)
+            const int   nb = r.nbuff < BMAX ? r.nbuff : BMAX;
+            for (int j = 0; j < nb; ++j) {
+                const float x = snap(xr - (float)(j + 1) * bs - (float)j * bgap);
                 if (x < 1.0f) break;                        // ran off the left of the screen -> stop
-                const int id  = r.buffs[j];
+                const int id = r.buffs[j];
                 if (id < 0 || id >= BCOLS * BATLAS_ROWS) continue;   // id outside the atlas -> skip (no garbage cell)
-                const float y = yTop + (float)(nRows - 1 - brow) * (bs + vgap);   // first 16 on the BOTTOM row, overflow ABOVE
                 const float u0 = (float)(id % BCOLS) * au;
                 const float v0 = (float)(id / BCOLS) * av;
                 tquad(dev, x, y, bs, bs, u0, u0 + au, v0, v0 + av, 0xFFFFFFFF, 0xFFFFFFFF);
