@@ -58,7 +58,7 @@ private:
     int dhp_[MAXM] = { 100, 70, 18, 45, 0, 95 };            // % (0..100)  (overridable by config)
     int dmp_[MAXM] = {  42, 73,  0, 60, 0, 40 };            // %
     int dtp_[MAXM] = { 3000, 1000, 2000, 300, 0, 600 };     // 0..3000
-    int dbuff_[MAXM] = { 4, 6, 3, 8, 2, 5 };                // demo buff COUNT per member (overridable by config p%d_buffs)
+    int dbuff_[MAXM] = { 3, 10, 20, 6, 1, 16 };             // demo buff COUNT per member (16=full row, 20=overflow to 2nd) ; cfg p%d_buffs
 
     // --- live-tunable style : 3 independent text elements (name / bars / badge), each with
     //     its own size, outline, weight (bold) and font face. Everything else (box width,
@@ -71,16 +71,16 @@ private:
     float subSz()    const { return badgeSz_ * 0.76f; }
     float castSz()   const { return nameSz_  * 1.0f; }
     float badgeW()   const { return badgeSz_ * 1.9f + 8.0f; }     // ~3-char job + padding
-    float badgeH()   const { return badgeSz_ + subSz() + 6.0f; }  // main + sub stacked
+    float badgeH()   const { return badgeSz_ + subSz() + 4.0f; }  // main + sub stacked (tightened padding)
     float gaugeW()   const { return barSz_   * 2.6f + 6.0f; }     // ~4-digit value
     float gaugeH()   const { return barSz_   + 6.0f; }
-    float gaugeGap() const { return 4.0f; }
+    float gaugeGap() const { return 3.0f; }
     float marksW()   const { return 20.0f; }   // holds up to ~3 leader/QM dots, centred -> badge stays clear
     float padB()     const { return 3.0f; }
     // row height = tallest element + vertical margin, so the badge never touches the row
     // edges / the selection frame.
-    float rowH()     const { float a = badgeH(), b = gaugeH(), c = nameSz_ + 2.0f, m = a > b ? a : b; m = m > c ? m : c; return m + 6.0f; }
-    float rowPit()   const { return rowH() + 3.0f; }
+    float rowH()     const { float a = badgeH(), b = gaugeH(), c = nameSz_ + 2.0f, m = a > b ? a : b; m = m > c ? m : c; return m + 1.0f; }
+    float rowPit()   const { return rowH() + 1.0f; }
 };
 
 } // namespace aio
