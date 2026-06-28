@@ -1,0 +1,83 @@
+// party.h -- the party list (XivParty-style), faithful to the mockup look.
+//
+// Fully DIRECT D3D8: panel / job badge / the three HP-MP-TP gauges are colour-quads
+// (vertical-gradient fills + gloss + coloured borders), and the text (name, job/sub, cast,
+// gauge values) is drawn through Frame::fonts -- each element (name / bars / badge) picks its
+// OWN face+weight atlas so they can be styled independently. Rows are LIVE: self from game
+// memory + the other members (incl. trusts) from the live party array, with demo data as a
+// fallback when out of game. Look mirrors design/src/panels/party.css.
+#pragma once
+#include <string>
+#include "ui/widget.h"
+
+namespace aio {
+
+class Party : public Widget {
+public:
+    const char* type_name() const override { return "PartyList"; }
+    void configure(const json::Value& cfg) override;        // per-text style + demo data
+    void measure(float& w, float& h) const override;
+    void ensure(u32 dev) override;           // create the AA dot texture (leader/QM bullets)
+    void on_device_lost() override;          // forget the dot handle (zoning)
+    void dispose() override;                  // release the dot texture (unload)
+    void draw(const Frame& f) override;
+
+private:
+    void row(int i, void* out) const;        // fill one demo Row ; void* keeps Row out of the header
+    void demo_row(int i, void* out) const;   // forced demo row (tier-offset names), //aio demo
+    int  build_rows(void* rows) const;       // fill rows[] (self from memory + packet members, or demo) -> count
+    float box_w_base() const;                // box width (base px) : AUTO-fit to the columns + name size
+
+    // per-member animation state, persisted across frames (lerped bars + dot pop). Keyed by id.
+    struct RowAnim { unsigned id; float hpp, mpp, tpp; float dot[3]; bool seen; };
+    RowAnim* anim_for(unsigned id);          // find-or-allocate the anim slot for a member
+    RowAnim  anim_[8] = {};
+    float    lastT_ = -1.0f;                 // previous frame time (for dt-based smoothing)
+    unsigned selId_ = 0;                     // member id currently targeted (<t>)
+    float    selY_  = 0.0f;                  // animated selection-cursor top Y (px) -> slides between rows
+    float    selA_  = 0.0f;                  // selection fade 0..1
+    float    selZoom_ = 0.0f;                // selected-row zoom (0->1) : grows in on target, HOLDS while targeted
+    unsigned subId_ = 0;                     // member id currently SUB-targeted (<st>)
+    float    subY_  = 0.0f;                  // animated sub-target bar top Y (px) -> slides between rows
+    float    subA_  = 0.0f;                  // sub-target fade 0..1
+    float    subZoom_ = 0.0f;                // sub-target name zoom (0->1), mirrors selZoom_
+    int      menuHold_ = 0;                  // debounce : frames left to keep the action-menu box up
+    int      menuType_ = 0;                  // 1 = spell, 2 = job ability, 3 = weapon skill
+    unsigned menuSpell_ = 0;                 // last highlighted action id (spell / ability / WS)
+    float    selBobT0_ = 0.0f;               // bob phase origin -> reset on target change so the cursor restarts centred
+
+    u32 dot_tex_ = 0;                         // shared white AA disc, tinted per marker
+    u32 icon_tex_ = 0;                        // selection-cursor icon (hand pointing right), loaded from assets
+    bool icon_tried_ = false;                 // attempted to load icon_tex_ (don't retry the file every frame)
+
+    static const int MAXM = 6;
+    int count_ = 6;
+    int tier_  = 0;                                        // 0 = main party box, 1 = alliance1, 2 = alliance2
+    int dhp_[MAXM] = { 100, 70, 18, 45, 0, 95 };            // % (0..100)  (overridable by config)
+    int dmp_[MAXM] = {  42, 73,  0, 60, 0, 40 };            // %
+    int dtp_[MAXM] = { 3000, 1000, 2000, 300, 0, 600 };     // 0..3000
+
+    // --- live-tunable style : 3 independent text elements (name / bars / badge), each with
+    //     its own size, outline, weight (bold) and font face. Everything else (box width,
+    //     row height, badge & gauge sizes) AUTO-derives. Empty *Font = the global face. ---
+    float nameSz_  = 10.0f;  float nameStroke_  = 0.8f;  bool nameBold_  = false;  std::string nameFont_;
+    float barSz_   =  8.4f;  float barStroke_   = 0.8f;  bool barBold_   = false;  std::string barFont_;
+    float badgeSz_ =  8.5f;  float badgeStroke_ = 0.8f;  bool badgeBold_ = false;  std::string badgeFont_;
+
+    // derived geometry (base px, pre-scale) -- box & badge adapt to their content:
+    float subSz()    const { return badgeSz_ * 0.76f; }
+    float castSz()   const { return nameSz_  * 1.0f; }
+    float badgeW()   const { return badgeSz_ * 1.9f + 8.0f; }     // ~3-char job + padding
+    float badgeH()   const { return badgeSz_ + subSz() + 6.0f; }  // main + sub stacked
+    float gaugeW()   const { return barSz_   * 2.6f + 6.0f; }     // ~4-digit value
+    float gaugeH()   const { return barSz_   + 6.0f; }
+    float gaugeGap() const { return 4.0f; }
+    float marksW()   const { return 20.0f; }   // holds up to ~3 leader/QM dots, centred -> badge stays clear
+    float padB()     const { return 3.0f; }
+    // row height = tallest element + vertical margin, so the badge never touches the row
+    // edges / the selection frame.
+    float rowH()     const { float a = badgeH(), b = gaugeH(), c = nameSz_ + 2.0f, m = a > b ? a : b; m = m > c ? m : c; return m + 6.0f; }
+    float rowPit()   const { return rowH() + 3.0f; }
+};
+
+} // namespace aio
