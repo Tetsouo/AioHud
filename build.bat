@@ -18,4 +18,7 @@ cl /nologo /LD /O2 /MT /EHsc- /I"%ROOT%include" /I"%ROOT%src" ^
    /Fo"%ROOT%build\\" /Fe"%ROOT%build\AioTest.dll" ^
    /link /DEF:"%ROOT%src\plugin\aiohud.def" user32.lib kernel32.lib gdi32.lib /OUT:"%ROOT%build\AioTest.dll"
 
+REM cl returns nonzero on ANY compile/link error -> trust the exit code, NOT just the DLL's
+REM existence (a stale DLL from a previous build would otherwise mask a failed compile).
+if errorlevel 1 ( echo [build] FAILED -- compile/link error above ^(DLL NOT updated^) & exit /b 1 )
 if exist "%ROOT%build\AioTest.dll" ( echo [build] OK -^> %ROOT%build\AioTest.dll ) else ( echo [build] FAILED & exit /b 1 )

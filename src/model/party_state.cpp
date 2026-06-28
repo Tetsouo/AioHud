@@ -153,11 +153,11 @@ void PartyState::load() {
 // LIVE roster from FFXI memory -> the party is correct the instant the plugin loads
 // (no waiting for packets). Reversed against the Ashita SDK partymember_t and verified
 // in-game 2026-06-26 (retail/Carbuncle). Layout (member stride 0x7C, 18 slots; party =
-// slots 0..5, alliance = 6..17). Anchor: g = *(LuaCore+0x1C8400); *(g+0x248) points 4
-// bytes INTO member[0] -> base = that - 4 (self-validated against the player id).
-// Member fields used: +0x0A name(18) +0x1C serverid +0x28 hp +0x2C mp +0x30 tp
-// +0x34 hp% +0x35 mp% +0x36 zone(u16) +0x3C flags. (Jobs are 0 in this struct -> they
-// stay sourced from the player struct / 0x0DD packets.)
+// slots 0..5, alliance party 2 = 6..11, alliance party 3 = 12..17 -- all VERIFIED in an
+// alliance 2026-06-28). Anchor: g = *(LuaCore+0x1C8400); *(g+0x248) points 4 bytes INTO
+// member[0] -> base = that - 4 (self-validated against the player id).
+// Member fields used: +0x0A name(18) +0x1C serverid +0x28 hp +0x2C mp +0x30 tp +0x34 hp%
+// +0x35 mp% +0x36 zone(u16) +0x3C flags +0x71 main-job +0x72 main-lvl +0x73 sub-job.
 void PartyState::load_from_memory() {
     u32 lc = (u32)GetModuleHandleA("LuaCore.dll");
     if (!lc) return;
@@ -179,13 +179,6 @@ void PartyState::load_from_memory() {
     int wantN = 6; u32 ai = 0;
     if (safe_read(pp, &ai) && valid_ptr(ai)) { u32 c = 0; if (safe_read(ai + 0x13, &c)) { wantN = (int)(c & 0xFF); if (wantN < 1) wantN = 1; if (wantN > 6) wantN = 6; } }
 
-    // Called EVERY FRAME (live roster + vitals). The member array carries no jobs, so snapshot
-    // the current jobs by id and restore them -> packets/trust-DB remain the job source while
-    // memory drives the roster + HP/MP/TP. This is what makes a freshly-summoned trust appear
-    // instantly (XivParty does the same via get_party() each tick).
-    struct JobC { unsigned id; int mj, sj; } jc[6]; int njc = 0;
-    for (int i = 0; i < count && njc < 6; ++i) { jc[njc].id = m[i].id; jc[njc].mj = m[i].mjob; jc[njc].sj = m[i].sjob; ++njc; }
-
     int n = 0;
     for (int i = 0; i < wantN; ++i) {                      // only the first `wantN` ACTIVE slots
         u32 mb = base + i * 0x7C, id = 0;
@@ -201,11 +194,56 @@ void PartyState::load_from_memory() {
         pm.flags = fl;
         pm.maxHp = pm.hpp > 0 ? pm.hp * 100 / pm.hpp : pm.hp;   // derive max -> 0x0DF can refresh %
         pm.maxMp = pm.mpp > 0 ? pm.mp * 100 / pm.mpp : pm.mp;
-        for (int k = 0; k < njc; ++k) if (jc[k].id == id) { pm.mjob = jc[k].mj; pm.sjob = jc[k].sj; break; }   // keep job
-        if (pm.mjob == 0) { int mj = 0, sj = 0; if (trust_job(pm.name, mj, sj)) { pm.mjob = mj; pm.sjob = sj; } }   // trusts: no job in memory -> name DB
+        u32 jw = 0; safe_read(mb + 0x70, &jw); pm.mjob = (jw >> 8) & 0xFF; pm.sjob = (jw >> 24) & 0xFF;   // jobs: main@+0x71, sub@+0x73 (reversed 2026-06-28)
+        if (pm.mjob == 0) { int mj = 0, sj = 0; if (trust_job(pm.name, mj, sj)) { pm.mjob = mj; pm.sjob = sj; } }   // trusts: name DB fallback
         ++n;
     }
     count = n;                                             // n reflects the live roster (trust in/out)
+
+    // --- Alliance parties 2 & 3 : member-array slots 6..11 and 12..17. Live counts at
+    //     allianceinfo +0x14 / +0x15 (mirror of +0x13 for our own party), gated by the party
+    //     leader id (+0x08 / +0x0C). Jobs read straight from the member block (+0x71 / +0x73).
+    for (int ap = 0; ap < 2; ++ap) {
+        // SAFETY gate (VERIFIED offset): alliance party 2 / 3 exists only if its leader id is set
+        // (allianceinfo +0x08 / +0x0C, same struct as read_party_leaders). Without this, a wrong
+        // count byte could spawn phantom alliance boxes during normal solo/party play. No leader -> no box.
+        u32 pleader = 0;
+        if (valid_ptr(ai)) safe_read(ai + 0x08 + ap * 4, &pleader);
+        if (!pleader) { alliN_[ap] = 0; continue; }
+        int cnt = 0;                                          // member count : allianceinfo +0x14 / +0x15 (to verify in an alliance)
+        if (valid_ptr(ai)) { u32 c = 0; if (safe_read(ai + 0x14 + ap, &c)) cnt = (int)(c & 0xFF); }
+        if (cnt < 1) cnt = 6; if (cnt > 6) cnt = 6;           // gate already proved the party exists -> default to a full scan
+        int an = 0;
+        for (int i = 0; i < cnt; ++i) {
+            u32 mb = base + (6 + ap * 6 + i) * 0x7C, id = 0;
+            if (!safe_read(mb + 0x1C, &id) || !id) continue;          // empty slot
+            PMember& pm = alli_[ap * 6 + an]; pm = PMember();
+            pm.id = id;
+            for (int k = 0; k < 18; ++k) { u32 ch = 0; if (!safe_read(mb + 0x0A + k, &ch)) break; char c = (char)(ch & 0xFF); if (!c) break; pm.name[k] = c; }
+            u32 hp = 0, mp = 0, tp = 0, pk = 0, fl = 0;
+            safe_read(mb + 0x28, &hp); safe_read(mb + 0x2C, &mp); safe_read(mb + 0x30, &tp);
+            safe_read(mb + 0x34, &pk); safe_read(mb + 0x3C, &fl);
+            pm.hp = (int)hp; pm.mp = (int)mp; pm.tp = (int)tp;
+            pm.hpp = (int)(pk & 0xFF); pm.mpp = (int)((pk >> 8) & 0xFF); pm.zone = (int)((pk >> 16) & 0xFFFF);
+            pm.flags = fl;
+            pm.maxHp = pm.hpp > 0 ? pm.hp * 100 / pm.hpp : pm.hp;
+            pm.maxMp = pm.mpp > 0 ? pm.mp * 100 / pm.mpp : pm.mp;
+            u32 jw = 0; safe_read(mb + 0x70, &jw); pm.mjob = (jw >> 8) & 0xFF; pm.sjob = (jw >> 24) & 0xFF;   // jobs: main@+0x71, sub@+0x73
+            if (pm.mjob == 0) { int mj = 0, sj = 0; if (trust_job(pm.name, mj, sj)) { pm.mjob = mj; pm.sjob = sj; } }   // trusts: name DB fallback
+            ++an;
+        }
+        alliN_[ap] = an;
+    }
+}
+
+int PartyState::alliance_count(int tier) const {
+    int idx = tier - 1;
+    return (idx >= 0 && idx < 2) ? alliN_[idx] : 0;
+}
+const PMember& PartyState::alliance_member(int tier, int i) const {
+    int idx = tier - 1; if (idx < 0) idx = 0; if (idx > 1) idx = 1;
+    if (i < 0) i = 0; if (i > 5) i = 5;
+    return alli_[idx * 6 + i];
 }
 
 // ---- 0x028 action packet : drive the cast bar ------------------------------------------------

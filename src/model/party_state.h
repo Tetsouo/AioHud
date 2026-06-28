@@ -42,11 +42,18 @@ struct PartyState {
     CastSlot casts_[18];
     BuffSet  buffs_[18];
 
+    // Live alliance roster (parties 2 & 3 = member-array slots 6..11 and 12..17), filled by
+    // load_from_memory each frame. alli_[0..5] = alliance party 2, alli_[6..11] = party 3.
+    PMember alli_[12];
+    int      alliN_[2] = { 0, 0 };        // live member count for alliance party 2 / 3
+
     void on_dd(const unsigned char* p);   // 0x0DD : member update (name/jobs/HP/MP/TP/%) -> also caches
     void on_df(const unsigned char* p);   // 0x0DF : vitals update (HP/MP/TP, refresh %)
     void on_action(const unsigned char* p); // 0x028 : begin/finish casting -> drives the cast bar
     void on_076(const unsigned char* p);  // 0x076 : party-member status icons (buffs) -> buffs_[]
     const BuffSet* buffs_for(unsigned id) const;   // a member's buffs (null if none cached)
+    int  alliance_count(int tier) const;           // live member count for alliance box tier 1 / 2
+    const PMember& alliance_member(int tier, int i) const;   // member i of alliance box tier 1 / 2
     int  find(unsigned id) const;
     // current cast for member `id` : returns the spell name (or 0 if not casting / expired) and
     // fills `pctOut` with the 0..1 cast progress. Used by the party UI's cast line/bar.

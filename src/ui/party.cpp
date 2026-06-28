@@ -266,12 +266,32 @@ int Party::build_rows(void* outRows) const {
     int n = 0;
     const int demo = party_demo_level();
 
-    // Alliance boxes (tier > 0) have no live data source yet -> they appear ONLY in demo mode,
-    // and only once the level reaches their tier (level 2 = +alliance1, level 3 = +alliance2).
+    // Alliance boxes (tier > 0). A demo command forces the baked roster (level 2 = +alliance1,
+    // level 3 = +alliance2) ; otherwise LIVE from the member array (slots 6..17, via load_from_memory).
     if (tier_ > 0) {
-        if (demo <= tier_) return 0;                                          // hidden -> draw() bails
-        for (int i = 0; i < 6; ++i) demo_row(i, &rows[i]);
-        return 6;
+        if (demo >= 1) {                                                      // demo command active
+            if (demo <= tier_) return 0;                                     // this alliance tier not requested
+            for (int i = 0; i < 6; ++i) demo_row(i, &rows[i]);
+            return 6;
+        }
+        int cnt = party().alliance_count(tier_);
+        if (cnt <= 0) return 0;                                              // no such alliance party -> box hidden
+        if (cnt > 6) cnt = 6;
+        PartyLeaders ld; bool haveLd = read_party_leaders(ld);
+        for (int i = 0; i < cnt; ++i) {
+            const PMember& pm = party().alliance_member(tier_, i);
+            fill_member(rows[i], pm);
+            if (haveLd) { rows[i].alead = (pm.id == ld.alliance);
+                          rows[i].plead = (pm.id == ld.p1 || pm.id == ld.p2 || pm.id == ld.p3); }
+        }
+        TargetInfo tg;                                                       // alliance members are targetable too
+        if (read_target(tg)) {
+            for (int i = 0; i < cnt; ++i) {
+                if (tg.id  && rows[i].id == tg.id)  rows[i].sel    = true;
+                if (tg.sid && rows[i].id == tg.sid) rows[i].subsel = true;
+            }
+        }
+        return cnt;
     }
     // Main party box : a demo command forces the baked roster; else live / cached fallback.
     if (demo >= 1) { for (int i = 0; i < 6; ++i) demo_row(i, &rows[i]); return 6; }

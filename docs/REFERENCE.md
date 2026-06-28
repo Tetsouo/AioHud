@@ -497,10 +497,15 @@ member[0]); `member[0] = pp - 4`; `member[i] = member[0] + i*0x7C`. Self-validat
 | `+0x35` | byte MP % | |
 | `+0x36` | u16 zone id | member's zone (≠ yours ⇒ out of zone; offzone members are kept here) |
 | `+0x3C` | u32 **flag mask** | quartermaster = **bit `0x10`** (verified: the bit moved to the member given QM) |
+| `+0x71` | byte **main job id** | 1 WAR … 5 RDM … 22 RUN (verified: Kaories RDM=5, Tetsouo BLM=4) |
+| `+0x72` | byte main job level | `0x63` = 99 |
+| `+0x73` | byte **sub job id** | (verified: Tetsouo SCH=20, Kaories WHM=3) |
 
-Jobs are **0** in this struct here → keep sourcing jobs from the player struct (self)
-and `0x0DD` packets (others). Read fresh every frame for live updates (or just seed at
-load + let packets refresh).
+Jobs **are** in this struct (`+0x71`/`+0x73`, reversed 2026-06-28 from a live alliance dump
+— an earlier note wrongly read `0`). Reading them here gives correct job badges for **every**
+member of all three boxes instantly, with no dependence on packet timing. `load_from_memory`
+runs every frame, so the roster + vitals + jobs stay live. Trust members (no job byte) fall
+back to a name → job DB.
 
 **Leadership is NOT a member flag — it's server-id matching against `allianceinfo_t`.**
 `allianceinfo = *(pp)` (= `*(g+0x248)` dereferenced; this is the `//aio chain` "party"):
@@ -660,7 +665,8 @@ safe_read), 0/garbage → ready. `recast_id` from `spells_gen.h` (`SpellRow::rec
 (TP-gated) → they show live TP instead.
 
 Done: Magic shows name + Next(recast)/MP, Job Ability shows name + Next(recast), Weapon Skill shows name
-+ live TP — all **zero-tap**. **TODO:** real per-WS TP threshold.
++ live TP — all **zero-tap**. (No per-WS TP threshold exists on retail: every WS is usable at 1000 TP;
+1000/2000/3000 are the universal damage/effect tiers, so "live TP, green ≥ 1000" is already correct.)
 
 ### 9h. Party-member buffs — the `0x076` packet  (WORKING, 2026-06-28)
 
