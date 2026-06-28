@@ -27,6 +27,9 @@ private:
     void demo_row(int i, void* out) const;   // forced demo row (tier-offset names), //aio demo
     int  build_rows(void* rows, const GameState& gs) const;   // fill rows[] from the per-frame snapshot (or demo) -> count
     float box_w_base() const;                // box width (base px) : AUTO-fit to the columns + name size
+    // the floating spell / job-ability / weapon-skill info box (MP cost / recast "Next" / live TP),
+    // pulled out of draw() : a self-contained feature that doesn't iterate the rows.
+    void draw_action_box(const Frame& f, float S, float px, float w, float oy, Font* fName, u32 nSTK, float nOWf);
 
     // per-member animation state, persisted across frames (lerped bars + dot pop). Keyed by id.
     struct RowAnim { unsigned id; float hpp, mpp, tpp; float dot[3]; bool seen; };

@@ -9,9 +9,12 @@ and an in-game action-menu info box (spell MP + recast "Next", job-ability recas
 weapon-skill TP) driven by data read straight from FFXI/LuaCore memory.
 
 ## Read this first
+- **`docs/ARCHITECTURE.md`** — how the plugin is wired (layers, the per-frame
+  snapshot → widget data flow), **how to add a new module fast**, and the
+  reverse-engineering recipes (Ghidra LuaCore bindings + the `//aio` live probes).
 - **`docs/REFERENCE.md`** — the complete reverse-engineered reference (plugin ABI,
   every interface + method + field offset, memory layout, coordinate system, the
-  D3D8 2D rules, gotchas, examples). The single source of truth.
+  D3D8 2D rules, gotchas, examples). The single source of truth for offsets.
 - **`docs/EXPORT.md`** — the mockup → native contract (how `design/` drives the UI).
 
 ## Layout

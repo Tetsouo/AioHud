@@ -405,6 +405,47 @@ Party::RowAnim* Party::anim_for(unsigned id) {
     return &anim_[0];
 }
 
+// Buff status icons LEFT of each party row : ONE row of icons sized to the row height (capped at
+// 20), right-to-left from just left of the selection cursor. Atlas id -> cell (id%32, id/32).
+// A static helper (it iterates the file-local Row) -> keeps draw() focused. buffTex 0 = no-op.
+static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
+                              float px, float oy, float pad, float rowpit, float rowh, float S) {
+    if (!buffTex) return;
+    dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
+    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
+    dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    dSetTex(dev, 0, buffTex);
+    dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+    dSetTSS(dev, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MIPFILTER, D3DTEXF_NONE);
+    dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
+    const float bgap = snap(1.0f * S);                  // gap between icons
+    const float bmar = snap(rowh * 1.18f);              // start the strip just LEFT of the cursor
+    const float au = (float)BCELL / (float)BATLAS_W;    // one cell, in UV space
+    const float av = (float)BCELL / (float)BATLAS_H;
+    const int   BMAX = 20;                              // cap : at most 20 icons per member
+    const float bs = snap(rowh * 0.92f);                // ONE row only, as tall as the member row allows
+    for (int i = 0; i < n; ++i) {
+        const Row& r = rows[i];
+        if (r.offzone || !r.buffs || r.nbuff <= 0) continue;
+        const float ry = oy + pad + i * rowpit;
+        const float y  = snap(ry + (rowh - bs) * 0.5f); // icon centred in the row
+        const float xr = px - bmar;                     // right edge of the strip (just left of the cursor)
+        const int   nb = r.nbuff < BMAX ? r.nbuff : BMAX;
+        for (int j = 0; j < nb; ++j) {
+            const float x = snap(xr - (float)(j + 1) * bs - (float)j * bgap);
+            if (x < 1.0f) break;                        // ran off the left of the screen -> stop
+            const int id = r.buffs[j];
+            if (id < 0 || id >= BCOLS * BATLAS_ROWS) continue;   // id outside the atlas -> skip
+            const float u0 = (float)(id % BCOLS) * au;
+            const float v0 = (float)(id / BCOLS) * av;
+            tquad(dev, x, y, bs, bs, u0, u0 + au, v0, v0 + av, 0xFFFFFFFF, 0xFFFFFFFF);
+        }
+    }
+    dSetTex(dev, 0, 0);
+}
+
 void Party::draw(const Frame& f) {
     if (!visible_) return;
     u32 dev = f.dev;
@@ -561,44 +602,8 @@ void Party::draw(const Frame& f) {
         }
     }
 
-    // ---------- buffs : status icons to the LEFT of each party row (main box only -- the game
-    //            never sends alliance-member buffs). Drawn right-to-left, the first icon hugging
-    //            the box edge, mirroring design/src/panels/party.css (.pm-buffs, row-reverse). ----------
-    if (buff_tex_ && tier_ == 0) {
-        dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
-        dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
-        dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
-        dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-        dSetTex(dev, 0, buff_tex_);
-        dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-        dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
-        dSetTSS(dev, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MIPFILTER, D3DTEXF_NONE);
-        dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
-        const float bgap = snap(1.0f * S);                  // gap between icons
-        const float bmar = snap(rowh * 1.18f);              // start the strip just LEFT of the cursor (which spans ~rowh*1.30 left of the box)
-        const float au = (float)BCELL / (float)BATLAS_W;    // one cell, in UV space
-        const float av = (float)BCELL / (float)BATLAS_H;
-        const int   BMAX = 20;                              // cap : at most 20 icons per member
-        const float bs = snap(rowh * 0.92f);                // ONE row only, as tall as the member row allows
-        for (int i = 0; i < n; ++i) {
-            const Row& r = rows[i];
-            if (r.offzone || !r.buffs || r.nbuff <= 0) continue;
-            const float ry = oy + pad + i * rowpit;
-            const float y  = snap(ry + (rowh - bs) * 0.5f); // icon centred in the row
-            const float xr = px - bmar;                     // right edge of the strip (just left of the cursor)
-            const int   nb = r.nbuff < BMAX ? r.nbuff : BMAX;
-            for (int j = 0; j < nb; ++j) {
-                const float x = snap(xr - (float)(j + 1) * bs - (float)j * bgap);
-                if (x < 1.0f) break;                        // ran off the left of the screen -> stop
-                const int id = r.buffs[j];
-                if (id < 0 || id >= BCOLS * BATLAS_ROWS) continue;   // id outside the atlas -> skip (no garbage cell)
-                const float u0 = (float)(id % BCOLS) * au;
-                const float v0 = (float)(id / BCOLS) * av;
-                tquad(dev, x, y, bs, bs, u0, u0 + au, v0, v0 + av, 0xFFFFFFFF, 0xFFFFFFFF);
-            }
-        }
-        dSetTex(dev, 0, 0);
-    }
+    // ---------- buffs : status icons LEFT of each party row (main box only -- alliance buffs aren't sent) ----------
+    if (tier_ == 0) draw_member_buffs(dev, buff_tex_, rows, n, px, oy, pad, rowpit, rowh, S);
 
     // ---------- leader / QM markers : round dots, animated pop-in/out (scale + fade) ----------
     if (dot_tex_) {
@@ -769,56 +774,58 @@ void Party::draw(const Frame& f) {
         grad_quad(dev, px + w - rw, ry, rw, rowh, rI, rO, rI, rO);   // right rim
     }
 
-    // ---------- Magic-menu info box : small, RIGHT-aligned, ABOVE the party (spell + MP cost) ----------
-    // Only the MAIN box owns this (alliance boxes would draw it 2-3x on top of each other).
-    if (tier_ == 0) {
-        // the open flag (FFXiMain+0x629FEC) is noisy (toggles frame-to-frame). Filter with a
-        // confidence counter : needs several positive frames to show (kills closed-menu spikes),
-        // and lingers a few frames (kills the open-menu flicker).
-        if (f.game && f.game->menuType) { menuType_ = f.game->menuType; menuSpell_ = f.game->menuAction; menuHold_ += 2; if (menuHold_ > 10) menuHold_ = 10; }   // from the snapshot
-        else { menuHold_ -= 1; if (menuHold_ < 0) menuHold_ = 0; }
-        // right-hand info next to the name : MP cost for spells, the recast "Next" for job abilities
-        // (when on cooldown), the player's CURRENT TP for weapon skills.
-        const char* nm = 0; char infobuf[16]; const char* info = 0; u32 infoCol = 0xFFFFFFFF;
-        char info2buf[16]; const char* info2 = 0; u32 info2Col = 0xFFFFFFFF;       // optional 2nd line (spell recast)
-        if (menuHold_ >= 4 && menuSpell_) {
-            if (menuType_ == 1) { const SpellRow* sp = spell_info(menuSpell_); if (sp) { nm = sp->en;     // Spell : MP cost on top, "Next m:ss" below while on recast
-                if (sp->mp) { sprintf(infobuf, "Cost %u MP", sp->mp); info = infobuf; }                   // keep the MP cost (top line)
-                unsigned rs = spell_recast_sec(sp->recast_id);                                            // per-id lookup in the live recast array
-                sprintf(info2buf, "Next %u:%02u", rs / 60, rs % 60); info2 = info2buf;                    // always show "Next" (0:00 when ready)
-                info2Col = rs ? 0xFFFFB454 : 0xFF8FA0B8; } }                                              // amber while on recast, dim grey-blue when ready
-            else if (menuType_ == 2) { const AbilRow* a = abil_info(menuSpell_); if (a) { nm = a->en;             // Job Ability : "Next m:ss" (always shown, 0:00 when ready)
-                unsigned rs = ability_recast_sec(a->recast_id);                                                  // per-id lookup in the live recast table
-                sprintf(infobuf, "Next %u:%02u", rs / 60, rs % 60); info = infobuf;
-                infoCol = rs ? 0xFFFFB454 : 0xFF8FA0B8; } }                                                      // amber while on recast, dim grey-blue when ready
-            else if (menuType_ == 3) { const WSRow* ws = ws_info(menuSpell_); if (ws) { nm = ws->en;             // Weapon Skill : show live TP
-                if (f.game) { int tp = f.game->me.tp; sprintf(infobuf, "TP %d", tp); info = infobuf; infoCol = (tp >= 1000) ? 0xFF7CFF8A : 0xFFB0B0B0; } } }  // green when usable (>=1000)
-        }
-        if (nm && fName->ready()) {
-            const float fs = nameSz_ * S;
-            const float pdx = 7.0f * S, pdy = 4.0f * S, gapm = 9.0f * S, lineGap = 2.0f * S;
-            const float nameW = fName->measure(nm, fs);
-            const float infoW = info ? fName->measure(info, fs) : 0.0f;
-            const float info2W = info2 ? fName->measure(info2, fs) : 0.0f;
-            const float infoX  = pdx + nameW + gapm;                            // left x of the info column (Cost / Next stack)
-            const float line1W = pdx + nameW + (info ? gapm + infoW : 0.0f) + pdx;
-            const float line2W = info2 ? (infoX + info2W + pdx) : 0.0f;          // Next sits in the same column as Cost
-            const float bw2 = line1W > line2W ? line1W : line2W;
-            const float bh2 = fs + 2.0f * pdy + (info2 ? fs + lineGap : 0.0f);   // grow for the recast line
-            const float bx2 = snap(px + w - bw2);              // right edge aligned with the party box
-            const float by2 = snap(oy - bh2 - 2);             // sit ON the party : its glow meets the party glow, never bites the margin
-            setup_color_state(dev);
-            grad_quad(dev, bx2 - 1, by2 - 1, bw2 + 2, bh2 + 2, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF);  // outer glow
-            vgrad(dev, bx2, by2, bw2, bh2, 0xF0232E54, 0xF0080B1A);          // dark fill
-            vgrad(dev, bx2, by2, bw2, 3 * S, 0x4DBFD8FF, 0x00BFD8FF);        // top sheen
-            fName->begin(dev);
-            const float ty  = by2 + pdy + fs * 0.5f;                                   // top line center (== box center when single-line)
-            fName->draw_lc(dev, bx2 + pdx, ty, nm, fs, 0xFFFFD970, nSTK, nOWf);                          // action name (gold)
-            if (info) fName->draw_lc(dev, bx2 + infoX, ty, info, fs, infoCol, nSTK, nOWf);               // "Cost XX MP" / live TP
-            if (info2) {                                                                                 // recast "Next", below, same column as Cost
-                const float ty2 = ty + fs + lineGap;
-                fName->draw_lc(dev, bx2 + infoX, ty2, info2, fs, info2Col, nSTK, nOWf);
-            }
+    // ---------- floating spell / JA / WS info box (main box only -- alliances would stack it) ----------
+    if (tier_ == 0) draw_action_box(f, S, px, w, oy, fName, nSTK, nOWf);
+}
+
+// the floating Magic / Job-Ability / Weapon-Skill info box : RIGHT-aligned ABOVE the party,
+// showing the highlighted action's name + MP cost (spell) / recast "Next" (spell, JA) / live TP (WS).
+// Extracted from draw() -- a self-contained feature that doesn't touch the party rows.
+void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy, Font* fName, u32 nSTK, float nOWf) {
+    u32 dev = f.dev;
+    // the action-menu state is noisy frame-to-frame -> a confidence counter : several positive frames
+    // to show (kills closed-menu spikes), and it lingers a few frames (kills open-menu flicker).
+    if (f.game && f.game->menuType) { menuType_ = f.game->menuType; menuSpell_ = f.game->menuAction; menuHold_ += 2; if (menuHold_ > 10) menuHold_ = 10; }
+    else { menuHold_ -= 1; if (menuHold_ < 0) menuHold_ = 0; }
+    const char* nm = 0; char infobuf[16]; const char* info = 0; u32 infoCol = 0xFFFFFFFF;
+    char info2buf[16]; const char* info2 = 0; u32 info2Col = 0xFFFFFFFF;       // optional 2nd line (spell recast)
+    if (menuHold_ >= 4 && menuSpell_) {
+        if (menuType_ == 1) { const SpellRow* sp = spell_info(menuSpell_); if (sp) { nm = sp->en;     // Spell : MP cost on top, "Next m:ss" below while on recast
+            if (sp->mp) { sprintf(infobuf, "Cost %u MP", sp->mp); info = infobuf; }                   // keep the MP cost (top line)
+            unsigned rs = spell_recast_sec(sp->recast_id);                                            // per-id lookup in the live recast array
+            sprintf(info2buf, "Next %u:%02u", rs / 60, rs % 60); info2 = info2buf;                    // always show "Next" (0:00 when ready)
+            info2Col = rs ? 0xFFFFB454 : 0xFF8FA0B8; } }                                              // amber while on recast, dim grey-blue when ready
+        else if (menuType_ == 2) { const AbilRow* a = abil_info(menuSpell_); if (a) { nm = a->en;             // Job Ability : "Next m:ss" (always shown, 0:00 when ready)
+            unsigned rs = ability_recast_sec(a->recast_id);                                                  // per-id lookup in the live recast table
+            sprintf(infobuf, "Next %u:%02u", rs / 60, rs % 60); info = infobuf;
+            infoCol = rs ? 0xFFFFB454 : 0xFF8FA0B8; } }                                                      // amber while on recast, dim grey-blue when ready
+        else if (menuType_ == 3) { const WSRow* ws = ws_info(menuSpell_); if (ws) { nm = ws->en;             // Weapon Skill : show live TP
+            if (f.game) { int tp = f.game->me.tp; sprintf(infobuf, "TP %d", tp); info = infobuf; infoCol = (tp >= 1000) ? 0xFF7CFF8A : 0xFFB0B0B0; } } }  // green when usable (>=1000)
+    }
+    if (nm && fName->ready()) {
+        const float fs = nameSz_ * S;
+        const float pdx = 7.0f * S, pdy = 4.0f * S, gapm = 9.0f * S, lineGap = 2.0f * S;
+        const float nameW = fName->measure(nm, fs);
+        const float infoW = info ? fName->measure(info, fs) : 0.0f;
+        const float info2W = info2 ? fName->measure(info2, fs) : 0.0f;
+        const float infoX  = pdx + nameW + gapm;                            // left x of the info column (Cost / Next stack)
+        const float line1W = pdx + nameW + (info ? gapm + infoW : 0.0f) + pdx;
+        const float line2W = info2 ? (infoX + info2W + pdx) : 0.0f;          // Next sits in the same column as Cost
+        const float bw2 = line1W > line2W ? line1W : line2W;
+        const float bh2 = fs + 2.0f * pdy + (info2 ? fs + lineGap : 0.0f);   // grow for the recast line
+        const float bx2 = snap(px + w - bw2);              // right edge aligned with the party box
+        const float by2 = snap(oy - bh2 - 2);             // sit ON the party : its glow meets the party glow, never bites the margin
+        setup_color_state(dev);
+        grad_quad(dev, bx2 - 1, by2 - 1, bw2 + 2, bh2 + 2, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF);  // outer glow
+        vgrad(dev, bx2, by2, bw2, bh2, 0xF0232E54, 0xF0080B1A);          // dark fill
+        vgrad(dev, bx2, by2, bw2, 3 * S, 0x4DBFD8FF, 0x00BFD8FF);        // top sheen
+        fName->begin(dev);
+        const float ty  = by2 + pdy + fs * 0.5f;                                   // top line center (== box center when single-line)
+        fName->draw_lc(dev, bx2 + pdx, ty, nm, fs, 0xFFFFD970, nSTK, nOWf);                          // action name (gold)
+        if (info) fName->draw_lc(dev, bx2 + infoX, ty, info, fs, infoCol, nSTK, nOWf);               // "Cost XX MP" / live TP
+        if (info2) {                                                                                 // recast "Next", below, same column as Cost
+            const float ty2 = ty + fs + lineGap;
+            fName->draw_lc(dev, bx2 + infoX, ty2, info2, fs, info2Col, nSTK, nOWf);
         }
     }
 }
