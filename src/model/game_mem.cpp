@@ -234,6 +234,22 @@ void poll_game_state(GameState& gs) {
     int mt = 0; unsigned ma = 0;
     if (read_action_menu(mt, ma)) { gs.menuType = mt; gs.menuAction = ma; }
     else                          { gs.menuType = 0; gs.menuAction = 0; }
+
+    // party-window picker : the focused menu is "partywin" with a 1-based cursor index at +0x4C.
+    // (Reversed via //aio pcur: +0x4C tracks the hovered member, +0x08 = its row object.)
+    gs.partyMenuSel = 0;
+    u32 ffm = (u32)GetModuleHandleA("FFXiMain.dll");
+    if (ffm) {
+        u32 mptr = 0; safe_read(ffm + MENU_PTR_RVA, &mptr);
+        u32 def = 0; if (valid_ptr(mptr)) safe_read(mptr + 0x04, &def);
+        if (valid_ptr(def)) {
+            char nm[6] = {0}; for (int i = 0; i < 5; ++i) { u32 c = 0; safe_read(def + MENU_NAME_OFF + i, &c); nm[i] = (char)(c & 0xFF); }
+            if (nm[0]=='p' && nm[1]=='a' && nm[2]=='r' && nm[3]=='t' && nm[4]=='y') {     // "partywin"
+                u32 idx = 0; safe_read(mptr + 0x4C, &idx);
+                if (idx >= 1 && idx <= 6) gs.partyMenuSel = (int)idx;
+            }
+        }
+    }
 }
 
 } // namespace aio

@@ -562,16 +562,16 @@ pointer). It follows the `<st>` cursor too, so it CANNOT tell main from sub, and
    `<stpc>` cursor: the dword that flips `0↔1` on open/cancel is the flag (`+0x78`).
 These probe commands live in `plugin/aiohud.cpp` (kept for re-locating after a client patch).
 
-> **TODO — the party-DISTRIBUTION cursor (`//aio pcur` probe).** When you open
-> *Menu → Party → Distribution → Quartermaster/Lottery*, the game spawns a party-member picker.
-> Probed solo (2026-06-28), it sets **no world target at all**: `target_t` Targets[0/1] AND the
-> LuaCore target struct `*(g+0x30)+0x04` both stay `0x04000000` ("nothing"); no party server-id
-> appears anywhere. So the hovered member is a **bare INDEX** in the menu/cursor state, not an id.
-> `*(g+0x30)+0x74` only blinks `0↔1` (cursor flash). **This CANNOT be reversed solo:** the lone
-> member is index `0`, an all-zero byte indistinguishable from uninitialised memory. It needs
-> **≥2 party members** — hover index 1+ and the field holding a non-zero index lights up at once
-> (one clean cycle). Probe + dump live in `plugin/aiohud.cpp` (`g_pcur_probe`). Goal: surface it
-> as a selection frame on the hovered member, like `<st>`.
+**Party-window picker cursor (Quartermaster / Lottery / remove member / leader) — WORKING, 2026-06-28.**
+This picker is **NOT a target** — `target_t`, the LuaCore target list `*(g+0x30)`, and the targeting
+struct all stay `0x04000000` ("nothing") while it's open. It's a pure **menu cursor**: when it's
+active the focused-menu pointer `*(FFXiMain+0x5EED6C)` points at the menu named **`"partywin"`**
+(name at `def+0x4E`, `def = *(menu+0x04)`), and the hovered member is a **1-based cursor index at
+`menu+0x4C`** (`+0x08` = a pointer to the selected row's UI object). The party window lists members
+in slot order = our row order, so the hovered member is `rows[index-1]`. `poll_game_state` fills
+`GameState::partyMenuSel`; the party widget frames that row. Found with `//aio pcur` (needs ≥2 party
+members so the index is non-zero — solo it is `0`, an all-zero byte you can't pick out). The probe
+(`g_pcur_probe`) stays in `plugin/aiohud.cpp` for re-locating after a client patch.
 
 ### 9f. Party cast bar — the `0x028` action packet  (WORKING, 2026-06-27)
 

@@ -282,22 +282,37 @@ void aio_plugin_render6()
         }
     }
 
-    if (g_pcur_probe) {                                   // FIND the party-distribution cursor in the TARGET-SYSTEM struct
-        static u32 prevkey = 0;
+    if (g_pcur_probe) {                                   // FIND the 'stpt' index in the targeting struct *(g+0x2C)
+        static u32 prevkey = 0;                           // (get_mob_by_target -> FUN_1008b7d0 indexes *(g+0x24) by *(g+0x2C)+off)
         u32 lc = (u32)GetModuleHandleA("LuaCore.dll");
         if (lc && (++g_pcur_tick % 6 == 0)) {
-            u32 g = 0; safe_read(lc + 0x1C8400, &g);                 // data root
-            u32 ts = 0; if (valid_ptr(g)) safe_read(g + 0x30, &ts);  // target-system struct (get_player reads +0x04 id, +0x74 index)
-            if (valid_ptr(ts)) {
-                u32 id04 = 0, idx74 = 0; safe_read(ts + 0x04, &id04); safe_read(ts + 0x74, &idx74);
-                u32 hitOff = 0xFFFFFFFF, hitId = 0;                  // any dword in [0,0x80) that equals a party id
-                for (int o = 0; o < 0x80 && !hitId; o += 4) { u32 v = 0; safe_read(ts + o, &v); for (int i = 0; i < aio::party().count; ++i) if (v && v == aio::party().m[i].id) { hitOff = o; hitId = v; break; } }
-                u32 key = id04 ^ (idx74 * 131u) ^ (hitOff << 3) ^ hitId;
+            u32 ffm2 = (u32)GetModuleHandleA("FFXiMain.dll");
+            u32 mptr = 0; if (ffm2) safe_read(ffm2 + 0x5EED6C, &mptr);          // currently-focused menu object
+            u32 def = 0; if (valid_ptr(mptr)) safe_read(mptr + 0x04, &def);
+            char nm[9] = {0}; if (valid_ptr(def)) for (int i = 0; i < 8; ++i) { u32 c = 0; safe_read(def + 0x4E + i, &c); nm[i] = (char)(c & 0xFF); }
+            bool isParty = (nm[0] == 'p' && nm[1] == 'a' && nm[2] == 'r' && nm[3] == 't');   // "partywin" only
+            if (isParty && valid_ptr(mptr)) {
+                // resolve entity array for the index->id route ; scan the menu object both ways.
+                u32 g = 0, ent = 0; safe_read(lc + 0x1C8400, &g); if (valid_ptr(g)) safe_read(g + 0x24, &ent);
+                aio::PlayerInfo me; bool okMe = aio::read_player(me);
+                int idOff = -1; u32 idVal = 0; int ixOff = -1; u32 ixVal = 0;
+                for (int o = 0; o < 0x80; o += 4) { u32 v = 0; safe_read(mptr + o, &v);            // a member SERVER-ID stored directly?
+                    if (okMe && v == me.id) { idOff = o; idVal = v; } for (int k = 0; k < aio::party().count; ++k) if (v == aio::party().m[k].id) { idOff = o; idVal = v; } }
+                if (valid_ptr(ent)) for (int o = 0; o < 0x80; o += 2) { u32 raw = 0; safe_read(mptr + o, &raw); u32 ix = raw & 0xFFFF;   // or a USHORT entity index?
+                    if (ix == 0 || ix >= 0x900) continue; u32 mob = 0; safe_read(ent + ix * 4, &mob); if (!valid_ptr(mob)) continue; u32 sid = 0; safe_read(mob, &sid);
+                    if ((okMe && sid == me.id)) { ixOff = o; ixVal = sid; } for (int k = 0; k < aio::party().count; ++k) if (sid == aio::party().m[k].id) { ixOff = o; ixVal = sid; } }
+                (void)idOff; (void)idVal; (void)ixOff; (void)ixVal;
+                // CONFIRMED earlier: 'partywin'+0x4C = 1-based cursor index, +0x08 = selected-row ptr.
+                // Resolve the row (and its neighbour at -0xD0/+0xD0) -> find the member id/entity it carries.
+                u32 cidx = 0; safe_read(mptr + 0x4C, &cidx);
+                u32 row = 0; safe_read(mptr + 0x08, &row);
+                u32 rowHit = 0;                                            // a party id found anywhere in the selected row [0,0x60)
+                if (valid_ptr(row)) for (int o = 0; o < 0x60; o += 4) { u32 v = 0; safe_read(row + o, &v); if (okMe && v == me.id) rowHit = v; for (int k = 0; k < aio::party().count; ++k) if (v == aio::party().m[k].id) rowHit = v; }
+                u32 key = cidx ^ (row * 131u) ^ rowHit;
                 if (key != prevkey) {
                     prevkey = key;
-                    const char* who = "?"; for (int i = 0; i < aio::party().count; ++i) if (aio::party().m[i].id == hitId) who = aio::party().m[i].name;
-                    debug::log("PCUR ts=%08X +0x04(id)=%08X +0x74(idx)=%08X | party-id +0x%X=%08X '%s'", ts, id04, idx74, hitOff, hitId, who);
-                    debug::hexdump("  ts", ts, 0x80);
+                    debug::log("PCUR 'partywin' idx@+0x4C=%u row@+0x08=%08X rowHasPartyId=%08X (me=%08X)", cidx, row, rowHit, okMe ? me.id : 0);
+                    if (valid_ptr(row)) debug::hexdump("  row", row, 0x60);
                 }
             }
         }

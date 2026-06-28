@@ -31,6 +31,11 @@ struct GameState {
     // --- in-game action menu (drives the cost/next box) : type 1=spell 2=JA 3=WS, 0=none ---
     int      menuType = 0;
     unsigned menuAction = 0;
+
+    // --- party-window picker (Menu>Party>Distribution>Quartermaster/Lottery, remove member, ...) :
+    //     the focused menu "partywin" carries a 1-based cursor index at +0x4C -> the hovered member
+    //     is the main party's row (index-1). 0 = no picker open. Reversed 2026-06-28 via //aio pcur. ---
+    int      partyMenuSel = 0;
 };
 
 // Fill `gs` from live game memory for THIS frame (one read of each pointer-chain). Sets

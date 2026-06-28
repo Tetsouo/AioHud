@@ -318,6 +318,9 @@ int Party::build_rows(void* outRows, const GameState& gs) const {
             if (gs.targetId    && rows[i].id == gs.targetId)    rows[i].sel    = true;
             if (gs.subTargetId && rows[i].id == gs.subTargetId) rows[i].subsel = true;
         }
+        // party-window picker (Quartermaster / Lottery / remove member / ...) : frame the hovered
+        // member -- 1-based cursor index into the party list (= our row order). Reversed via //aio pcur.
+        if (gs.partyMenuSel >= 1 && gs.partyMenuSel <= n) rows[gs.partyMenuSel - 1].sel = true;
     } else {                                                                 // not in game -> demo
         n = count_ > 6 ? 6 : count_;
         for (int i = 0; i < n; ++i) row(i, &rows[i]);
