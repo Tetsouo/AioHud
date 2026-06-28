@@ -15,6 +15,7 @@ struct PMember {
     int  mjob = 0, sjob = 0;         // job ids (0 = none)
     int  zone = 0;                   // 0x0DD @+0x20 : member's zone id when OUT of our zone (0 = in zone)
     unsigned flags = 0;              // 0x0DD flags @+0x14 (leadership bits ; tentative)
+    float dist = -1.0f;              // horizontal distance to the player (yalms) ; -1 = unknown (out of zone / trust)
     char name[20] = {0};
 
     // NB: party/alliance leadership is now resolved by server-id vs allianceinfo_t (see

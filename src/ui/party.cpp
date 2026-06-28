@@ -12,6 +12,7 @@
 #include "model/abilities_gen.h"
 #include "model/weapon_skills_gen.h"
 #include "model/zones.h"
+#include "model/ui_config.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -55,7 +56,23 @@ static const Member DEMO[18] = {
 
 // one display row, resolved from live data OR demo.
 struct Row { const char* name; const char* job; const char* sub; unsigned role; int hpVal, mpVal, tp, hpp, mpp; bool plead, alead, qm; bool offzone; int zone; const char* cast; float castPct; float castAlpha; unsigned id; bool sel; bool subsel;
+             bool outRange = false;   // beyond spell cast range -> drawn dimmed (out of healing/buff range)
+             float dist = -1.0f;      // horizontal distance to the player (yalms) ; <0 = unknown (hidden)
              const unsigned short* buffs = nullptr; int nbuff = 0; };   // status icons (left of the row) ; null/0 = none (uint16 ids: > 255 exist)
+
+// Cast-range thresholds (yalms), from the FFXI distance reference. "max is exclusive" -> a spell
+// FAILS at the max. Player-targeted single-target magic reaches ~21.8' on a PC (base ~20.9 + the
+// target's model). 20.8' = the Cure reference (comfortable range). So:
+//   < 20.8'   blue   (well in range)      20.8'..21.8'  yellow (marginal, still casts)
+//   >= 21.8'  red    (out of range -> the member's row is dimmed)
+// Distance colour code on the two key FFXI ranges :
+//   < 10'        BLUE   : in range of EVERYTHING (cures + the ~10' stuff : Majesty AoE, -ra, ...)
+//   10'..20.79'  YELLOW : in standard cast range (20.8') but out of the ~10' spells
+//   >= 20.8'     RED    : out of cast range entirely (Cure 20.8' max is exclusive -> fails at 20.80')
+//                         -> the row is dimmed. (We track ACTUAL castability, not the game's cursor,
+//                          which misleadingly stays yellow up to ~21.3'.)
+static const float kCastSafe  = 10.0f;   // blue -> yellow boundary (the ~10' AoE/short-range limit)
+static const float kCastRange = 20.8f;   // yellow -> red : standard cast FAILS here (20.79 casts, 20.80 fails)
 
 // ---- buff icons : a single status-icon atlas (assets/buff_atlas.raw, built by
 // scripts/gen_buff_atlas.ps1 from XivParty's icon set). Fixed 32-col grid, 32px cells.
@@ -248,6 +265,8 @@ static void fill_member(Row& r, const PMember& pm) {
     r.plead = pm.party_lead(); r.alead = pm.alliance_lead(); r.qm = pm.quarter_master();
     r.cast = party().cast_label(pm.id, r.castPct, r.castAlpha);   // live spell cast (0 if not casting)
     r.offzone = (pm.maxHp == 0);                       // no vitals at all -> member is out of our zone
+    r.outRange = (pm.dist >= 0.0f && pm.dist >= kCastRange);  // in zone but beyond cast range -> dim
+    r.dist = pm.dist;
     r.zone = pm.zone;
     r.id = pm.id; r.sel = false; r.subsel = false;
     const BuffSet* bs = party().buffs_for(pm.id);      // status icons from packet 0x076 (null until first seen)
@@ -256,7 +275,7 @@ static void fill_member(Row& r, const PMember& pm) {
 static void fill_self(Row& r, const PlayerInfo& me) {
     r.name = me.name; r.job = job_abbr(me.mjob); r.sub = job_abbr(me.sjob); r.role = job_role_color(me.mjob);
     r.hpVal = me.hp; r.mpVal = me.mp; r.tp = me.tp; r.hpp = me.hpp; r.mpp = me.mpp;
-    r.plead = false; r.alead = false; r.qm = false; r.offzone = false; r.zone = 0;
+    r.plead = false; r.alead = false; r.qm = false; r.offzone = false; r.zone = 0; r.outRange = false; r.dist = -1.0f;   // self : no distance (always 00.00)
     r.cast = party().cast_label(me.id, r.castPct, r.castAlpha);   // self can cast too (own action packet echoes back)
     r.id = me.id; r.sel = false; r.subsel = false;
 }
@@ -352,6 +371,7 @@ void Party::demo_row(int i, void* out) const {
     // synthetic NON-ZERO id : anim_for() treats id==0 as a free slot, so id-0 demo rows would all
     // collapse onto one anim slot (dots never accumulate -> no leader/QM bullets). Unique per row.
     r.offzone = false; r.zone = 0; r.id = (unsigned)(tier_ * 10 + i + 1); r.sel = false; r.subsel = false; r.castPct = 0.0f; r.castAlpha = 0.0f;
+    r.dist = (float)i * 6.7f; r.outRange = (r.dist > kCastRange);   // demo : spread distances, last rows out of range
     const Member& dm = DEMO[tier_ * 6 + i];
     int hp = dhp_[i]; if (hp < 0) hp = 0; if (hp > 100) hp = 100;
     int mp = dmp_[i]; if (mp < 0) mp = 0; if (mp > 100) mp = 100;
@@ -381,7 +401,7 @@ float Party::box_w_base() const {
 }
 
 void Party::measure(float& w, float& h) const {
-    const float S = scale_ * BOOST;
+    const float S = scale_ * BOOST * ui_config().partyScale;   // user "Font Size" scales the whole box
     w = box_w_base() * S;
     h = (rowPit() * 6 + 2 * padB()) * S;   // always sized for a full party of 6 (fixed box, solo or not)
 }
@@ -458,7 +478,7 @@ void Party::draw(const Frame& f) {
     const int n = build_rows(rows, f.game ? *f.game : NOGAME);
     if (n <= 0) return;                           // nothing to show (e.g. an alliance box outside demo)
 
-    const float S = scale_ * BOOST;
+    const float S = scale_ * BOOST * ui_config().partyScale;   // user "Font Size" scales the whole box
     // Snap ALL box geometry to whole pixels so EVERY row sits at an identical pixel phase ->
     // the 1px borders (badge / selection frame) are crisp on every row, never blurred or
     // "truncated" on some rows (which happens with a fractional row pitch).
@@ -478,7 +498,7 @@ void Party::draw(const Frame& f) {
     else if (g_partyTopReady) {
         const float fsC      = nameSz_ * S;
         const float costBoxH = 2.0f * fsC + 10.0f * S;     // reserve the 2-line cost/next box (its max height)
-        const float allLift  = snap(12.0f * S);            // raise the alliance stack a bit above the cost box
+        const float allLift  = snap(24.0f * S);            // raise the alliance stack above the cost box
         oy = snap(g_partyTopY - costBoxH - (float)tier_ * H - (float)(tier_ - 1) * sepH - allLift);
     }
     const float cx  = px + pad + inset;
@@ -602,8 +622,8 @@ void Party::draw(const Frame& f) {
 
     // ---------- leader / QM markers : round dots, animated pop-in/out (scale + fade) ----------
     if (dot_tex_) {
-        const u32 dcol[3] = { 0xFF6EB6FF, 0xFFFFCB45, 0xFF42D98A };   // alliance=blue, party=gold, QM=green
-        const float sz = 8.0f * S, gap = -1.0f * S, pitch = sz + gap;
+        const u32 dcol[3] = { 0xFFFFFFFF, 0xFFFFEF3F, 0xFF42D98A };   // alliance=white, party=canary yellow, QM=green
+        const float sz = 5.5f * S, gap = -0.5f * S, pitch = sz + gap;   // smaller pips (distance text below gets the room)
         dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
         dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
         dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
@@ -620,7 +640,7 @@ void Party::draw(const Frame& f) {
         const float x0     = markCx - slotsW * 0.5f;          // left (alliance) column x
         for (int i = 0; i < n; ++i) {
             const RowAnim* a = ra[i]; if (!a) continue;
-            const float ry = oy + pad + i * rowpit, cy = ry + rowh * 0.5f;
+            const float ry = oy + pad + i * rowpit, cy = ry + snap(2.0f * S) + sz * 0.5f;   // pips at the TOP of the row
             for (int k = 0; k < 3; ++k) {                     // k: 0=alliance, 1=party, 2=QM
                 const float amt = a->dot[k]; if (amt <= 0.02f) continue;
                 const float s2 = sz * amt;                    // pop scale 0..1
@@ -658,9 +678,10 @@ void Party::draw(const Frame& f) {
 
     // ---------- text : each element (name / bars / badge) has its OWN face+weight atlas ----
     if (!f.fonts) return;
-    Font* fName  = f.fonts->get(nameFont_.c_str(),  nameBold_  ? 700 : 0);
-    Font* fBar   = f.fonts->get(barFont_.c_str(),   barBold_   ? 700 : 0);
-    Font* fBadge = f.fonts->get(badgeFont_.c_str(), badgeBold_ ? 700 : 0);
+    const char* ov = ui_font_face(ui_config().fontFace);   // "" = keep the per-element layout faces
+    Font* fName  = f.fonts->get(ov[0] ? ov : nameFont_.c_str(),  nameBold_  ? 700 : 0);
+    Font* fBar   = f.fonts->get(ov[0] ? ov : barFont_.c_str(),   barBold_   ? 700 : 0);
+    Font* fBadge = f.fonts->get(ov[0] ? ov : badgeFont_.c_str(), badgeBold_ ? 700 : 0);
     fName->ensure(dev); fBar->ensure(dev); fBadge->ensure(dev);   // build lazily (same frame)
     const u32 nSTK = nameStroke_  > 0 ? 0xFF000000u : 0u; const float nOWf = nameStroke_  * S;
     const u32 vSTK = barStroke_   > 0 ? 0xFF000000u : 0u; const float vOWf = barStroke_   * S;
@@ -676,6 +697,20 @@ void Party::draw(const Frame& f) {
         // names never scale (no zoom on target) -> stable layout, room for the cast line below
         const float es = 1.0f;
         const float bcx = bx + bw * 0.5f, bcy = by + bh * 0.5f;               // badge centre (scale pivot)
+
+        // distance (yalms) UNDER the leader/QM pips, centered in the marks column, format 00.00.
+        if (r.dist >= 0.0f && fBadge->ready()) {
+            float d = r.dist; if (d > 99.99f) d = 99.99f;
+            char db[12]; sprintf(db, "%05.2f", d);
+            float dsz = badgeSz_ * S * 1.20f;                                 // as big as fits the marks column width
+            const float dw = fBadge->measure(db, dsz);
+            if (dw > mw * 0.98f && dw > 0.0f) dsz *= (mw * 0.98f) / dw;
+            const u32 dcol = r.dist >= kCastRange ? 0xFFE76C6C :              // red  : out of cast range
+                             r.dist >= kCastSafe  ? 0xFFE7C95A :              // yellow : marginal (still casts)
+                                                    0xFF8FC6FF;               // blue : comfortably in range
+            fBadge->begin(dev);
+            fBadge->draw_cc(dev, cx + mw * 0.5f, ry + rowh - dsz * 0.62f, db, dsz, dcol, bSTK, bOWf);
+        }
 
         if (!offz && fBadge->ready()) {                // out of zone : no job badge text
             fBadge->begin(dev);
@@ -732,6 +767,10 @@ void Party::draw(const Frame& f) {
         }
     }
 
+    // Row overlays (selection / sub-target / out-of-range veil) stay INSIDE the skin border : inset
+    // by the box padding so they sit on the background, never overlapping the window frame.
+    const float sx = px + pad, sw = w - 2.0f * pad;
+
     // ---------- sub-target bar : ocean blue (the game's <st> colour), on top, below the main selection ----------
     if (subA_ > 0.02f) {
         setup_color_state(dev);
@@ -740,9 +779,9 @@ void Party::draw(const Frame& f) {
         // strong ocean-blue fill
         const u32 fillT = ((u32)(0x80 * a) << 24) | 0x00159CFF;   // vivid ocean blue
         const u32 fillB = ((u32)(0x34 * a) << 24) | 0x00064FB0;   // deeper ocean toward the bottom
-        vgrad(dev, px, ry, w, rowh, fillT, fillB);
+        vgrad(dev, sx, ry, sw, rowh, fillT, fillB);
         // MODERN shine : the sub IS the cursor row whenever it shows, so it always sweeps (a bit stronger)
-        shine_sweep(dev, px, ry, w, rowh, gSweep, 0x00BFEFFF, 0.80f * a);
+        shine_sweep(dev, sx, ry, sw, rowh, gSweep, 0x00BFEFFF, 0.80f * a);
     }
 
     // ---------- selection bar : drawn LAST, on top of everything. Faux "loupe / glass" look ----------
@@ -756,17 +795,28 @@ void Party::draw(const Frame& f) {
         // 1) base tinted gold fill (faint -> readable)
         const u32 fillT = ((u32)(0x3C * a) << 24) | 0x00FFE08A;
         const u32 fillB = ((u32)(0x16 * a) << 24) | 0x00FFC850;
-        vgrad(dev, px, ry, w, rowh, fillT, fillB);
+        vgrad(dev, sx, ry, sw, rowh, fillT, fillB);
 
         // 2) MODERN shine : only when the CURSOR is on the main row (i.e. no sub-target active)
-        if (subA_ <= 0.02f) shine_sweep(dev, px, ry, w, rowh, gSweep, 0x00FFFFFF, 0.65f * a);
+        if (subA_ <= 0.02f) shine_sweep(dev, sx, ry, sw, rowh, gSweep, 0x00FFFFFF, 0.65f * a);
 
         // 3) curved rims : darken the far left/right edges -> the lens bulge (refraction pinch)
-        const float rw = w * 0.085f;                       // narrow rims so the bars stay clear
+        const float rw = sw * 0.085f;                      // narrow rims so the bars stay clear
         const u32 rO = ((u32)(0x3E * a) << 24);            // black at the very edge
         const u32 rI = 0x00000000;                         // transparent inward
-        grad_quad(dev, px,          ry, rw, rowh, rO, rI, rO, rI);   // left rim
-        grad_quad(dev, px + w - rw, ry, rw, rowh, rI, rO, rI, rO);   // right rim
+        grad_quad(dev, sx,           ry, rw, rowh, rO, rI, rO, rI);   // left rim
+        grad_quad(dev, sx + sw - rw, ry, rw, rowh, rI, rO, rI, rO);   // right rim
+    }
+
+    // ---------- dim members beyond cast range : a translucent veil over their row, so it reads
+    //            clearly as "out of casting range" (heals/buffs won't reach). ----------
+    {
+        setup_color_state(dev);
+        const u32 veil = 0x8E101620;   // ~55% dark blue-grey
+        for (int i = 0; i < n; ++i) if (rows[i].outRange) {
+            const float ry = oy + pad + (float)i * rowpit;
+            grad_quad(dev, sx, ry, sw, rowpit, veil, veil, veil, veil);
+        }
     }
 
     // ---------- floating spell / JA / WS info box (main box only -- alliances would stack it) ----------
@@ -806,10 +856,20 @@ void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy
         const float infoX  = pdx + nameW + gapm;                            // left x of the info column (Cost / Next stack)
         const float line1W = pdx + nameW + (info ? gapm + infoW : 0.0f) + pdx;
         const float line2W = info2 ? (infoX + info2W + pdx) : 0.0f;          // Next sits in the same column as Cost
-        const float bw2 = line1W > line2W ? line1W : line2W;
-        const float bh2 = fs + 2.0f * pdy + (info2 ? fs + lineGap : 0.0f);   // grow for the recast line
-        const float bx2 = snap(px + w - bw2);              // right edge aligned with the party box
-        const float by2 = snap(oy - bh2);                 // bottom edge flush on the party's top edge (borders meet -> reads as one window)
+        // Anchor the BOTTOM-RIGHT corner to the party's top-right and grow LEFT + UP only. Snap the
+        // fixed edges AND the size to integers so every edge is pixel-aligned -> the right edge and
+        // bottom never move (not even sub-pixel) as the name length changes.
+        const float bw2 = snap(line1W > line2W ? line1W : line2W);
+        const float bh2 = snap(fs + 2.0f * pdy + (info2 ? fs + lineGap : 0.0f));   // grow for the recast line
+        const float rightX = snap(px + w);                 // party right edge (constant)
+        const float botY   = snap(oy);                     // party top edge (constant)
+        const float bx2 = rightX - bw2;                    // grow left (right edge pinned)
+        const float by2 = botY - bh2;                      // grow up   (bottom pinned)
+        // info column (Cost / Next / TP) is pinned to the RIGHT edge, NOT placed after the name ->
+        // it never moves when the spell/JA/WS name changes length. Snapped = pixel-stable.
+        const float maxInfoW = info2W > infoW ? info2W : infoW;
+        const float infoColX = snap(rightX - pdx - maxInfoW);
+        const float nameX    = snap(bx2 + pdx);
         setup_color_state(dev);
         if (f.skin && f.skin->ready()) {                                 // FFXI window skin, open at the bottom -> merges with the party's top edge
             draw_window(dev, *f.skin, bx2, by2, bw2, bh2, 0xFFFFFFFF, S, true);
@@ -820,11 +880,11 @@ void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy
         }
         fName->begin(dev);
         const float ty  = by2 + pdy + fs * 0.5f;                                   // top line center (== box center when single-line)
-        fName->draw_lc(dev, bx2 + pdx, ty, nm, fs, 0xFFFFD970, nSTK, nOWf);                          // action name (gold)
-        if (info) fName->draw_lc(dev, bx2 + infoX, ty, info, fs, infoCol, nSTK, nOWf);               // "Cost XX MP" / live TP
+        fName->draw_lc(dev, nameX, ty, nm, fs, 0xFFFFD970, nSTK, nOWf);                              // action name (gold), left
+        if (info) fName->draw_lc(dev, infoColX, ty, info, fs, infoCol, nSTK, nOWf);                  // "Cost XX MP" / live TP, right column
         if (info2) {                                                                                 // recast "Next", below, same column as Cost
             const float ty2 = ty + fs + lineGap;
-            fName->draw_lc(dev, bx2 + infoX, ty2, info2, fs, info2Col, nSTK, nOWf);
+            fName->draw_lc(dev, infoColX, ty2, info2, fs, info2Col, nSTK, nOWf);
         }
     }
 }

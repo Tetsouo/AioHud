@@ -59,6 +59,7 @@ private:
     WindowSkin           skin_;                    // FFXI 9-slice window skin (loaded lazily)
     int                  skinIdx_ = 0;             // index into window_theme_name() (//aio menu N)
     ConfigPage           config_;                  // full-screen config overlay (//aio config)
+    MouseState           mouse_;                    // cursor + click, polled via Win32 each frame
     std::vector<Widget*> widgets_;                 // OWNED ; deleted on rebuild / dispose
     LiquidBars*          bars_ = nullptr;          // cached (PlayerHub vitals) for //aio lay
     Layout               layout_;                  // last loaded descriptor (kept for re-placement on resize)
@@ -67,6 +68,7 @@ private:
     std::string          layout_path_;             // path of the last applied layout (for hot-reload)
     float screenW_ = 2560.0f, screenH_ = 1400.0f;  // real game resolution (read from the device each frame)
     float ui_scale_ = 1.0f;                         // real screen / authored viewport width
+    float lastPartyScale_ = 1.0f;                   // re-anchor widgets when the config "Font Size" changes
     u32   last_dev_ = 0;
 };
 

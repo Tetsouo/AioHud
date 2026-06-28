@@ -26,6 +26,7 @@ extern void        aio_plugin_render6();       // slot 6, per-frame (FFXIDB uses
 extern void        aio_plugin_unload();        // slot 3, called once at //unload (clean up your objects!)
 extern void        aio_plugin_command(const char* cmd);
 extern void        aio_plugin_packet_in(unsigned int a, unsigned int b, unsigned int c, unsigned int d); // slot 11
+extern unsigned int aio_plugin_mouse(unsigned int eventtype, unsigned int x, unsigned int y, unsigned int delta, unsigned int blocked); // slot 13 ; return 1 to CONSUME
 
 namespace windower { namespace detail {
 
@@ -46,8 +47,8 @@ static u32 __stdcall m09(P, u32, u32, u32) { return 0; }
 static u32 __stdcall m10(P, u32, u32, u32) { return 0; }
 static u32 __stdcall m11(P, u32 a, u32 b, u32 c, u32 d) { aio_plugin_packet_in(a, b, c, d); return 0; } // packet in
 static u32 __stdcall m12(P, u32, u32, u32, u32) { return 0; }                       // packet out
-static u32 __stdcall m13(P, u32, u32, u32, u32, u32) { return 0; }                  // keyboard
-static u32 __stdcall m14(P, u32, u32, u32) { return 0; }                            // mouse
+static u32 __stdcall m13(P, u32 et, u32 x, u32 y, u32 d, u32 bl) { return aio_plugin_mouse(et, x, y, d, bl); }  // MOUSE (eventtype,x,y,delta,blocked)
+static u32 __stdcall m14(P, u32, u32, u32) { return 0; }                            // keyboard
 static u32 __stdcall m15(P, u32, u32, u32, u32) { return 0; }
 static u32 __stdcall m16(P, u32, u32, u32, u32) { return 0; }
 static u32 __stdcall m17(P) { return 0; }

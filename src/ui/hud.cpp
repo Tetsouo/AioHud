@@ -5,11 +5,32 @@
 #include "model/game_mem.h"
 #include "model/gamestate.h"
 #include "model/party_state.h"
+#include "model/ui_config.h"
 #include "windower_debug.h"
 #include <windows.h>
 #include <algorithm>
 
 namespace aio {
+
+// Poll the OS cursor + left button and map into the HUD coord space. The plugin runs inside the
+// game process, so Win32 gives us the cursor directly (the IPlugin mouse slot doesn't carry it).
+// Cursor is client-relative to the focused (game) window, scaled by client size -> coord space.
+static void poll_mouse(MouseState& m, float coordW, float coordH) {
+    POINT p;
+    if (!GetCursorPos(&p)) { m.clicked = false; return; }
+    HWND hw = GetForegroundWindow();
+    if (hw) {
+        POINT cp = p; ScreenToClient(hw, &cp);
+        RECT rc;
+        if (GetClientRect(hw, &rc)) {
+            float ww = (float)(rc.right - rc.left), wh = (float)(rc.bottom - rc.top);
+            if (ww > 1.0f && wh > 1.0f) { m.x = (float)cp.x * coordW / ww; m.y = (float)cp.y * coordH / wh; }
+        }
+    }
+    bool down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+    m.clicked = down && !m.down;   // press edge = one-shot click
+    m.down    = down;
+}
 
 Hud::Hud()  { add_default(); }   // show the fioles even before a layout is applied
 Hud::~Hud() { clear_widgets(); }
@@ -123,6 +144,11 @@ void Hud::render(u32 dev) {
     }
     fonts_.get(0, 0);          // register the default slot so ensure_all builds it this frame
     fonts_.ensure_all(dev);
+    if (ui_config().skinTheme != skinIdx_) set_skin(ui_config().skinTheme);   // config page changed the theme
+    if (ui_config().partyScale != lastPartyScale_) {                          // config "Font Size" changed
+        lastPartyScale_ = ui_config().partyScale;
+        place_widgets();   // re-measure + re-anchor so boxes grow/shrink IN PLACE (anchor stays put)
+    }
     if (!skin_.ready()) skin_.load(dev, window_theme_name(skinIdx_));   // FFXI window skin (lazy ; rebuilds after a device loss / theme change)
 
     // ONE poll of live game memory for the WHOLE frame -> the shared snapshot every widget
@@ -144,6 +170,8 @@ void Hud::render(u32 dev) {
     f.t     = (float)(GetTickCount() % 1000000) / 1000.0f;
     f.game  = &state_;            // the per-frame snapshot widgets read from
     f.skin  = &skin_;             // the shared FFXI window skin (9-slice chrome)
+    poll_mouse(mouse_, screenW_, screenH_);   // cursor + click for this frame
+    f.mouse = &mouse_;
 
     // ONE state block around ALL our drawing: save the game's render state, set ours,
     // restore afterwards (else we corrupt the game's own rendering). Retained widgets
@@ -172,6 +200,7 @@ void Hud::set_skin(int idx) {
     int n = window_theme_count();
     if (idx < 0) idx = 0; if (idx >= n) idx = n - 1;
     skinIdx_ = idx;
+    ui_config().skinTheme = idx;     // keep the config page + //aio menu in sync
     skin_.dispose();
 }
 

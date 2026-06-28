@@ -22,6 +22,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 #include <windows.h>
 
 // RE: scan all readable memory for a byte pattern and log every hit + its context.
@@ -355,6 +356,29 @@ void aio_plugin_packet_in(u32 a, u32 b, u32 c, u32 d)
     }
 }
 
+// slot 13 : MOUSE (eventtype, x, y, delta, blocked). eventtype 0=move 1=Ldown 2=Lup (Windower).
+// Returns the "blocked" flag : 1 swallows the event so the GAME doesn't react to it. We block ALL
+// mouse while the config overlay is up (cursor is read separately via Win32 GetCursorPos).
+static int g_mouse_probe = 0;
+unsigned int aio_plugin_mouse(u32 eventtype, u32 x, u32 y, u32 delta, u32 blocked)
+{
+    if (g_mouse_probe) {
+        static int cnt = 0;
+        if (cnt < 500) { ++cnt; debug::log("MOUSE et=%u x=%d y=%d d=%d blocked=%u", eventtype, (int)x, (int)y, (int)delta, blocked); }
+    }
+    // Block until the button is RELEASED. If a DOWN is swallowed while the overlay is up, keep
+    // swallowing (move + the matching UP) even after it closes -- otherwise the game gets a lone UP
+    // (or a dangling DOWN) from the closing click and the character sticks in move/look.
+    static bool held = false;                  // a press began while we were blocking
+    const bool open = g_hud.config().is_open();
+    if (open || held) {
+        if (eventtype == 1) held = true;       // Ldown swallowed -> latch
+        else if (eventtype == 2) held = false; // Lup -> release the latch (this up is still swallowed)
+        return 1u;                             // swallow
+    }
+    return blocked;                            // otherwise pass the chain's current state through
+}
+
 void aio_plugin_unload()
 {
     g_hud.dispose();
@@ -385,12 +409,66 @@ void aio_plugin_command(const char* cmd)
         return;
     }
 
+    // //aio dist -> probe each party member's ENTITY position vs the player, to calibrate the
+    // entity position offsets + verify the distance for the "out of cast range" grey-out.
+    if (strstr(buf, "dist")) {
+        u32 lc = (u32)GetModuleHandleA("LuaCore.dll");
+        u32 g = 0; if (lc) safe_read(lc + 0x1C8400, &g);
+        u32 ent = 0, pl = 0;
+        if (valid_ptr(g)) { safe_read(g + 0x24, &ent); safe_read(g + 0x3C, &pl); }
+        debug::log("DIST g=%08X ent=%08X pl=%08X  (my id=%08X)", g, ent, pl, aio::party().count ? aio::party().m[0].id : 0);
+        // dump the g struct pointers -> spot the real entity array + player entity
+        if (valid_ptr(g)) for (int o = 0; o < 0x80; o += 4) { u32 v = 0; safe_read(g + o, &v); debug::log("  g+0x%02X = %08X%s", o, v, valid_ptr(v) ? " *" : ""); }
+        // hexdump the candidate player entity -> find the name 'Tetsouo', the server id, and the position floats
+        if (valid_ptr(pl)) debug::hexdump("pl", pl, 0x100);
+        // CHAIN: party-struct (id @+0x00, entity index @+0x04) -> ent[index] = position object
+        // (X @+0x04, Y @+0x08, Z @+0x0C). Compute distance player<->member on both planes (XZ/XY).
+        u32 plIdx = 0; if (valid_ptr(pl)) safe_read(pl + 0x04, &plIdx);
+        float px = 0, py = 0, pz = 0;
+        if (valid_ptr(ent) && plIdx < 0x900) { u32 p = 0; safe_read(ent + plIdx * 4, &p);
+            if (valid_ptr(p)) { u32 a = 0, b = 0, c = 0; safe_read(p + 4, &a); safe_read(p + 8, &b); safe_read(p + 0xC, &c);
+                px = *(float*)&a; py = *(float*)&b; pz = *(float*)&c; } }
+        debug::log("player idx=%u (0x%X) pos x=%d y=%d z=%d (cm)", plIdx, plIdx, (int)(px * 100), (int)(py * 100), (int)(pz * 100));
+        // The party-MEMORY array (g+0x248 -> -4, stride 0x7C) holds all members. Dump each member's
+        // 0x7C struct -> find the ENTITY INDEX field (the player's is 0x43F = 1087, shown above).
+        u32 pbase4 = 0, pbase = 0; if (valid_ptr(g)) { safe_read(g + 0x248, &pbase4); pbase = pbase4 - 4; }
+        debug::log("party-mem base=%08X (look for 043F = player entity index)", pbase);
+        for (int i = 0; i < 6; ++i) {
+            u32 mb = pbase + (u32)i * 0x7C; u32 sid = 0; safe_read(mb + 0x1C, &sid); if (!sid) continue;
+            char nm[10] = {0}; for (int j = 0; j < 9; ++j) { u32 c = 0; safe_read(mb + 0x0A + j, &c); nm[j] = (char)(c & 0xFF); }
+            debug::log(" member[%d] sid=%08X name='%s'", i, sid, nm);
+            debug::hexdump("  mb", mb, 0x7C);
+        }
+        // distance via party-mem +0x20 (entity index) -> ent[idx] position object -> X/Z floats
+        for (int i = 0; i < 6; ++i) {
+            u32 mb = pbase + (u32)i * 0x7C; u32 sid = 0; safe_read(mb + 0x1C, &sid); if (!sid) continue;
+            u32 idx = 0; safe_read(mb + 0x20, &idx); idx &= 0xFFFF;
+            char nm[10] = {0}; for (int j = 0; j < 9; ++j) { u32 c = 0; safe_read(mb + 0x0A + j, &c); nm[j] = (char)(c & 0xFF); }
+            float mx = 0, my = 0, mz = 0;
+            if (valid_ptr(ent) && idx < 0x900) { u32 p = 0; safe_read(ent + idx * 4, &p);
+                if (valid_ptr(p)) { u32 a = 0, b = 0, c = 0; safe_read(p + 4, &a); safe_read(p + 8, &b); safe_read(p + 0xC, &c);
+                    mx = *(float*)&a; my = *(float*)&b; mz = *(float*)&c; } }
+            float dx = mx - px, dy = my - py, dz = mz - pz;
+            debug::log(" DIST %-12s idx=0x%X x=%d y=%d z=%d  dXZ=%d dXY=%d cm", nm, idx,
+                       (int)(mx * 100), (int)(my * 100), (int)(mz * 100),
+                       (int)(sqrtf(dx * dx + dz * dz) * 100), (int)(sqrtf(dx * dx + dy * dy) * 100));
+        }
+        g_host.console().print(">>> dist struct dump -> aiohud_debug.log <<<");
+        return;
+    }
+
     // //aio config -> toggle the full-screen configuration overlay. "config N" = select tab N (1..3).
     if (strstr(buf, "config")) {
         const char* cp = strstr(buf, "config") + 6; while (*cp == ' ') ++cp;
         if (*cp >= '1' && *cp <= '3') { g_hud.config().set_tab(atoi(cp) - 1); g_hud.config().set_open(true); }
         else                          g_hud.config().toggle();
         g_host.console().print(g_hud.config().is_open() ? ">>> config OPEN <<<" : ">>> config closed <<<");
+        return;
+    }
+    if (strstr(buf, "mouse")) {                           // toggle the mouse-slot probe (decode a/b/c)
+        g_mouse_probe = !g_mouse_probe;
+        if (g_mouse_probe) debug::log("MOUSE-PROBE ON. Move to TOP-LEFT, then BOTTOM-RIGHT, then LEFT-CLICK & RIGHT-CLICK.");
+        g_host.console().print(g_mouse_probe ? ">>> mouse-probe ON -> aiohud_debug.log <<<" : ">>> mouse-probe OFF <<<");
         return;
     }
 

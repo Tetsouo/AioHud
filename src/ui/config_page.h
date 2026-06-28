@@ -12,8 +12,8 @@ namespace aio {
 
 class ConfigPage {
 public:
-    void toggle()         { open_ = !open_; }
-    void set_open(bool o) { open_ = o; }
+    void toggle()         { open_ = !open_; if (open_) anim_ = 0.0f; }
+    void set_open(bool o) { if (o && !open_) anim_ = 0.0f; open_ = o; }
     bool is_open() const  { return open_; }
     void set_tab(int t);
     void set_section(int s);
@@ -22,9 +22,14 @@ public:
     void draw(const Frame& f, float sw, float sh);
 
 private:
-    bool open_    = false;
-    int  tab_     = 0;   // 0 = Configuration, 1 = Profil, 2 = Help
-    int  section_ = 0;   // Configuration sidebar : 0 = Party/Alliance (more later)
+    bool  open_    = false;
+    int   tab_     = 0;       // 0 = Configuration, 1 = Profil, 2 = Help
+    int   section_ = 0;       // Configuration sidebar : 0 = Party/Alliance (more later)
+    // animation state (driven by the frame clock)
+    float anim_     = 0.0f;   // open progress 0..1 (eased) -> fade in
+    float lastT_    = -1.0f;  // previous frame time, for dt
+    float tabSlide_ = -1.0f;  // interpolated x of the sliding active-tab indicator
+    float hov_[3]   = { 0.0f, 0.0f, 0.0f };   // eased hover amount per tab
 };
 
 } // namespace aio

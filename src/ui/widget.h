@@ -17,6 +17,10 @@ namespace aio { class Font; class FontManager; struct GameState; struct WindowSk
 
 namespace aio {
 
+// cursor state for the frame, in the HUD coord space (polled via Win32, not the game). `clicked`
+// is the press EDGE (down this frame, up last frame) -> a one-shot left-click.
+struct MouseState { float x = 0.0f, y = 0.0f; bool down = false; bool clicked = false; };
+
 // per-frame context handed to every widget. Everything is drawn in DIRECT D3D8 inside
 // the HUD's render block: graphics via gfx/draw.h, text via the shared `font` atlas
 // (gfx/font.h) -> text composites on top of the widget's own graphics.
@@ -27,6 +31,7 @@ struct Frame {
     float t    = 0.0f;       // seconds (wrapping) for animation
     const GameState* game = nullptr;   // per-frame snapshot of live game data (poll_game_state) -> read, never poll memory in draw()
     const WindowSkin* skin = nullptr;  // FFXI 9-slice window skin (shared) -> draw_window() for native box chrome
+    const MouseState* mouse = nullptr; // cursor + left-click for this frame (Win32-polled)
 };
 
 class Widget {

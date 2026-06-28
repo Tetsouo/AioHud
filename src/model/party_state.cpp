@@ -5,6 +5,7 @@
 #include "windower_debug.h"
 #include <windows.h>
 #include <cstring>
+#include <math.h>
 
 namespace aio {
 
@@ -163,13 +164,25 @@ void PartyState::load() {
 // the local buffer (no further guarded reads -> one SEH frame instead of ~25 per member). The
 // SINGLE source of truth for the member-array offsets, shared by the party and alliance loops.
 // Returns false on an unmapped block or an empty slot (id == 0).
-static bool read_member(u32 mb, PMember& pm) {
+// `ent` = entity (position-object) array (g+0x24) ; (px,pz) = the player's horizontal position.
+// The member's entity index lives at member+0x20 ; ent[idx] is a position object with X @+0x04,
+// Z @+0x0C (Y @+0x08 = height, ignored). dist = horizontal distance to the player (yalms).
+static bool read_member(u32 mb, PMember& pm, u32 ent, float px, float pz) {
     unsigned char b[0x7C];
     __try { memcpy(b, (const void*)mb, sizeof(b)); }
     __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
     const u32 id = *(const u32*)(b + 0x1C);
     if (!id) return false;                                  // empty slot
     pm = PMember();
+    u32 idx = *(const unsigned short*)(b + 0x20);           // entity index
+    if (ent && idx && idx < 0x900) {
+        u32 p = 0;
+        if (safe_read(ent + idx * 4, &p) && valid_ptr(p)) {
+            u32 a = 0, c = 0; safe_read(p + 0x04, &a); safe_read(p + 0x0C, &c);
+            float mx = *(float*)&a, mz = *(float*)&c;
+            if (mx != 0.0f || mz != 0.0f) { float dx = mx - px, dz = mz - pz; pm.dist = sqrtf(dx * dx + dz * dz); }
+        }
+    }
     pm.id = id;
     int k = 0; for (; k < 18 && b[0x0A + k]; ++k) pm.name[k] = (char)b[0x0A + k];
     pm.name[k] = 0;
@@ -199,6 +212,14 @@ void PartyState::load_from_memory() {
         else return;                                       // unrecognised -> don't trust it
     }
 
+    // Entity position-object array (g+0x24) + the player's own horizontal position (member+0x20 =
+    // entity index -> ent[idx] -> X @+0x04, Z @+0x0C). Used to fill each member's distance (yalms).
+    u32 ent = 0; safe_read(g + 0x24, &ent);
+    float px = 0.0f, pz = 0.0f;
+    { u32 pidx = 0; safe_read(base + 0x20, &pidx); pidx &= 0xFFFF;
+      if (valid_ptr(ent) && pidx && pidx < 0x900) { u32 p = 0;
+        if (safe_read(ent + pidx * 4, &p) && valid_ptr(p)) { u32 a = 0, c = 0; safe_read(p + 0x04, &a); safe_read(p + 0x0C, &c); px = *(float*)&a; pz = *(float*)&c; } } }
+
     // ACTIVE member count = allianceinfo+0x13 (party-1 count). The member-array slots are NOT
     // cleared when a trust is dismissed (their id/HP linger), so the id!=0 scan over-reports
     // ghosts. Only the first `wantN` slots are live (verified in-game: 6 with trusts, 1 after
@@ -208,7 +229,7 @@ void PartyState::load_from_memory() {
 
     int n = 0;
     for (int i = 0; i < wantN; ++i)                        // only the first `wantN` ACTIVE slots
-        if (read_member(base + i * 0x7C, m[n])) ++n;
+        if (read_member(base + i * 0x7C, m[n], ent, px, pz)) ++n;
     count = n;                                             // n reflects the live roster (trust in/out)
 
     // --- Alliance parties 2 & 3 : member-array slots 6..11 and 12..17. Live counts at
@@ -226,7 +247,7 @@ void PartyState::load_from_memory() {
         if (cnt < 1) cnt = 6; if (cnt > 6) cnt = 6;           // gate already proved the party exists -> default to a full scan
         int an = 0;
         for (int i = 0; i < cnt; ++i)
-            if (read_member(base + (6 + ap * 6 + i) * 0x7C, alli_[ap * 6 + an])) ++an;
+            if (read_member(base + (6 + ap * 6 + i) * 0x7C, alli_[ap * 6 + an], ent, px, pz)) ++an;
         alliN_[ap] = an;
     }
 }
