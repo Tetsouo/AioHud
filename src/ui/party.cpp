@@ -3,6 +3,7 @@
 #include "gfx/draw.h"
 #include "gfx/font.h"
 #include "gfx/texture.h"
+#include "gfx/window.h"
 #include "io/json.h"
 #include "model/party_state.h"
 #include "model/game_mem.h"
@@ -471,14 +472,14 @@ void Party::draw(const Frame& f) {
     const float H   = rowpit * 6 + 2 * pad;   // box ALWAYS full 6-row height (fixed), even solo
     // Vertical stacking : the main party box publishes its top Y ; alliance boxes ignore their
     // authored Y and stack UPWARD from just above the floating cost/next action box. The two
-    // alliances are joined (alliance1 flush on the cost box) and separated by ONE wide band
-    // `sepH` with a bright divider -> reads clearly as two distinct alliances.
-    const float sepH = snap(7.0f * S);                     // wide separator between the two alliance boxes
+    // alliances stack FLUSH (border against border, no gap) -> sepH = 0.
+    const float sepH = 0.0f;                               // no separator between the two alliance boxes
     if (tier_ == 0) { g_partyTopY = oy; g_partyTopReady = true; }
     else if (g_partyTopReady) {
         const float fsC      = nameSz_ * S;
         const float costBoxH = 2.0f * fsC + 10.0f * S;     // reserve the 2-line cost/next box (its max height)
-        oy = snap(g_partyTopY - costBoxH - (float)tier_ * H - (float)(tier_ - 1) * sepH);
+        const float allLift  = snap(12.0f * S);            // raise the alliance stack a bit above the cost box
+        oy = snap(g_partyTopY - costBoxH - (float)tier_ * H - (float)(tier_ - 1) * sepH - allLift);
     }
     const float cx  = px + pad + inset;
     const float gx0 = px + w - pad - inset - (3 * gw + 2 * ggap);
@@ -549,32 +550,26 @@ void Party::draw(const Frame& f) {
 
     // ---------- graphics : box chrome ----------
     setup_color_state(dev);
-    grad_quad(dev, px - 1, oy - 1, w + 2, H + 2, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF);  // outer glow edge
-    vgrad(dev, px, oy, w, H, 0xFF232E54, 0xFF080B1A);            // deeper opaque main fill
-    vgrad(dev, px, oy, w, 3 * S, 0x4DBFD8FF, 0x00BFD8FF);        // top sheen
-    vgrad(dev, px, oy + H - 4 * S, w, 4 * S, 0x00000000, 0x40000000);   // bottom vignette
-
-    // wide divider in the gap BELOW the upper alliance box (tier 2) -> the two alliances read
-    // as joined-but-distinct. FULL box width, drawn with the box's own palette (blue glow frame
-    // + recessed navy fill + cyan sheen line) so it stays in theme. Only tier 2 reaches here, and
-    // only when both alliances are up.
-    if (tier_ == 2) {
-        const float bandY = oy + H;                                          // separator band = the sepH gap under this box
-        grad_quad(dev, px - 1, bandY - 1, w + 2, sepH + 2, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF);  // glow frame (box edge colour)
-        vgrad(dev, px, bandY, w, sepH, 0xFF161D33, 0xFF080B1A);              // recessed navy fill (theme), reads as a seam
-        const float lh = snap(1.0f * S);
-        const float ly = snap(bandY + (sepH - lh) * 0.5f);
-        grad_quad(dev, px, ly, w, lh, 0x80BFD8FF, 0x80BFD8FF, 0x80BFD8FF, 0x80BFD8FF);  // cyan sheen centre line, FULL width
+    if (f.skin && f.skin->ready()) {                            // FFXI native window skin (9-slice)
+        draw_window(dev, *f.skin, px, oy, w, H, 0xFFFFFFFF, S);
+    } else {                                                    // fallback : the built-in navy chrome
+        grad_quad(dev, px - 1, oy - 1, w + 2, H + 2, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF);  // outer glow edge
+        vgrad(dev, px, oy, w, H, 0xFF232E54, 0xFF080B1A);            // deeper opaque main fill
+        vgrad(dev, px, oy, w, 3 * S, 0x4DBFD8FF, 0x00BFD8FF);        // top sheen
+        vgrad(dev, px, oy + H - 4 * S, w, 4 * S, 0x00000000, 0x40000000);   // bottom vignette
     }
+
+    // (the wide divider band between the two alliance boxes was removed -- they now stack flush.)
 
 
     // ---------- per-row : zebra background + badge + animated gauges ----------
     for (int i = 0; i < n; ++i) {
         const Row& r = rows[i];
         const float ry = oy + pad + i * rowpit;
-        // FULL row background, alternating shades like Excel cells -> each member is a distinct filled cell.
-        const u32 cellc = (i & 1) ? 0x99101A2Eu : 0x99223256u;
-        vgrad(dev, px + 1, ry, w - 2, rowpit, cellc, cellc);
+        // FULL row background, alternating shades (Excel cells). DISABLED for now (kept for later) --
+        // toggle kRowCells to re-enable. It was hiding the FFXI window-skin background.
+        static const bool kRowCells = false;
+        if (kRowCells) { const u32 cellc = (i & 1) ? 0x99101A2Eu : 0x99223256u; vgrad(dev, px + 1, ry, w - 2, rowpit, cellc, cellc); }
         if (r.offzone) continue;                       // out of zone : no badge, no vitals/gauges
         // badge : NOT affected by the selection zoom (only the name zooms) ; dark inner then 4 border edges.
         const float iby = snap(ry + badgeYoff);
@@ -814,11 +809,15 @@ void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy
         const float bw2 = line1W > line2W ? line1W : line2W;
         const float bh2 = fs + 2.0f * pdy + (info2 ? fs + lineGap : 0.0f);   // grow for the recast line
         const float bx2 = snap(px + w - bw2);              // right edge aligned with the party box
-        const float by2 = snap(oy - bh2 - 2);             // sit ON the party : its glow meets the party glow, never bites the margin
+        const float by2 = snap(oy - bh2);                 // bottom edge flush on the party's top edge (borders meet -> reads as one window)
         setup_color_state(dev);
-        grad_quad(dev, bx2 - 1, by2 - 1, bw2 + 2, bh2 + 2, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF);  // outer glow
-        vgrad(dev, bx2, by2, bw2, bh2, 0xF0232E54, 0xF0080B1A);          // dark fill
-        vgrad(dev, bx2, by2, bw2, 3 * S, 0x4DBFD8FF, 0x00BFD8FF);        // top sheen
+        if (f.skin && f.skin->ready()) {                                 // FFXI window skin, open at the bottom -> merges with the party's top edge
+            draw_window(dev, *f.skin, bx2, by2, bw2, bh2, 0xFFFFFFFF, S, true);
+        } else {                                                         // fallback : built-in navy chrome
+            grad_quad(dev, bx2 - 1, by2 - 1, bw2 + 2, bh2 + 2, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF);  // outer glow
+            vgrad(dev, bx2, by2, bw2, bh2, 0xF0232E54, 0xF0080B1A);          // dark fill
+            vgrad(dev, bx2, by2, bw2, 3 * S, 0x4DBFD8FF, 0x00BFD8FF);        // top sheen
+        }
         fName->begin(dev);
         const float ty  = by2 + pdy + fs * 0.5f;                                   // top line center (== box center when single-line)
         fName->draw_lc(dev, bx2 + pdx, ty, nm, fs, 0xFFFFD970, nSTK, nOWf);                          // action name (gold)

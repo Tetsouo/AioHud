@@ -118,10 +118,12 @@ void Hud::render(u32 dev) {
         if (last_dev_) windower::debug::log("DEV CHANGED %08X -> %08X (rebuild)", last_dev_, dev);
         last_dev_ = dev;
         fonts_.on_device_lost();
+        skin_.on_device_lost();
         for (size_t i = 0; i < widgets_.size(); ++i) widgets_[i]->on_device_lost();
     }
     fonts_.get(0, 0);          // register the default slot so ensure_all builds it this frame
     fonts_.ensure_all(dev);
+    if (!skin_.ready()) skin_.load(dev, window_theme_name(skinIdx_));   // FFXI window skin (lazy ; rebuilds after a device loss / theme change)
 
     // ONE poll of live game memory for the WHOLE frame -> the shared snapshot every widget
     // draws from (player vitals/jobs, target, leaders, action menu). Read each pointer-chain
@@ -141,6 +143,7 @@ void Hud::render(u32 dev) {
     f.font  = fonts_.get(0, 0);   // the default atlas (global face/weight) for non-party widgets
     f.t     = (float)(GetTickCount() % 1000000) / 1000.0f;
     f.game  = &state_;            // the per-frame snapshot widgets read from
+    f.skin  = &skin_;             // the shared FFXI window skin (9-slice chrome)
 
     // ONE state block around ALL our drawing: save the game's render state, set ours,
     // restore afterwards (else we corrupt the game's own rendering). Retained widgets
@@ -159,6 +162,16 @@ void Hud::dispose() {
     for (size_t i = 0; i < widgets_.size(); ++i) widgets_[i]->dispose();
     clear_widgets();
     fonts_.dispose();
+    skin_.dispose();
+}
+
+// switch the window skin theme (0-based). Release the current textures -> render() lazily reloads
+// the new theme next frame (keeps all GPU work on the render thread).
+void Hud::set_skin(int idx) {
+    int n = window_theme_count();
+    if (idx < 0) idx = 0; if (idx >= n) idx = n - 1;
+    skinIdx_ = idx;
+    skin_.dispose();
 }
 
 } // namespace aio

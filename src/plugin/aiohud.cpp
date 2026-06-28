@@ -688,7 +688,15 @@ void aio_plugin_command(const char* cmd)
         g_host.console().print(">>> recast -> aiohud_debug.log (hover an ON-RECAST JA and tell me the in-game Next) <<<");
         return;
     }
-    if (strstr(buf, "menu")) {                            // RE the action menu for a ZERO-TAP magic/ability identifier
+    if (strstr(buf, "menu")) {                            // "//aio menu N" -> switch window skin ; bare "//aio menu" -> RE probe
+        const char* mp = strstr(buf, "menu") + 4; while (*mp == ' ') ++mp;
+        if (*mp >= '0' && *mp <= '9') {                   // //aio menu N : select the N-th window theme (1-based)
+            g_hud.set_skin(atoi(mp) - 1);
+            const char* tn = aio::window_theme_name(g_hud.skin_index());
+            char msg[96]; wsprintfA(msg, ">>> window skin -> %d/%d : %s <<<", g_hud.skin_index() + 1, aio::window_theme_count(), tn ? tn : "?");
+            g_host.console().print(msg);
+            return;
+        }
         u32 ffm = (u32)GetModuleHandleA("FFXiMain.dll");
         u32 mptr = 0; safe_read(ffm + 0x5EED6C, &mptr);
         u32 def  = 0; if (valid_ptr(mptr)) safe_read(mptr + 0x04, &def);

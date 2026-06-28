@@ -11,7 +11,7 @@ if errorlevel 1 ( echo [build] vcvars failed & exit /b 1 )
 if not exist "%ROOT%build" mkdir "%ROOT%build"
 
 cl /nologo /LD /O2 /MT /EHsc- /I"%ROOT%include" /I"%ROOT%src" ^
-   "%ROOT%src\gfx\noise.cpp" "%ROOT%src\gfx\draw.cpp" "%ROOT%src\gfx\texture.cpp" "%ROOT%src\gfx\font.cpp" ^
+   "%ROOT%src\gfx\noise.cpp" "%ROOT%src\gfx\draw.cpp" "%ROOT%src\gfx\texture.cpp" "%ROOT%src\gfx\font.cpp" "%ROOT%src\gfx\window.cpp" ^
    "%ROOT%src\model\layout.cpp" "%ROOT%src\model\party_state.cpp" "%ROOT%src\model\game_mem.cpp" "%ROOT%src\model\zones.cpp" ^
    "%ROOT%src\ui\palette.cpp" "%ROOT%src\ui\liquid_bars.cpp" "%ROOT%src\ui\party.cpp" "%ROOT%src\ui\factory.cpp" "%ROOT%src\ui\hud.cpp" ^
    "%ROOT%src\plugin\aiohud.cpp" ^

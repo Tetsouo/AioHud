@@ -13,6 +13,7 @@
 #include <string>
 #include "gfx/d3d.h"
 #include "gfx/font.h"
+#include "gfx/window.h"
 #include "model/gamestate.h"
 #include "model/layout.h"
 #include "ui/widget.h"
@@ -39,6 +40,9 @@ public:
 
     GameState&  state() { return state_; }
     LiquidBars* bars()  { return bars_; }   // the HP/MP/TP fioles (may be null before layout)
+    // switch the FFXI window skin (0-based index into window_theme_name) ; reloaded next frame.
+    void set_skin(int idx);
+    int  skin_index() const { return skinIdx_; }
     float screenW() const { return screenW_; }   // resolution detected at RENDER time (reliable)
     float screenH() const { return screenH_; }
 
@@ -50,6 +54,8 @@ private:
 
     GameState            state_;
     FontManager          fonts_;                   // atlas cache (default + per-text faces/weights)
+    WindowSkin           skin_;                    // FFXI 9-slice window skin (loaded lazily)
+    int                  skinIdx_ = 0;             // index into window_theme_name() (//aio menu N)
     std::vector<Widget*> widgets_;                 // OWNED ; deleted on rebuild / dispose
     LiquidBars*          bars_ = nullptr;          // cached (PlayerHub vitals) for //aio lay
     Layout               layout_;                  // last loaded descriptor (kept for re-placement on resize)

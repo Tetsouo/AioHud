@@ -346,6 +346,7 @@ void LiquidBars::dispose()
 
 void LiquidBars::draw(const Frame& f)
 {
+    return;                                 // HIDDEN for now (set aside, not deleted) -- remove this line to re-enable
     if (!visible_) return;                  // honour the descriptor's manual hide
     u32 dev = f.dev; float t = f.t;
     if (!tex_[0] || !tex_[1] || !tex_[2]) return;
