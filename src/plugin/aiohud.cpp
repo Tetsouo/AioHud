@@ -385,6 +385,15 @@ void aio_plugin_command(const char* cmd)
         return;
     }
 
+    // //aio config -> toggle the full-screen configuration overlay. "config N" = select tab N (1..3).
+    if (strstr(buf, "config")) {
+        const char* cp = strstr(buf, "config") + 6; while (*cp == ' ') ++cp;
+        if (*cp >= '1' && *cp <= '3') { g_hud.config().set_tab(atoi(cp) - 1); g_hud.config().set_open(true); }
+        else                          g_hud.config().toggle();
+        g_host.console().print(g_hud.config().is_open() ? ">>> config OPEN <<<" : ">>> config closed <<<");
+        return;
+    }
+
     // //aio layout -> load design/exports/layout.json, log the widgets, and save a round-trip copy.
     // (checked BEFORE "lay" because "layout" contains "lay".)
     if (strstr(buf, "layout")) {

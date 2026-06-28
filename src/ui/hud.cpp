@@ -151,6 +151,7 @@ void Hud::render(u32 dev) {
     u32 tok = dCreateSB(dev, D3DSBT_ALL);
     __try {
         for (size_t i = 0; i < widgets_.size(); ++i) widgets_[i]->draw(f);
+        config_.draw(f, screenW_, screenH_);   // full-screen config overlay, on top of everything
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         static bool logged = false;
         if (!logged) { logged = true; windower::debug::log("HUD draw threw (SEH)"); }

@@ -18,6 +18,7 @@
 #include "model/layout.h"
 #include "ui/widget.h"
 #include "ui/liquid_bars.h"
+#include "ui/config_page.h"
 
 namespace aio {
 
@@ -43,6 +44,7 @@ public:
     // switch the FFXI window skin (0-based index into window_theme_name) ; reloaded next frame.
     void set_skin(int idx);
     int  skin_index() const { return skinIdx_; }
+    ConfigPage& config() { return config_; }   // the //aio config overlay
     float screenW() const { return screenW_; }   // resolution detected at RENDER time (reliable)
     float screenH() const { return screenH_; }
 
@@ -56,6 +58,7 @@ private:
     FontManager          fonts_;                   // atlas cache (default + per-text faces/weights)
     WindowSkin           skin_;                    // FFXI 9-slice window skin (loaded lazily)
     int                  skinIdx_ = 0;             // index into window_theme_name() (//aio menu N)
+    ConfigPage           config_;                  // full-screen config overlay (//aio config)
     std::vector<Widget*> widgets_;                 // OWNED ; deleted on rebuild / dispose
     LiquidBars*          bars_ = nullptr;          // cached (PlayerHub vitals) for //aio lay
     Layout               layout_;                  // last loaded descriptor (kept for re-placement on resize)
