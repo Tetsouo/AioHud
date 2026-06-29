@@ -493,10 +493,10 @@ void Party::draw(const Frame& f) {
     if (n <= 0) return;                           // nothing to show (e.g. an alliance box outside demo)
 
     const float S = scale_ * BOOST * ui_config().box[tier_].scale;   // per-box size (config Font Size / edit-mode wheel)
-    // editLike = edit mode OR a //aio demo command. Both are PREVIEWS, so both must show the REAL
-    // configured layout (full footprint, cost box, full bars) -- NOT the live adaptive shrink / mask /
-    // Set-Ref growth that hugs the native UI in-game (there's no native UI to hug in a preview).
-    const bool editLike = ui_config().editLayout || party_demo_level() > 0;
+    // Live, //aio demo AND edit layout all share the SAME height + spacing (adaptive shrink, mask band,
+    // Set-Ref growth, even member distribution) -> demo + edit are faithful PREVIEWS of the real in-game
+    // party : the member spacing you tune live shows up identically everywhere, and you arrange the box
+    // exactly where it will really sit. (Drag/snap operate on this real rect via boxOy/boxH below.)
     // Snap ALL box geometry to whole pixels so EVERY row sits at an identical pixel phase ->
     // the 1px borders (badge / selection frame) are crisp on every row, never blurred or
     // "truncated" on some rows (which happens with a fractional row pitch).
@@ -526,35 +526,41 @@ void Party::draw(const Frame& f) {
     }
     else if (!posSet && g_partyTopReady) {                 // alliances stack on the party ONLY when not user-placed
         const float fsC      = nameSz_ * S;
-        const float costBoxH = 2.0f * fsC + 10.0f * S;     // reserve the 2-line cost/next box (its max height)
+        const float costBoxH = 2.0f * fsC + 20.0f * S;     // reserve the 2-line cost/next box (2 lines + padding + the 10px top space ; keep == costH below)
         const float allLift  = snap(24.0f * S);            // raise the alliance stack above the cost box
         oy = snap(g_partyTopY - costBoxH - (float)tier_ * H - (float)(tier_ - 1) * sepH - allLift);
     }
 
+    const float placedOy = oy;   // box top AS PLACED (config / alliance stack), before the mask / solo / Set-Ref grow-up -> lets a drag convert the visual cluster back to a stored position
     // PARTY (tier 0) : BOTTOM-anchored (the bottom-right stays exactly where you place/drag it) and the
     // box GROWS UPWARD. First shrink to n rows (members at the top, bottom fixed)...
-    if (tier_ == 0 && !editLike && n < 6) {
+    if (tier_ == 0 && n < 6) {
         const float Hn = rowpit * (float)n + 2.0f * pad;
         oy += (H - Hn);
         H = Hn;
     }
 
     // height of the Cost/Next box that floats ABOVE the party (tier 0 only) -> used for snap + clamp.
-    const float costH = (tier_ == 0) ? snap(2.0f * nameSz_ * S + 10.0f * S) : 0.0f;
+    const float costH = (tier_ == 0) ? snap(2.0f * nameSz_ * S + 20.0f * S) : 0.0f;   // == draw_action_box bh2 max : 2 lines + padding + the 10px topPad (keep in sync)
 
     // ...then GROW UP by the mask band so the top reaches the game's native block top. Our member rows
     // are BIGGER than the game's, so the band (linear, SHRINKS per member) just tops it up. Calibrated.
     const float MASK_A = 2.0f, MASK_B = -0.24f, MASK_OFF = 2.0f;
-    float maskBand = (tier_ == 0 && !editLike) ? rowpit * (MASK_A + MASK_B * (float)(n - 1)) + MASK_OFF * S : 0.0f;
+    float maskBand = (tier_ == 0) ? rowpit * (MASK_A + MASK_B * (float)(n - 1)) + MASK_OFF * S : 0.0f;
     if (maskBand < 0.0f) maskBand = 0.0f;
     maskBand = snap(maskBand);
-    if (tier_ == 0 && !editLike) { oy -= maskBand; H += maskBand; }   // grow UP, bottom anchored
+    if (tier_ == 0) { oy -= maskBand; H += maskBand; }   // grow UP, bottom anchored
+
+    // Solo (1 member) : add 10px of height at the TOP (grow up, bottom anchored) -- the native solo
+    // block is a touch taller than our single row. This feeds the available space, so the member then
+    // RE-CENTERS in the taller box via the even-distribution below (same mechanism as any count).
+    if (tier_ == 0 && n == 1) { const float bump = snap(10.0f * S); oy -= bump; H += bump; }
 
     // "Set reference" : once you align the box on the native block and lock the reference, lowering the
     // box below it just makes it TALLER (top pinned, bottom follows the placement). delta = how far the
     // box was lowered from the reference Y. LIVE only -- in edit the box stays its raw footprint so the
     // drag/snap/clamp work on a clean rect (the growth would otherwise fight the bottom snap).
-    if (tier_ == 0 && !editLike && ui_config().partyRefY >= 0.0f && ui_config().box[0].posSet && f.screenH > 0.0f) {
+    if (tier_ == 0 && ui_config().partyRefY >= 0.0f && ui_config().box[0].posSet && f.screenH > 0.0f) {
         float delta = snap((ui_config().box[0].y - ui_config().partyRefY) * f.screenH);
         if (delta > 0.0f) { oy -= delta; H += delta; }
     }
@@ -563,23 +569,26 @@ void Party::draw(const Frame& f) {
     // DISTRIBUTE the members across the box : equal top/bottom margins AND equal gaps between members
     // (widen rowpit + shift the row origin so oy+pad+i*rowpit lands them with n+1 identical spaces).
     const float boxOy = oy, boxH = H;
-    if (tier_ == 0 && !editLike && n > 0) {
+    const float maskOff = placedOy - boxOy;   // how much the box grew UP from its placed top (mask + solo + Set-Ref) -> drag store-back removes it so the position round-trips
+    if (tier_ == 0) g_partyTopY = boxOy;   // refine the alliance-stack reference to the REAL party top (after mask / solo bump / Set-Ref) so alliances sit on the actual cost-box top
+    if (tier_ == 0 && n > 0) {
         const float gap = (H - (float)n * rowh) / (float)(n + 1);
         if (gap > 0.0f) { oy += snap(gap) - pad; rowpit = snap(rowh + gap); }
     }
 
     // EDIT MODE : drag this box to reposition it live on the game (stores a fraction-of-screen pos).
+    // The drag operates on the REAL cluster rect (= g_boxRect : party box + the cost box on top, AFTER
+    // mask/solo grow-up), so dragging + snapping line up with what's drawn. The stored position is the
+    // PLACED top (cluster top + costH + maskOff) so it round-trips through the grow-up next frame.
     if (ui_config().editLayout && f.mouse && f.screenW > 0.0f) {
         const MouseState* m = f.mouse;
-        const bool over = m->x >= px && m->x < px + w && m->y >= oy - costH && m->y < oy + H;   // include the cost box above
-        if (m->down && g_dragTier < 0 && over) { g_dragTier = tier_; g_grabDX = m->x - px; g_grabDY = m->y - oy; }
+        const float clX = px, clY = boxOy - costH, clW = w, clH = boxH + costH;   // the published cluster rect (what the user sees / grabs)
+        const bool over = m->x >= clX && m->x < clX + clW && m->y >= clY && m->y < clY + clH;
+        if (m->down && g_dragTier < 0 && over) { g_dragTier = tier_; g_grabDX = m->x - clX; g_grabDY = m->y - clY; }
         if (g_dragTier == tier_) {
             if (m->down) {
-                float npx = m->x - g_grabDX, npy = m->y - g_grabDY;    // raw box top-left (px)
-                // The party CLUSTER's top is the Cost/Next box top (above the party) -> snap on the
-                // EFFECTIVE rect (party box + the cost box on top), not the bare party box.
-                const float topOff = (tier_ == 0) ? costH : 0.0f;
-                float ex = npx, ey = npy - topOff; const float ew = w, eh = H + topOff;
+                float ex = m->x - g_grabDX, ey = m->y - g_grabDY;    // new cluster top-left (px)
+                const float ew = clW, eh = clH;
                 const float SNAP = snap(10.0f);
                 for (int b = 0; b < 3; ++b) {
                     if (b == tier_ || !g_boxRect[b].valid) continue;
@@ -593,13 +602,13 @@ void Party::draw(const Frame& f) {
                     else if (fabsf((ey + eh) - (r.y + r.h)) < SNAP) ey = r.y + r.h - eh;// bottom -> bottom
                     else if (fabsf((ey + eh) - r.y) < SNAP)      ey = r.y - eh;         // bottom -> top
                 }
-                // keep the WHOLE box (effective rect) on screen
+                // keep the WHOLE cluster on screen
                 if (ex > f.screenW - ew) ex = f.screenW - ew; if (ex < 0.0f) ex = 0.0f;
                 if (ey > f.screenH - eh) ey = f.screenH - eh; if (ey < 0.0f) ey = 0.0f;
-                npx = ex; npy = ey + topOff;                           // back to the party box top-left
-                float nx = npx / f.screenW, ny = npy / f.screenH;
+                // cluster top-left -> stored PLACED top : undo costH (party box top) + maskOff (grow-up)
+                const float nx = ex / f.screenW, ny = (ey + costH + maskOff) / f.screenH;
                 ui_config().box[tier_].posSet = true; ui_config().box[tier_].x = nx; ui_config().box[tier_].y = ny;
-                px = snap(nx * f.screenW); oy = snap(ny * f.screenH);   // immediate feedback this frame
+                px = snap(ex);                                         // immediate horizontal feedback (vertical settles next frame, no row/chrome split)
             } else g_dragTier = -1;                                     // released
         }
         // wheel over this box -> resize it (0.5x .. 2.0x)
@@ -611,7 +620,7 @@ void Party::draw(const Frame& f) {
     }
     // store the CLUSTER rect (party box + the cost box above it for tier 0) so other boxes snap to
     // its real top, and the party itself snaps using the cost-box top.
-    g_boxRect[tier_].x = px; g_boxRect[tier_].y = oy - costH; g_boxRect[tier_].w = w; g_boxRect[tier_].h = H + costH; g_boxRect[tier_].valid = true;
+    g_boxRect[tier_].x = px; g_boxRect[tier_].y = boxOy - costH; g_boxRect[tier_].w = w; g_boxRect[tier_].h = boxH + costH; g_boxRect[tier_].valid = true;
     const float cx  = px + pad + inset;
     const float gx0 = px + w - pad - inset - (3 * gw + 2 * ggap);
     // row-invariant column positions (only the row's Y varies) :
@@ -679,13 +688,15 @@ void Party::draw(const Frame& f) {
     const float gSwT = (gPulseT > 0.0f) ? gPulseT : 0.0f;                   // shine sweep phase 0..1 (1.4s cycle)
     const float gSweep = gSwT / 1.4f - (float)(int)(gSwT / 1.4f);
 
-    // ---------- graphics : box chrome ----------
+    // ---------- graphics : box chrome -- background ALWAYS ; the BORDER (frame) is per-box on/off ----------
     setup_color_state(dev);
-    if (f.skin && f.skin->ready()) {                            // FFXI native window skin (9-slice)
-        draw_window(dev, *f.skin, px, boxOy, w, boxH, 0xFFFFFFFF, S);
+    const bool drawBorder = ui_config().border[tier_];
+    if (f.skin && f.skin->ready()) {                            // FFXI native window skin (9-slice) : bg always, frame optional
+        draw_window(dev, *f.skin, px, boxOy, w, boxH, 0xFFFFFFFF, S, false, drawBorder);
     } else {                                                    // fallback : the built-in navy chrome
-        grad_quad(dev, px - 1, boxOy - 1, w + 2, boxH + 2, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF);  // outer glow edge
-        vgrad(dev, px, boxOy, w, boxH, 0xFF232E54, 0xFF080B1A);     // deeper opaque main fill
+        if (drawBorder)
+            grad_quad(dev, px - 1, boxOy - 1, w + 2, boxH + 2, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF);  // outer glow edge (the border)
+        vgrad(dev, px, boxOy, w, boxH, 0xFF232E54, 0xFF080B1A);     // deeper opaque main fill (background)
         vgrad(dev, px, boxOy, w, 3 * S, 0x4DBFD8FF, 0x00BFD8FF);    // top sheen
         vgrad(dev, px, boxOy + boxH - 4 * S, w, 4 * S, 0x00000000, 0x40000000);   // bottom vignette
     }
@@ -935,7 +946,7 @@ void Party::draw(const Frame& f) {
     // ---------- EDIT MODE : draggable outline around this box (brighter when hovered / grabbed) ----------
     if (ui_config().editLayout) {
         setup_color_state(dev);
-        const float oy2 = oy - costH, H2 = H + costH;            // cluster rect (party + cost box above)
+        const float oy2 = boxOy - costH, H2 = boxH + costH;      // cluster rect (party + cost box above) -- the REAL box rect (boxOy), matches g_boxRect + the drag
         const bool drag  = (g_dragTier == tier_);
         const bool hover = f.mouse && f.mouse->x >= px && f.mouse->x < px + w && f.mouse->y >= oy2 && f.mouse->y < oy2 + H2;
         const u32  c = drag ? 0xFFFFD24A : (hover ? 0xFF7EC0FF : 0xAAFFFFFF);   // gold grabbed / blue hover / white idle
@@ -991,9 +1002,10 @@ void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy
         // fixed edges AND the size to integers so every edge is pixel-aligned -> the right edge and
         // bottom never move (not even sub-pixel) as the name length changes.
         const float bw2 = snap(line1W > line2W ? line1W : line2W);
-        const float bh2 = snap(fs + 2.0f * pdy + (info2 ? fs + lineGap : 0.0f));   // grow for the recast line
+        const float topPad = snap(10.0f * S);              // +10px of height at the TOP (box stays attached to the party ; just taller, applies to spell Cost/Next, JA, WS alike)
+        const float bh2 = snap(fs + 2.0f * pdy + (info2 ? fs + lineGap : 0.0f)) + topPad;   // grow for the recast line
         const float rightX = snap(px + w);                 // party right edge (constant)
-        const float botY   = snap(oy);                     // party top edge (constant)
+        const float botY   = snap(oy);                     // party top edge (constant ; bottom stays flush/merged)
         const float bx2 = rightX - bw2;                    // grow left (right edge pinned)
         const float by2 = botY - bh2;                      // grow up   (bottom pinned)
         // info column (Cost / Next / TP) is pinned to the RIGHT edge, NOT placed after the name ->
@@ -1002,15 +1014,17 @@ void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy
         const float infoColX = snap(rightX - pdx - maxInfoW);
         const float nameX    = snap(bx2 + pdx);
         setup_color_state(dev);
+        const bool costBorder = ui_config().borderCost;                  // cost-box border on/off (config page) ; background stays either way
         if (f.skin && f.skin->ready()) {                                 // FFXI window skin, open at the bottom -> merges with the party's top edge
-            draw_window(dev, *f.skin, bx2, by2, bw2, bh2, 0xFFFFFFFF, S, true);
+            draw_window(dev, *f.skin, bx2, by2, bw2, bh2, 0xFFFFFFFF, S, true, costBorder);
         } else {                                                         // fallback : built-in navy chrome
-            grad_quad(dev, bx2 - 1, by2 - 1, bw2 + 2, bh2 + 2, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF);  // outer glow
-            vgrad(dev, bx2, by2, bw2, bh2, 0xF0232E54, 0xF0080B1A);          // dark fill
+            if (costBorder)
+                grad_quad(dev, bx2 - 1, by2 - 1, bw2 + 2, bh2 + 2, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF);  // outer glow (border)
+            vgrad(dev, bx2, by2, bw2, bh2, 0xF0232E54, 0xF0080B1A);          // dark fill (background)
             vgrad(dev, bx2, by2, bw2, 3 * S, 0x4DBFD8FF, 0x00BFD8FF);        // top sheen
         }
         fName->begin(dev);
-        const float ty  = by2 + pdy + fs * 0.5f;                                   // top line center (== box center when single-line)
+        const float ty  = by2 + topPad + pdy + fs * 0.5f;                          // text anchored to the BOTTOM region -> the +topPad is empty space at the top, text doesn't drift
         fName->draw_lc(dev, nameX, ty, nm, fs, 0xFFFFD970, nSTK, nOWf);                              // action name (gold), left
         if (info) fName->draw_lc(dev, infoColX, ty, info, fs, infoCol, nSTK, nOWf);                  // "Cost XX MP" / live TP, right column
         if (info2) {                                                                                 // recast "Next", below, same column as Cost

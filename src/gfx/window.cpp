@@ -29,7 +29,7 @@ static u32 border_from_bg(const char* bgRawPath) {
 // folder names under assets/window (converted from the game DDS by scripts/gen_window_skin.sh).
 // _Bis = the user's modified variants. //aio menu N selects the N-th (1-based).
 static const char* THEMES[] = {
-    "14", "15", "16", "17", "18", "18_Bis", "19", "19_Bis", "20", "20_Bis", "21", "21_Bis",
+    "14", "15", "16", "17", "19", "19_Bis", "20", "20_Bis", "21", "21_Bis",   // 18 + 18_Bis removed (bugged)
 };
 int         window_theme_count()      { return (int)(sizeof(THEMES) / sizeof(THEMES[0])); }
 const char* window_theme_name(int i)  { return (i >= 0 && i < window_theme_count()) ? THEMES[i] : nullptr; }
@@ -52,7 +52,7 @@ void WindowSkin::dispose() {
 
 // 9-slice : tiled bg centre + 4 edges (hframe top/bottom halves, vframe left/right halves, tiled
 // along their length) + 4 corners (the corner sheet's 4 quadrants). All MODULATEd by `tint`.
-void draw_window(u32 dev, const WindowSkin& s, float x, float y, float w, float h, u32 tint, float scale, bool openBottom) {
+void draw_window(u32 dev, const WindowSkin& s, float x, float y, float w, float h, u32 tint, float scale, bool openBottom, bool drawBorder) {
     if (!s.ready() || w <= 0 || h <= 0) return;
     (void)scale;                                   // textures are drawn 1:1 (NATIVE px) and TILED -> no stretch/deformation, like the game
     const float bgT   = 128.0f;                    // bg native tile size
@@ -74,6 +74,8 @@ void draw_window(u32 dev, const WindowSkin& s, float x, float y, float w, float 
     dSetTex(dev, 0, s.bg);
     dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_WRAP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_WRAP);
     tquad(dev, x, y, w, h, 0.0f, w / bgT, 0.0f, h / bgT, tint, tint);
+
+    if (!drawBorder) { dSetTex(dev, 0, 0); return; }   // background only -> skip the frame edges + corners
 
     // BORDERS : paint the texture SHAPE (its alpha = rounded corners + line) in ONE flat colour ->
     // no bevel/gradient, identical on every theme. COLOROP SELECTARG2 = take the DIFFUSE colour ;

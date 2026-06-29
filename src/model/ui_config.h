@@ -19,6 +19,8 @@ struct UiConfig {
     int   fontFace  = 0;       // 0 = layout default ; >0 = override every party/alliance text face
     float buffScale = 0.92f;   // buff-icon size as a FRACTION of the member row height (0.40 .. 1.00, capped at the row)
     BoxLayout box[3];          // 0 = party (+cost), 1 = alliance 1, 2 = alliance 2 (independent)
+    bool  border[3] = { true, true, true };   // per-box window-skin border/chrome on/off (0=party, 1=alliance1, 2=alliance2)
+    bool  borderCost = true;   // the floating Cost MP / Next box border/chrome on/off (independent of the party box)
     bool  editLayout = false;  // layout edit mode : boxes draggable / resizable on the live game
     int   wheel = 0;           // pending wheel steps (mouse slot -> consumed by the hovered box in edit mode)
     float partyRefY = -1.0f;   // party "Set reference" Y (box[0].y when aligned on the native block) ; -1 = unset.

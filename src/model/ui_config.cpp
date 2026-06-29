@@ -15,6 +15,7 @@ void save_ui_config() {
     fprintf(f, "fontFace=%d\n", c.fontFace);
     fprintf(f, "buffScale=%.4f\n", c.buffScale);
     fprintf(f, "partyRefY=%.5f\n", c.partyRefY);
+    fprintf(f, "border=%d,%d,%d,%d\n", c.border[0] ? 1 : 0, c.border[1] ? 1 : 0, c.border[2] ? 1 : 0, c.borderCost ? 1 : 0);
     for (int i = 0; i < 3; ++i)
         fprintf(f, "box%d=%d,%.5f,%.5f,%.4f\n", i, c.box[i].posSet ? 1 : 0, c.box[i].x, c.box[i].y, c.box[i].scale);
     fclose(f);
@@ -25,11 +26,14 @@ void load_ui_config() {
     UiConfig& c = ui_config();
     char line[160];
     while (fgets(line, sizeof(line), f)) {
-        int v, ps, idx; float x, y, s, fv;
+        int v, ps, idx, b0, b1, b2, bc; float x, y, s, fv;
         if      (sscanf(line, "skinTheme=%d", &v) == 1) c.skinTheme = v;
         else if (sscanf(line, "fontFace=%d", &v) == 1)  c.fontFace = v;
         else if (sscanf(line, "buffScale=%f", &fv) == 1) c.buffScale = fv;
         else if (sscanf(line, "partyRefY=%f", &fv) == 1) c.partyRefY = fv;
+        else if (sscanf(line, "border=%d,%d,%d,%d", &b0, &b1, &b2, &bc) == 4) {
+            c.border[0] = (b0 != 0); c.border[1] = (b1 != 0); c.border[2] = (b2 != 0); c.borderCost = (bc != 0);
+        }
         else if (sscanf(line, "box%d=%d,%f,%f,%f", &idx, &ps, &x, &y, &s) == 5 && idx >= 0 && idx < 3) {
             c.box[idx].posSet = (ps != 0); c.box[idx].x = x; c.box[idx].y = y; c.box[idx].scale = s;
         }
@@ -47,6 +51,7 @@ void reset_boxes() {   // edit-mode Default : positions + sizes only
 void reset_ui_config() {   // general Default : everything
     UiConfig& c = ui_config();
     c.skinTheme = 0; c.fontFace = 0; c.buffScale = 0.92f;
+    c.border[0] = c.border[1] = c.border[2] = c.borderCost = true;   // all borders back on
     reset_boxes();   // (also saves)
 }
 

@@ -113,6 +113,80 @@ static int row_selector(u32 dev, Font* fo, const MouseState* mo, bool click,
 }
 static int wrap(int v, int n) { if (v < 0) return n - 1; if (v >= n) return 0; return v; }
 
+// Box Theme row : a big SQUARE live preview of the window skin, flanked by [<] / [>] (centered on the
+// square). Returns -1/+1 on an arrow click. Taller than a normal row -> see THEME_ROW_H for the advance.
+static const float THEME_SQ = 84.0f;                         // square swatch size
+static const float THEME_ROW_H = THEME_SQ + 16.0f;           // row height (caller advances ry by this + gap)
+static int row_theme(u32 dev, Font* fo, const MouseState* mo, bool click,
+                     float x, float y, float w, const char* label, const char* value, const WindowSkin* skin) {
+    const float sq = snap(THEME_SQ), rowH = snap(THEME_ROW_H);
+    flat(dev, x, y + rowH, w, 1, 0x14FFFFFF);
+    fo->begin(dev);
+    fo->draw_lc(dev, x + snap(4.0f), y + rowH * 0.5f, label, snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+
+    const float aS = snap(32.0f), agap = snap(10.0f);
+    const float ctlW = aS + agap + sq + agap + aS;
+    const float cx = x + w - ctlW, cyMid = y + rowH * 0.5f, aY = cyMid - aS * 0.5f;
+    int delta = 0;
+
+    const bool lh = inrect(mo, cx, aY, aS, aS);                                   // left arrow
+    vg(dev, cx, aY, aS, aS, lh ? 0x55FFFFFF : 0x26FFFFFF, lh ? 0x33FFFFFF : 0x12FFFFFF);
+    outline(dev, cx, aY, aS, aS, C_BORDER);
+    fo->begin(dev); fo->draw_c(dev, cx + aS * 0.5f, cyMid, "<", snap(16.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+    if (lh && click) delta = -1;
+
+    const float sx = cx + aS + agap, sy = y + (rowH - sq) * 0.5f;                 // square preview
+    if (skin && skin->ready()) draw_window(dev, *skin, sx, sy, sq, sq, fa(0xFFFFFFFF), 1.0f);
+    else vg(dev, sx, sy, sq, sq, 0x33101620, 0x33080C12);
+    outline(dev, sx, sy, sq, sq, C_BORDER);
+    fo->begin(dev); fo->draw_c(dev, sx + sq * 0.5f, sy + sq - snap(12.0f), value, snap(14.0f), fa(C_TEXT), fa(0xFF000000), 2.2f);   // name at the swatch bottom, heavy stroke
+
+    const float rx = sx + sq + agap;                                             // right arrow
+    const bool rh = inrect(mo, rx, aY, aS, aS);
+    vg(dev, rx, aY, aS, aS, rh ? 0x55FFFFFF : 0x26FFFFFF, rh ? 0x33FFFFFF : 0x12FFFFFF);
+    outline(dev, rx, aY, aS, aS, C_BORDER);
+    fo->begin(dev); fo->draw_c(dev, rx + aS * 0.5f, cyMid, ">", snap(16.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+    if (rh && click) delta = +1;
+    return delta;
+}
+
+// A labeled SLIDER row :  "Label        [===O      ]  value". Drag the track/knob to set. Updates
+// *v01 (normalized 0..1) LIVE while dragging and persists once on release. Returns true the frames it
+// changed. g_slider latches the dragged slider so a press that wanders off the row keeps control of it.
+static int g_slider = -1;   // id of the slider being dragged (-1 = none)
+static bool row_slider(u32 dev, Font* fo, const MouseState* mo, int id,
+                       float x, float y, float w, const char* label, const char* valueText, float* v01) {
+    const float rowH = snap(40.0f);
+    flat(dev, x, y + rowH, w, 1, 0x14FFFFFF);                         // subtle separator under the row
+    fo->begin(dev);
+    fo->draw_lc(dev, x + snap(4.0f), y + rowH * 0.5f, label, snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+
+    const float valW = snap(56.0f), gap = snap(12.0f), trkW = snap(176.0f);
+    const float trkX = x + w - valW - gap - trkW;
+    const float cy = y + rowH * 0.5f, trkH = snap(6.0f), trkY = cy - trkH * 0.5f, knobR = snap(8.0f);
+
+    const bool hot = mo && mo->x >= trkX - knobR && mo->x < trkX + trkW + knobR && mo->y >= y && mo->y < y + rowH;
+    bool changed = false;
+    if (mo && mo->clicked && hot && g_slider < 0) g_slider = id;     // grab on press over the track
+    if (g_slider == id) {
+        if (mo && mo->down) {
+            float nv = clampf((mo->x - trkX) / trkW, 0.0f, 1.0f);
+            if (nv != *v01) { *v01 = nv; changed = true; }
+        } else { g_slider = -1; save_ui_config(); }                  // release -> persist once
+    }
+
+    const float fillW = snap(trkW * clampf(*v01, 0.0f, 1.0f));
+    vg(dev, trkX, trkY, trkW, trkH, 0x33101620, 0x33080C12);          // track groove
+    outline(dev, trkX, trkY, trkW, trkH, C_BORDER);
+    flat(dev, trkX, trkY, fillW, trkH, fa(C_ACCENT));                 // filled portion
+    const float kx = trkX + fillW; const bool act = (g_slider == id);
+    vg(dev, kx - knobR, cy - knobR, 2 * knobR, 2 * knobR, act ? 0xFF9CCBFF : 0xFFCFE0F5, act ? 0xFF5AA2FF : 0xFF8FB6E8);
+    outline(dev, kx - knobR, cy - knobR, 2 * knobR, 2 * knobR, C_BORDERHI);
+    fo->begin(dev);
+    fo->draw_c(dev, trkX + trkW + gap + valW * 0.5f, cy, valueText, snap(14.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+    return changed;
+}
+
 void ConfigPage::draw(const Frame& f, float sw, float sh) {
     if (!open_) return;
     u32 dev = f.dev;
@@ -256,29 +330,58 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         flat(dev, coX, coY + snap(18.0f), snap(44.0f), snap(2.0f), C_ACCENT);
 
         float ry = coY + snap(48.0f);
-        // Box Theme -> window skin
-        if (int d = row_selector(dev, fo, mo, click, coX, ry, coW, "Box Theme", window_theme_name(ui_config().skinTheme))) {
+        // Box Theme -> window skin (big SQUARE live preview of the active skin)
+        if (int d = row_theme(dev, fo, mo, click, coX, ry, coW, "Box Theme", window_theme_name(ui_config().skinTheme), f.skin)) {
             ui_config().skinTheme = wrap(ui_config().skinTheme + d, window_theme_count()); save_ui_config(); }
-        ry += snap(52.0f);
+        ry += snap(THEME_ROW_H + 12.0f);
         // Font -> party/alliance text face
         if (int d = row_selector(dev, fo, mo, click, coX, ry, coW, "Font", ui_font_label(ui_config().fontFace))) {
             ui_config().fontFace = wrap(ui_config().fontFace + d, ui_font_count()); save_ui_config(); }
         ry += snap(52.0f);
-        // Font Size -> party/alliance scale
-        char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[0].scale * 100.0f + 0.5f));
-        if (int d = row_selector(dev, fo, mo, click, coX, ry, coW, "Font Size", szbuf)) {
-            float v = ui_config().box[0].scale + (float)d * 0.05f;
-            v = v < 0.50f ? 0.50f : (v > 2.00f ? 2.00f : v);
-            for (int b = 0; b < 3; ++b) ui_config().box[b].scale = v;   // scale all party/alliance boxes together
-            save_ui_config();
+        // Font Size -> party/alliance scale (slider, 50%..200%, 5% steps)
+        {
+            const float lo = 0.50f, hi = 2.00f;
+            char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[0].scale * 100.0f + 0.5f));
+            float v01 = (ui_config().box[0].scale - lo) / (hi - lo);
+            if (row_slider(dev, fo, mo, 1, coX, ry, coW, "Font Size", szbuf, &v01)) {
+                float v = lo + v01 * (hi - lo);
+                v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;          // snap to 5% steps
+                v = v < lo ? lo : (v > hi ? hi : v);
+                for (int b = 0; b < 3; ++b) ui_config().box[b].scale = v;   // scale all party/alliance boxes together
+            }
         }
         ry += snap(52.0f);
-        // Buff Size -> fraction of the player row (independent of Font Size ; 40%..100% of the row)
-        char bzbuf[16]; sprintf(bzbuf, "%d%%", (int)(ui_config().buffScale * 100.0f + 0.5f));
-        if (int d = row_selector(dev, fo, mo, click, coX, ry, coW, "Buff Size", bzbuf)) {
-            float v = ui_config().buffScale + (float)d * 0.05f;
-            ui_config().buffScale = v < 0.40f ? 0.40f : (v > 1.00f ? 1.00f : v);
-            save_ui_config();
+        // Buff Size -> fraction of the player row (slider, 40%..100%, 5% steps ; independent of Font Size)
+        {
+            const float lo = 0.40f, hi = 1.00f;
+            char bzbuf[16]; sprintf(bzbuf, "%d%%", (int)(ui_config().buffScale * 100.0f + 0.5f));
+            float v01 = (ui_config().buffScale - lo) / (hi - lo);
+            if (row_slider(dev, fo, mo, 2, coX, ry, coW, "Buff Size", bzbuf, &v01)) {
+                float v = lo + v01 * (hi - lo);
+                v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;          // snap to 5% steps
+                ui_config().buffScale = v < lo ? lo : (v > hi ? hi : v);
+            }
+        }
+        ry += snap(52.0f);
+        // Borders : per-box window-skin chrome on/off (Party box, Cost MP box, Alliance 1, Alliance 2)
+        {
+            const float rowH = snap(40.0f);
+            flat(dev, coX, ry + rowH, coW, 1, 0x14FFFFFF);
+            fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ry + rowH * 0.5f, "Borders", snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const char* blbl[4] = { "Party", "Cost", "Ally 1", "Ally 2" };
+            bool* bval[4] = { &ui_config().border[0], &ui_config().borderCost, &ui_config().border[1], &ui_config().border[2] };
+            const float bbw = snap(66.0f), bgap = snap(8.0f), bbh = snap(28.0f);
+            const float bx0 = coX + coW - (4 * bbw + 3 * bgap), by = ry + (rowH - bbh) * 0.5f;
+            for (int i = 0; i < 4; ++i) {
+                const float bx = bx0 + i * (bbw + bgap);
+                const bool on = *bval[i], hov = inrect(mo, bx, by, bbw, bbh);
+                vg(dev, bx, by, bbw, bbh, on ? (hov ? 0xFF3FA85A : 0xFF2E8C49) : (hov ? 0xFF7A3340 : 0xFF552530),
+                                          on ? (hov ? 0xFF2E8044 : 0xFF206030) : (hov ? 0xFF551F28 : 0xFF3A1820));
+                outline(dev, bx, by, bbw, bbh, C_BORDERHI);
+                fo->begin(dev); fo->draw_c(dev, bx + bbw * 0.5f, by + bbh * 0.5f, blbl[i], snap(12.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+                if (hov && click) { *bval[i] = !on; save_ui_config(); }
+            }
         }
         ry += snap(56.0f);
         // Buttons : Edit Layout (enter drag/resize) + Default (reset EVERYTHING)

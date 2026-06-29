@@ -27,6 +27,8 @@ const char* window_theme_name(int idx);      // 0-based ; null if out of range
 // (ARGB ; 0xFFFFFFFF = texture as-is). `scale` is ignored (textures drawn 1:1, tiled). The caller
 // should pixel-snap x/y/w/h. `openBottom` : omit the bottom edge + bottom corners (the side edges
 // run to the bottom) -> the box reads as joined to whatever sits flush below it.
-void draw_window(u32 dev, const WindowSkin& s, float x, float y, float w, float h, u32 tint, float scale, bool openBottom = false);
+// `drawBorder` false : paint ONLY the tiled background (skip the frame edges + corners) -> a borderless
+// box that keeps its skin background (the per-box "Borders off" toggle).
+void draw_window(u32 dev, const WindowSkin& s, float x, float y, float w, float h, u32 tint, float scale, bool openBottom = false, bool drawBorder = true);
 
 } // namespace aio
