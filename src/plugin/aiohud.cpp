@@ -388,9 +388,10 @@ unsigned int aio_plugin_mouse(u32 eventtype, u32 x, u32 y, u32 delta, u32 blocke
     static bool inGesture = false;   // a left button is currently held
     static bool blockGest = false;   // ...and we're swallowing this gesture (vs a refocus click we pass)
 
-    // Wheel : edit-mode box resize. Only when focused + in edit (not part of a click gesture).
+    // Wheel : while the config/edit overlay is up, capture it (edit -> box resize ; Help tab -> scroll)
+    // and consume it so the game camera doesn't zoom underneath. Otherwise pass through.
     if ((int)delta != 0) {
-        if (active && aio::ui_config().editLayout) { aio::ui_config().wheel += ((int)delta > 0) ? 1 : -1; return 1u; }
+        if (active) { aio::ui_config().wheel += ((int)delta > 0) ? 1 : -1; return 1u; }
         return blocked;
     }
     if (eventtype == 1) {                 // Ldown : lock the gesture's fate now

@@ -120,6 +120,7 @@ bool profile_save(const char* name) {
     char p[300]; profile_path(name, p, sizeof(p));
     save_config_to(p);
     profile_refresh();
+    profile_mark_clean();
     return true;
 }
 bool profile_load(const char* name) {
@@ -127,8 +128,25 @@ bool profile_load(const char* name) {
     char p[300]; profile_path(name, p, sizeof(p));
     if (!load_config_from(p)) return false;
     save_ui_config();   // adopt as the live config too
+    profile_mark_clean();
     return true;
 }
+
+// ---- "unsaved changes" tracking : snapshot the persisted fields, compare to live ----
+static UiConfig g_snap; static bool g_snapValid = false;
+static bool persist_eq(const UiConfig& a, const UiConfig& b) {
+    if (a.skinTheme != b.skinTheme || a.fontFace != b.fontFace) return false;
+    if (a.buffScale != b.buffScale || a.partyRefY != b.partyRefY) return false;
+    if (a.borderCost != b.borderCost) return false;
+    for (int i = 0; i < 3; ++i) {
+        if (a.border[i] != b.border[i]) return false;
+        if (a.box[i].posSet != b.box[i].posSet || a.box[i].x != b.box[i].x ||
+            a.box[i].y != b.box[i].y || a.box[i].scale != b.box[i].scale) return false;
+    }
+    return true;
+}
+void profile_mark_clean() { g_snap = ui_config(); g_snapValid = true; }
+bool profile_dirty()      { return g_snapValid && !persist_eq(g_snap, ui_config()); }
 bool profile_delete(const char* name) {
     if (!name || !name[0]) return false;
     char p[300]; profile_path(name, p, sizeof(p));

@@ -22,7 +22,7 @@ public:
     void draw(const Frame& f, float sw, float sh);
 
     // ---- keyboard (fed by the plugin's slot-14 hook ; only while a text field is focused) ----
-    bool wants_keys() const { return open_ && tab_ == 1 && nameFocus_; }   // -> the hook consumes keys
+    bool wants_keys() const { return open_ && nameFocus_; }   // -> the hook consumes keys (name field is on the Config tab)
     void feed_char(char c)  {
         if (nameLen_ >= (int)sizeof(nameBuf_) - 1) return;
         if ((unsigned char)c < 32) return;   // control chars only -- / \ : etc. are allowed (the file name %-encodes them)
@@ -48,6 +48,8 @@ private:
     bool  kbCommit_    = false;   // Enter was pressed -> save on the next draw
     bool  profDirty_   = true;    // rescan the profile folder on the next Profile-tab draw
     char  activeProf_[32] = { 0 };// last saved/loaded profile -> highlighted in the list
+    int   helpSel_     = 0;       // Help tab : selected module in the left menu
+    float helpScroll_  = 0.0f;    // Help tab vertical scroll (mouse wheel)
 };
 
 } // namespace aio

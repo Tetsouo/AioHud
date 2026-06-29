@@ -45,6 +45,8 @@ bool        profile_save(const char* name);        // write the CURRENT config u
 bool        profile_load(const char* name);        // load <name> into the live config (+ persist as current)
 bool        profile_delete(const char* name);
 bool        profile_exists(const char* name);
+void        profile_mark_clean();                  // snapshot the current config as "saved" (call on load/save)
+bool        profile_dirty();                       // true if the live config differs from that snapshot -> unsaved changes
 
 // selectable font faces for the Font control (index 0 = "Default" = keep the layout font).
 int         ui_font_count();
