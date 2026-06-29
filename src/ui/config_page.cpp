@@ -9,6 +9,7 @@
 #include "gfx/font.h"
 #include "gfx/window.h"
 #include "model/ui_config.h"
+#include "model/gamestate.h"   // GameState::me (character name) for the Profile page
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -38,10 +39,14 @@ static const u32 C_CONTENT_T= 0xE6141C28, C_CONTENT_B= 0xE60E141E;
 static const u32 C_SIDEBAR  = 0xF0161F2D;
 static const u32 C_ROWON_T  = 0xFF2C6AC4, C_ROWON_B  = 0xFF234E92;
 static const u32 C_BORDER   = 0x33FFFFFF, C_BORDERHI = 0x66FFFFFF;
-static const u32 C_TEXT     = 0xFFEAF1FB, C_DIM = 0xFFA6B6CC, C_MUTE = 0xFF6E7E96;
+static const u32 C_TEXT     = 0xFFEAF1FB, C_DIM = 0xFFB4C2D8, C_MUTE = 0xFF8A9AB4;
 static const u32 C_ACCENT   = 0xFF5AA2FF, C_ACCENTHI = 0xFFBFE0FF, C_STROKE = 0xFF000000, C_CLOSEHOV = 0xFFCE424C;
 // FFXI gold (titles / glint / active indicators / unsaved-Save). Interactive accents stay blue.
-static const u32 C_GOLD     = 0xFFFFDC78, C_GOLDHI = 0xFFFFF3C8, C_GOLD_DEEP = 0xFFC79A3A;
+static const u32 C_GOLD     = 0xFFFFDC78, C_GOLDHI = 0xFFFFF3C8, C_GOLD_DEEP = 0xFFD8A94A;
+// control surfaces : a cohesive blue "glass" (NOT translucent white, which reads grey on navy).
+static const u32 C_CTL_T    = 0x6E2A4368, C_CTL_B = 0x5E16283F;        // idle button/field fill (navy-blue glass)
+static const u32 C_CTL_BR   = 0x88486F9E;                              // idle control border (soft steel blue)
+static const u32 C_ARROW    = 0xFF9FC4F2;                              // chevron / stepper glyph idle (bright steel blue)
 // preview gauges (party brief : HP green / MP blue / TP magenta)
 static const u32 C_HP = 0xFF5ADC5A, C_HP_D = 0xFF148C2D, C_MP = 0xFF9597FF, C_MP_D = 0xFF3A3CE0, C_TP = 0xFFCD6EFF, C_TP_D = 0xFF5A0FBE;
 
@@ -136,6 +141,70 @@ static void row_band(u32 dev, float x, float y, float w, float h, bool alt, floa
     flat(dev, x, y, w, h, ((u32)a << 24) | 0x00FFFFFF);
 }
 
+// ---- modern primitives : rounded rects (rect bands + quarter-disc corners) + soft drop shadows. ----
+// A filled QUARTER disc (triangle fan) confined to ONE corner square -> it NEVER overlaps the bands,
+// so the whole rounded rect composites with a SINGLE blend per pixel (correct for translucent fills,
+// no double-blend "pinwheel" artefact in the corners).
+static void qfan(u32 dev, float cx, float cy, float r, float a0, float a1, u32 col) {
+    cs(dev);
+    const int N = 6;
+    const u32 c = fa(col);
+    float px = cx + r * cosf(a0), py = cy + r * sinf(a0);
+    for (int i = 1; i <= N; ++i) {
+        const float a = a0 + (a1 - a0) * (float)i / (float)N;
+        const float nx = cx + r * cosf(a), ny = cy + r * sinf(a);
+        fill_tri(dev, cx, cy, px, py, nx, ny, c);
+        px = nx; py = ny;
+    }
+}
+static const float PI_ = 3.14159265f;
+static void rrect_fill(u32 dev, float x, float y, float w, float h, float r, u32 top, u32 bot) {
+    if (w <= 0 || h <= 0) return;
+    if (r > w * 0.5f) r = w * 0.5f; if (r > h * 0.5f) r = h * 0.5f;
+    if (r < 1.0f) { vg(dev, x, y, w, h, top, bot); return; }
+    const u32 cT = lerpc(top, bot, r / h), cB = lerpc(top, bot, (h - r) / h);
+    vg(dev, x + r,     y,         w - 2 * r, r,         top, cT);   // top band
+    vg(dev, x + r,     y + h - r, w - 2 * r, r,         cB,  bot);  // bottom band
+    vg(dev, x,         y + r,     r,         h - 2 * r, cT,  cB);   // left band
+    vg(dev, x + w - r, y + r,     r,         h - 2 * r, cT,  cB);   // right band
+    vg(dev, x + r,     y + r,     w - 2 * r, h - 2 * r, cT,  cB);   // center
+    qfan(dev, x + r,     y + r,     r, PI_,        1.5f * PI_, top);   // TL
+    qfan(dev, x + w - r, y + r,     r, 1.5f * PI_, 2.0f * PI_, top);   // TR
+    qfan(dev, x + r,     y + h - r, r, 0.5f * PI_, PI_,        bot);   // BL
+    qfan(dev, x + w - r, y + h - r, r, 0.0f,       0.5f * PI_, bot);   // BR
+}
+// round the TOP corners only (tabs : the bottom melts into the body).
+static void rrect_top(u32 dev, float x, float y, float w, float h, float r, u32 top, u32 bot) {
+    if (w <= 0 || h <= 0) return;
+    if (r > w * 0.5f) r = w * 0.5f; if (r > h) r = h;
+    if (r < 1.0f) { vg(dev, x, y, w, h, top, bot); return; }
+    const u32 cT = lerpc(top, bot, r / h);
+    vg(dev, x + r,     y,     w - 2 * r, r,     top, cT);    // top band
+    vg(dev, x,         y + r, r,         h - r, cT,  bot);   // left band (down to bottom -> square corner)
+    vg(dev, x + w - r, y + r, r,         h - r, cT,  bot);   // right band
+    vg(dev, x + r,     y + r, w - 2 * r, h - r, cT,  bot);   // center
+    qfan(dev, x + r,     y + r, r, PI_,        1.5f * PI_, top);   // TL
+    qfan(dev, x + w - r, y + r, r, 1.5f * PI_, 2.0f * PI_, top);   // TR
+}
+// a bordered rounded panel : border ring + inner gradient fill (opaque-friendly).
+static void rpanel(u32 dev, float x, float y, float w, float h, float r, u32 top, u32 bot, u32 border, float bt) {
+    rrect_fill(dev, x, y, w, h, r, border, border);
+    rrect_fill(dev, x + bt, y + bt, w - 2 * bt, h - 2 * bt, (r - bt > 0.0f ? r - bt : 0.0f), top, bot);
+}
+// a soft, feathered drop shadow under an element (draw BEFORE it) -> floats the card off the page.
+static void drop_shadow(u32 dev, float x, float y, float w, float h, float spread, u32 alpha) {
+    cs(dev);
+    soft_blob(dev, x + w * 0.5f, y + h * 0.5f + snap(5.0f), w * 0.5f + spread, h * 0.5f + spread, (alpha << 24));
+}
+// a tiny rounded status pill (ACTIVE / DEFAULT / a character name). Returns its width so they stack.
+static float badge(u32 dev, Font* fo, float x, float cy, const char* text, u32 fill, u32 brd, u32 txt) {
+    const float sz = snap(10.0f), padx = snap(9.0f), h = snap(18.0f);
+    const float w = fo->measure(text, sz) + 2.0f * padx, y = cy - h * 0.5f;
+    rpanel(dev, x, y, w, h, h * 0.5f, fill, fill, brd, snap(1.0f));
+    fo->begin(dev); fo->draw_c(dev, x + w * 0.5f, cy, text, sz, fa(txt), fa(C_STROKE), 0.8f);
+    return w;
+}
+
 // a small square [<] / [>] stepper button with eased hover. uid = its animation slot.
 static bool arrow_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
                       float x, float y, float s, const char* glyph) {
@@ -143,10 +212,10 @@ static bool arrow_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int u
     const bool hov = inrect(mo, x, y, s, s);
     const float t = ease(uid, hov ? 1.0f : 0.0f);
     halo(dev, x, y, s, s, C_ACCENT, t * 0.7f);
-    vg(dev, x, y, s, s, lerpc(0x33FFFFFF, 0x55BFD8FF, t), lerpc(0x1AFFFFFF, 0x3370A6E0, t));
-    outline(dev, x, y, s, s, lerpc(C_BORDERHI, C_ACCENT, t));
+    const float r = snap(s * 0.30f);
+    rpanel(dev, x, y, s, s, r, lerpc(C_CTL_T, 0x884E8FE0, t), lerpc(C_CTL_B, 0x6E2E63B4, t), lerpc(C_CTL_BR, C_ACCENTHI, t), snap(1.5f));
     const int dir = (glyph[0] == '<') ? -1 : +1;
-    chevron(dev, x + s * 0.5f, y + s * 0.5f, s * (0.62f + 0.06f * t), dir, lerpc(C_DIM, C_TEXT, t));
+    chevron(dev, x + s * 0.5f, y + s * 0.5f, s * (0.62f + 0.06f * t), dir, lerpc(C_ARROW, C_GOLDHI, t));
     return hov && click;
 }
 
@@ -154,7 +223,6 @@ static bool arrow_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int u
 static int row_selector(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
                         float x, float y, float w, const char* label, const char* value) {
     const float rowH = snap(40.0f);
-    flat(dev, x, y + rowH, w, 1, 0x14FFFFFF);                         // subtle separator under the row
     fo->begin(dev);
     fo->draw_lc(dev, x + snap(4.0f), y + rowH * 0.5f, label, snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
 
@@ -210,7 +278,6 @@ static int g_slider = -1;   // id of the slider being dragged (-1 = none)
 static bool row_slider(u32 dev, Font* fo, const MouseState* mo, int id,
                        float x, float y, float w, const char* label, const char* valueText, float* v01) {
     const float rowH = snap(40.0f);
-    flat(dev, x, y + rowH, w, 1, 0x14FFFFFF);                         // subtle separator under the row
     fo->begin(dev);
     fo->draw_lc(dev, x + snap(4.0f), y + rowH * 0.5f, label, snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
 
@@ -230,17 +297,19 @@ static bool row_slider(u32 dev, Font* fo, const MouseState* mo, int id,
     }
 
     const float fillW = snap(trkW * clampf(*v01, 0.0f, 1.0f));
-    vg(dev, trkX, trkY, trkW, trkH, 0x33101620, 0x33080C12);          // track groove
-    outline(dev, trkX, trkY, trkW, trkH, C_BORDER);
-    vg(dev, trkX, trkY, fillW, trkH, fa(C_ACCENTHI), fa(C_ACCENT));   // filled portion (subtle gradient)
+    const float tr = trkH * 0.5f;
+    rrect_fill(dev, trkX, trkY, trkW, trkH, tr, 0x44101620, 0x44080C12);       // rounded groove
+    if (fillW >= trkH) rrect_fill(dev, trkX, trkY, fillW, trkH, tr, C_ACCENTHI, C_ACCENT);   // rounded fill
 
-    // knob : eases bigger on hover / while dragging, with a soft halo + drop seat.
+    // round knob : eases bigger on hover / while dragging, with a soft halo + rim.
     const float kt = ease(40 + id, (hot || act) ? 1.0f : 0.0f);
     const float kr = knobR * (1.0f + 0.35f * kt);
     const float kx = trkX + fillW;
-    halo(dev, kx - kr, cy - kr, 2 * kr, 2 * kr, C_ACCENT, kt);
-    vg(dev, kx - kr, cy - kr, 2 * kr, 2 * kr, lerpc(0xFFCFE0F5, 0xFFFFFFFF, kt), lerpc(0xFF8FB6E8, 0xFF5AA2FF, kt));
-    outline(dev, kx - kr, cy - kr, 2 * kr, 2 * kr, C_BORDERHI);
+    halo(dev, kx - kr, cy - kr, 2 * kr, 2 * kr, C_ACCENT, 0.4f + kt);
+    cs(dev);
+    disc(dev, kx, cy, kr + snap(1.5f), fa(C_BORDERHI));                        // rim
+    disc(dev, kx, cy, kr, fa(lerpc(0xFFCFE0F5, 0xFFFFFFFF, kt)));              // body
+    disc(dev, kx, cy - kr * 0.30f, kr * 0.55f, fa(0x66FFFFFF));               // top gloss
     fo->begin(dev);
     fo->draw_c(dev, trkX + trkW + gap + valW * 0.5f, cy, valueText, snap(14.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
     return changed;
@@ -256,12 +325,11 @@ static bool toggle_chip(u32 dev, Font* fo, const MouseState* mo, bool click, int
     const u32 onT = 0xFF2E8C49, onB = 0xFF206030, offT = 0xFF552530, offB = 0xFF3A1820;
     u32 t = lerpc(offT, onT, st), b = lerpc(offB, onB, st);
     t = lerpc(t, lerpc(0xFF6E2E38, 0xFF3FA85A, st), ht * 0.6f);       // brighten on hover
-    vg(dev, x, y, w, h, t, b);
-    outline(dev, x, y, w, h, lerpc(C_BORDER, C_BORDERHI, ht));
-    // a little state dot, left of the label : green when on, dim red when off
-    const float dr = snap(4.0f), dx = x + snap(9.0f), dy = y + h * 0.5f;
-    flat(dev, dx - dr, dy - dr, 2 * dr, 2 * dr, fa(lerpc(0xFF7E3A42, 0xFF8CF2A8, st)));
-    fo->begin(dev); fo->draw_c(dev, x + w * 0.5f + snap(5.0f), dy, label, snap(12.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+    rpanel(dev, x, y, w, h, snap(h * 0.44f), t, b, lerpc(C_BORDER, C_BORDERHI, ht), snap(1.5f));
+    // a little round state dot, left of the label : green when on, dim red when off
+    const float dr = snap(4.0f), dx = x + snap(11.0f), dy = y + h * 0.5f;
+    cs(dev); disc(dev, dx, dy, dr, fa(lerpc(0xFF7E3A42, 0xFF8CF2A8, st)));
+    fo->begin(dev); fo->draw_c(dev, x + w * 0.5f + snap(6.0f), dy, label, snap(12.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
     return hov && click;
 }
 
@@ -270,12 +338,17 @@ static bool toggle_chip(u32 dev, Font* fo, const MouseState* mo, bool click, int
 static bool push_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
                      float x, float y, float w, float h, const char* label, int tone) {
     const bool hov = inrect(mo, x, y, w, h);
+    const bool press = hov && mo && mo->down;
     const float t = ease(uid, hov ? 1.0f : 0.0f);
     const u32 idleT = tone ? 0xFF3A2A2E : 0xFF2A3548, idleB = tone ? 0xFF281D20 : 0xFF1D2738;
     const u32 hovT  = tone ? 0xFFB85050 : 0xFF3A82E0, hovB  = tone ? 0xFF8A3A3A : 0xFF2A61B6;
-    halo(dev, x, y, w, h, tone ? 0xFFE06868 : C_ACCENT, t * 0.8f);
-    vg(dev, x, y, w, h, lerpc(idleT, hovT, t), lerpc(idleB, hovB, t));
-    outline(dev, x, y, w, h, lerpc(C_BORDERHI, tone ? 0xFFE57078 : C_ACCENTHI, t));
+    const float pin = press ? snap(2.0f) : 0.0f;                     // press : nudge inward
+    const float bx = x + pin, by = y + pin, bw = w - 2 * pin, bh = h - 2 * pin;
+    const float r = snap(h * 0.24f);
+    drop_shadow(dev, bx, by, bw, bh, snap(4.0f), press ? 36 : 64);
+    halo(dev, bx, by, bw, bh, tone ? 0xFFE06868 : C_ACCENT, t * 0.8f);
+    rpanel(dev, bx, by, bw, bh, r, lerpc(idleT, hovT, t), lerpc(idleB, hovB, t), lerpc(C_BORDERHI, tone ? 0xFFE57078 : C_ACCENTHI, t), snap(1.5f));
+    rrect_top(dev, bx + snap(2.0f), by + snap(2.0f), bw - snap(4.0f), bh * 0.42f, snap(r * 0.6f), 0x33FFFFFF, 0x05FFFFFF);   // top sheen
     fo->begin(dev); fo->draw_c(dev, x + w * 0.5f, y + h * 0.5f, label, snap(13.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
     return hov && click;
 }
@@ -338,73 +411,14 @@ static float draw_wrapped(u32 dev, Font* fo, float x, float y, float maxW, float
     return y;
 }
 
-// a small liquid HP/MP/TP gauge for the live preview (a trimmed-down party draw_gauge).
-static void preview_bar(u32 dev, float x, float y, float w, float h, float pct, u32 col, u32 deep) {
-    pct = clampf(pct, 0.0f, 1.0f);
-    flat(dev, x, y, w, h, 0xFF2A3354);                       // thin frame
-    vg(dev, x + 1, y + 1, w - 2, h - 2, 0xFF0A0E1C, 0xFF161D33);   // recessed bg
-    const float fw = (w - 2) * pct, fh = h - 2;
-    if (fw >= 1.0f) {
-        vg(dev, x + 1, y + 1,            fw, fh * 0.52f, lerpc(col, 0xFFFFFFFF, 0.18f), col);   // liquid top
-        vg(dev, x + 1, y + 1 + fh*0.52f, fw, fh * 0.48f, col, deep);                            // liquid bottom
-        vg(dev, x + 1, y + 1,            fw, fh * 0.40f, 0x55FFFFFF, 0x00FFFFFF);               // top gloss
-    }
-}
-
-// LIVE PREVIEW : a self-contained mini party box that reflects the active skin + Buff Size, so the
-// user (and Claude) can SEE settings change without leaving the page. Demo members, party-brief colours.
-static void draw_party_preview(u32 dev, Font* fo, const Frame& f, float x, float y, float w) {
-    fo->begin(dev);
-    fo->draw_lc(dev, x, y + snap(7.0f), "LIVE PREVIEW", snap(12.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.4f);
-
-    const float by = y + snap(24.0f), pad = snap(12.0f), rowH = snap(48.0f), gap = snap(9.0f);
-    const int N = 3;
-    const float boxH = pad * 2 + N * rowH + (N - 1) * gap;
-
-    if (f.skin && f.skin->ready()) draw_window(dev, *f.skin, x, by, w, boxH, fa(0xFFFFFFFF), 1.0f);
-    else { vg(dev, x, by, w, boxH, 0xF01C1E44, 0xF00A1026); outline(dev, x, by, w, boxH, 0xFF2F5688); }
-
-    struct PM { const char* job; const char* name; u32 fill, brd; float hp, mp, tp; bool self; };
-    static const PM pm[3] = {
-        { "WAR", "Tetsouo", 0x552C6AC4, 0xFF64B4FF, 1.00f, 0.62f, 0.45f, true  },
-        { "WHM", "Aldura",  0x552E8C49, 0xFF49C46A, 0.88f, 0.74f, 0.30f, false },
-        { "BLM", "Kireina", 0x55B83A3A, 0xFFE24B4A, 0.41f, 0.80f, 1.00f, false },
-    };
-    const float buffFrac = clampf(ui_config().buffScale, 0.4f, 1.0f);
-    const float gut = snap(34.0f);                              // buff gutter (kept for all rows -> aligned)
-    for (int i = 0; i < N; ++i) {
-        const PM& m = pm[i];
-        const float ry = by + pad + i * (rowH + gap);
-        const float rx = x + pad;
-        if (m.self) {                                          // highlight the main player (gold)
-            flat(dev, rx - snap(4.0f), ry - snap(2.0f), w - 2 * pad + snap(8.0f), rowH + snap(4.0f), 0x14FFDC78);
-            outline(dev, rx - snap(4.0f), ry - snap(2.0f), w - 2 * pad + snap(8.0f), rowH + snap(4.0f), fa(0x88FFDC78));
-        }
-        // buff square (reflects Buff Size) -- self only (the game doesn't transmit others' buffs)
-        if (m.self) {
-            const float bs = gut * buffFrac;
-            const float bx = rx + (gut - bs) * 0.5f, byb = ry + (rowH - bs) * 0.5f;
-            vg(dev, bx, byb, bs, bs, 0xFF3A4668, 0xFF1E2740); outline(dev, bx, byb, bs, bs, 0x66FFFFFF);
-        }
-        // job badge (role-tinted)
-        const float jx = rx + gut + snap(4.0f), jw = snap(56.0f), jh = snap(24.0f), jy = ry + (rowH - jh) * 0.5f;
-        vg(dev, jx, jy, jw, jh, m.fill, (m.fill & 0x00FFFFFF) | 0x33000000); outline(dev, jx, jy, jw, jh, fa(m.brd));
-        fo->begin(dev); fo->draw_c(dev, jx + jw * 0.5f, jy + jh * 0.5f, m.job, snap(13.0f), fa(0xFFEFF6FF), fa(C_STROKE), 1.0f);
-        // name + 3 gauges
-        const float ix2 = jx + jw + snap(10.0f), iw2 = (x + w - pad) - ix2;
-        fo->begin(dev); fo->draw_lc(dev, ix2, ry + snap(11.0f), m.name, snap(14.0f), fa(m.self ? C_GOLDHI : C_TEXT), fa(C_STROKE), 1.0f);
-        const float gy = ry + snap(26.0f), gh = snap(10.0f), gg = snap(5.0f);
-        const float hpW = iw2 * 0.44f, mpW = iw2 * 0.27f, tpW = iw2 - hpW - mpW - 2 * gg;
-        preview_bar(dev, ix2,                 gy, hpW, gh, m.hp, C_HP, C_HP_D);
-        preview_bar(dev, ix2 + hpW + gg,      gy, mpW, gh, m.mp, C_MP, C_MP_D);
-        preview_bar(dev, ix2 + hpW + mpW + 2*gg, gy, tpW, gh, m.tp, C_TP, C_TP_D);
-    }
-}
-
 void ConfigPage::draw(const Frame& f, float sw, float sh) {
+    pvOn_ = false;   // live-preview anchor : off unless we reach the Configuration tab below
     if (!open_) return;
     u32 dev = f.dev;
-    Font* fo = f.font;
+    // the whole config interface is drawn in Verdana (get-or-build its atlas ; fall back to default)
+    Font* fo = (f.fonts ? f.fonts->get("Verdana", 600) : f.font);
+    if (fo) fo->ensure(dev);
+    if (!fo || !fo->ready()) fo = f.font;
     if (!fo || !fo->ready() || sw <= 0 || sh <= 0) return;
     const MouseState* mo = f.mouse;
     const bool click = mo && mo->clicked;
@@ -459,10 +473,20 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     // ===== BACK LAYER : dim the game, then a self-made MODERN gradient page (no game skin) =====
     flat(dev, 0, 0, sw, sh, C_DIMBG);                                  // darken the game behind us
     vg(dev, 0, 0, sw, sh, 0xF01B2740, 0xF0080B14);                     // deep slate-blue -> near-black
-    vg(dev, 0, 0, sw, snap(160.0f), 0x2A2E6AB0, 0x002E6AB0);           // soft blue glow falling from the top
-    vg(dev, 0, sh - snap(110.0f), sw, snap(110.0f), 0x00000000, 0x4D000000);   // bottom vignette
+    vg(dev, 0, 0, sw, snap(180.0f), 0x2A2E6AB0, 0x002E6AB0);           // soft blue glow falling from the top
+    // two large magical glows drifting slowly across the page (gold + indigo) -> living background
+    cs(dev);
+    {
+        const float gx1 = sw * (0.28f + 0.17f * sinf(f.t * 0.17f));
+        const float gx2 = sw * (0.74f + 0.15f * sinf(f.t * 0.12f + 2.1f));
+        const u32 ag = (u32)((10.0f + 6.0f * pulse)) << 24;
+        soft_blob(dev, gx1, sh * 0.04f, sw * 0.36f, sh * 0.34f, ag | 0x00FFDC78);   // gold
+        soft_blob(dev, gx2, sh * 0.10f, sw * 0.34f, sh * 0.30f, 0x122E6AB0);        // indigo
+        soft_blob(dev, sw * 0.5f, sh * 1.02f, sw * 0.6f, sh * 0.28f, 0x14101A38);   // bottom lift
+    }
+    vg(dev, 0, sh - snap(120.0f), sw, snap(120.0f), 0x00000000, 0x55000000);   // bottom vignette
     flat(dev, 0, 0, sw, snap(2.0f), lerpc(C_GOLD, C_GOLDHI, pulse));           // top GOLD hairline (FFXI glint)
-    flat(dev, 0, 0, sw, 1, 0x33FFFFFF);                               // crisp top inner highlight
+    flat(dev, 0, 0, sw, 1, 0x40FFFFFF);                               // crisp top inner highlight
     outline(dev, 0, 0, sw, sh, C_BORDERHI);
 
     // content inset from the skin border (no second frame -- we draw straight on the skin)
@@ -471,10 +495,12 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     const float pageBot = sh - m;
 
     // ===== HEADER (title + close), directly on the skin =====
-    fo->begin(dev);
     const float titleSz = snap(28.0f);
-    fo->draw_lc(dev, ix, iy + snap(22.0f), "AIOHUD", titleSz, fa(C_GOLD), fa(C_STROKE), 2.4f);   // gold wordmark
     const float tw = fo->measure("AIOHUD", titleSz);
+    cs(dev); soft_blob(dev, ix + tw * 0.5f, iy + snap(20.0f), tw * 0.62f, snap(32.0f),   // soft gold aura behind the wordmark
+                       ((u32)(48.0f * (0.6f + 0.4f * pulse)) << 24) | 0x00FFDC78);
+    fo->begin(dev);
+    fo->draw_lc(dev, ix, iy + snap(22.0f), "AIOHUD", titleSz, fa(C_GOLD), fa(C_STROKE), 2.4f);   // gold wordmark
     fo->draw_lc(dev, ix + tw + snap(14.0f), iy + snap(24.0f), "CONFIGURATION", snap(15.0f), fa(lerpc(C_ACCENT, C_ACCENTHI, pulse)), fa(C_STROKE), 1.2f);
 
     // close button (X), top-right -- eased red crossfade + a tiny size bump on hover
@@ -482,8 +508,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     const bool cbHov = inrect(mo, cbX, cbY, cbS, cbS);
     const float ct = ease(1, cbHov ? 1.0f : 0.0f);
     halo(dev, cbX, cbY, cbS, cbS, C_CLOSEHOV, ct * 0.9f);
-    vg(dev, cbX, cbY, cbS, cbS, lerpc(0x33FFFFFF, C_CLOSEHOV, ct), lerpc(0x14FFFFFF, 0xFFA0303A, ct));
-    outline(dev, cbX, cbY, cbS, cbS, lerpc(C_BORDERHI, 0xFFE57078, ct));
+    rpanel(dev, cbX, cbY, cbS, cbS, snap(cbS * 0.30f), lerpc(C_CTL_T, C_CLOSEHOV, ct), lerpc(C_CTL_B, 0xFFA0303A, ct), lerpc(C_CTL_BR, 0xFFE57078, ct), snap(1.5f));
     fo->begin(dev);
     fo->draw_c(dev, cbX + cbS * 0.5f, cbY + cbS * 0.5f, "X", snap(18.0f) + snap(2.0f) * ct, fa(C_TEXT), fa(C_STROKE), 1.3f + 0.3f * ct);
     if (cbHov && click) { open_ = false; if (mo) cursor(dev, mo->x, mo->y); return; }
@@ -505,22 +530,23 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         hov_[i] += (((hover ? 1.0f : 0.0f) - hov_[i]) * clampf(dt * 14.0f, 0.0f, 1.0f));   // eased hover
         if (active) activeX = tx;
 
+        const float tr = snap(10.0f);
         if (active) {
-            shadow_down(dev, tx - snap(4.0f), tabY - snap(6.0f), tabW + snap(8.0f), snap(8.0f), (u32)(0x55000000)); // soft top glow seat
-            vg(dev, tx, tabY, tabW, tabH + snap(2.0f), C_TABON_T, C_TABON_B);   // +2 : bleed into the body
+            halo(dev, tx + tabW * 0.5f - snap(2.0f), tabY + tabH * 0.5f, tabW * 0.5f, tabH * 0.5f, C_GOLD, 0.35f + 0.2f * pulse);   // gold seat glow
+            rrect_top(dev, tx, tabY, tabW, tabH + snap(2.0f), tr, C_TABON_T, C_TABON_B);   // +2 : bleed into the body
+            rrect_top(dev, tx + snap(2.0f), tabY + snap(1.0f), tabW - snap(4.0f), tabH * 0.45f, snap(7.0f), 0x40FFFFFF, 0x06FFFFFF);   // top sheen
         } else {
-            vg(dev, tx, tabY, tabW, tabH, lerpc(C_TABOFF_T, C_TABHOV_T, hov_[i]), lerpc(C_TABOFF_B, C_TABHOV_B, hov_[i]));
+            rrect_top(dev, tx, tabY, tabW, tabH, tr, lerpc(C_TABOFF_T, C_TABHOV_T, hov_[i]), lerpc(C_TABOFF_B, C_TABHOV_B, hov_[i]));
         }
-        outline(dev, tx, tabY, tabW, tabH, active ? 0x77FFFFFF : C_BORDER);
-        flat(dev, tx, tabY, tabW, 1, lerpc(0x22FFFFFF, 0x66FFFFFF, active ? 1.0f : hov_[i]));   // top inner highlight
         fo->begin(dev);
         fo->draw_c(dev, tx + tabW * 0.5f, tabY + tabH * 0.5f, TABS[i], snap(15.0f),
-                   lerpc(C_DIM, C_TEXT, active ? 1.0f : hov_[i]), fa(C_STROKE), 1.0f);
+                   lerpc(C_DIM, active ? C_GOLDHI : C_TEXT, active ? 1.0f : hov_[i]), fa(C_STROKE), 1.0f);
     }
-    // sliding active-tab indicator (interpolates toward the active tab) + accent pulse
+    // sliding active-tab indicator (interpolates toward the active tab) + a soft gold glow
     if (tabSlide_ < 0.0f) tabSlide_ = activeX;
     tabSlide_ += (activeX - tabSlide_) * clampf(dt * 16.0f, 0.0f, 1.0f);
-    flat(dev, tabSlide_, bodyY - snap(3.0f), tabW, snap(3.0f), lerpc(C_GOLD, C_GOLDHI, pulse));   // gold active-tab indicator
+    halo(dev, tabSlide_ + tabW * 0.5f, bodyY - snap(1.0f), tabW * 0.42f, snap(6.0f), C_GOLD, 0.5f + 0.3f * pulse);
+    rrect_fill(dev, tabSlide_ + snap(8.0f), bodyY - snap(3.0f), tabW - snap(16.0f), snap(3.0f), snap(1.5f), lerpc(C_GOLD, C_GOLDHI, pulse), lerpc(C_GOLD, C_GOLDHI, pulse));
 
     // ===== CONTENT BODY (the tab content surface) =====
     const float bodyH = pageBot - bodyY;
@@ -544,11 +570,11 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             const float ry = bodyY + snap(44.0f) + i * snap(42.0f), rh = snap(36.0f);
             const bool active = (i == section_), hover = inrect(mo, rx, ry, rw, rh);
             if (hover && click) section_ = i;
-            const float ht = ease(10 + i, (hover || active) ? 1.0f : 0.0f);
-            if (active) vg(dev, rx, ry, rw, rh, C_ROWON_T, C_ROWON_B);
-            else if (ht > 0.01f) flat(dev, rx, ry, rw, rh, (0x22FFFFFF & 0x00FFFFFF) | ((u32)(0x22 * ht) << 24));
-            flat(dev, rx, ry, snap(3.0f), rh * (active ? 1.0f : ht), lerpc(C_GOLD, C_GOLDHI, pulse));   // gold active accent
-            fo->begin(dev); fo->draw_lc(dev, rx + snap(16.0f), ry + rh * 0.5f, MODULES[i], snap(15.0f), lerpc(C_DIM, C_TEXT, active ? 1.0f : ht), fa(C_STROKE), 1.0f);
+            const float ht = ease(10 + i, (hover || active) ? 1.0f : 0.0f), af = active ? 1.0f : ht;
+            if (active)          rrect_fill(dev, rx, ry, rw, rh, snap(9.0f), C_ROWON_T, C_ROWON_B);
+            else if (ht > 0.01f) rrect_fill(dev, rx, ry, rw, rh, snap(9.0f), ((u32)(0x24 * ht) << 24) | 0x00FFFFFF, ((u32)(0x12 * ht) << 24) | 0x00FFFFFF);
+            if (af > 0.01f) rrect_fill(dev, rx + snap(2.0f), ry + rh * (1.0f - af) * 0.5f, snap(4.0f), rh * af, snap(2.0f), lerpc(C_GOLD, C_GOLDHI, pulse), lerpc(C_GOLD, C_GOLDHI, pulse));   // gold accent pill
+            fo->begin(dev); fo->draw_lc(dev, rx + snap(18.0f), ry + rh * 0.5f, MODULES[i], snap(15.0f), lerpc(C_DIM, C_TEXT, active ? 1.0f : ht), fa(C_STROKE), 1.0f);
         }
         // forward-looking hint that the sidebar scales (no interaction)
         fo->begin(dev); fo->draw_lc(dev, ix + snap(26.0f), bodyY + snap(44.0f) + MODULE_N * snap(42.0f) + snap(18.0f), "more modules soon", snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
@@ -559,10 +585,10 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         // ===== PROFILE BAR (full content width : active profile + unsaved + quick Save) =====
         const bool dirty = activeProf_[0] && profile_dirty();
         const float barY = bodyY + snap(18.0f), barH = snap(46.0f), barCy = barY + barH * 0.5f;
-        vg(dev, coX, barY, coW, barH, 0x40101826, 0x400A111C);
-        outline(dev, coX, barY, coW, barH, C_BORDER);
-        flat(dev, coX, barY, snap(3.0f), barH, lerpc(C_GOLD, C_GOLDHI, pulse));   // gold accent
-        fo->begin(dev); fo->draw_lc(dev, coX + snap(16.0f), barCy, "PROFILE", snap(11.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.2f);
+        drop_shadow(dev, coX, barY, coW, barH, snap(4.0f), 50);
+        rpanel(dev, coX, barY, coW, barH, snap(10.0f), 0x55101826, 0x550A111C, C_BORDER, snap(1.5f));
+        rrect_fill(dev, coX + snap(4.0f), barY + snap(7.0f), snap(4.0f), barH - snap(14.0f), snap(2.0f), lerpc(C_GOLD, C_GOLDHI, pulse), lerpc(C_GOLD, C_GOLDHI, pulse));   // gold accent pill
+        fo->begin(dev); fo->draw_lc(dev, coX + snap(18.0f), barCy, "PROFILE", snap(11.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.2f);
         const int nprof = profile_count();
         int cur = -1; for (int i = 0; i < nprof; ++i) if (activeProf_[0] && strcmp(profile_name(i), activeProf_) == 0) { cur = i; break; }
         const float aS = snap(28.0f), ay = barCy - aS * 0.5f, lx = coX + snap(86.0f);
@@ -571,15 +597,18 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             profile_load(nm); strncpy(activeProf_, nm, 31); activeProf_[31] = 0;
             strncpy(nameBuf_, nm, 31); nameBuf_[31] = 0; nameLen_ = (int)strlen(nameBuf_);
         }
-        // active profile name, with a small amber dot in front when it has unsaved changes
-        const float nameX = lx + aS + snap(14.0f);
+        // a recessed BLACK field holds the active profile, BETWEEN the two steppers.
+        const float fX = lx + aS + snap(10.0f);
+        const float nX = lx + aS + snap(258.0f);                  // > stepper x (field sits just left of it)
+        const float fW = (nX - snap(10.0f)) - fX, fH = snap(30.0f), fY = barCy - fH * 0.5f;
+        rpanel(dev, fX, fY, fW, fH, snap(7.0f), 0xE6070B13, 0xE604070D, 0x55355072, snap(1.5f));
+        fo->begin(dev);
         if (activeProf_[0]) {
-            if (dirty) flat(dev, nameX, barCy - snap(4.0f), snap(7.0f), snap(7.0f), fa(0xFFFFB454));
-            fo->begin(dev); fo->draw_lc(dev, nameX + (dirty ? snap(16.0f) : 0.0f), barCy, activeProf_, snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            if (dirty) { cs(dev); disc(dev, fX + snap(13.0f), barCy, snap(3.5f), fa(0xFFFFB454)); }   // unsaved dot
+            fo->begin(dev); fo->draw_c(dev, fX + fW * 0.5f, barCy, activeProf_, snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);   // WHITE = a profile is loaded
         } else {
-            fo->begin(dev); fo->draw_lc(dev, nameX, barCy, "(none -- open the Profile tab)", snap(13.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
+            fo->draw_c(dev, fX + fW * 0.5f, barCy, "(none -- open the Profile tab)", snap(13.0f), fa(C_DIM), fa(C_STROKE), 1.0f);   // GREY = no profile
         }
-        const float nX = nameX + snap(240.0f);
         if (arrow_btn(dev, fo, mo, click, 401, nX, ay, aS, ">") && nprof > 0) {
             const char* nm = profile_name((cur < 0 || cur >= nprof - 1) ? 0 : cur + 1);
             profile_load(nm); strncpy(activeProf_, nm, 31); activeProf_[31] = 0;
@@ -591,12 +620,18 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         {
             const bool canSave = activeProf_[0] != 0;
             const bool hov = canSave && inrect(mo, bx, bY, saveW, bH);
-            const float t = ease(410, hov ? 1.0f : 0.0f), glow = dirty ? (0.65f + 0.35f * pulse) : t;
-            halo(dev, bx, bY, saveW, bH, dirty ? C_GOLD : C_ACCENT, (hov ? 0.8f : 0.0f) + (dirty ? 0.5f : 0.0f));
-            const u32 gT = lerpc(0xFF2A3548, 0xFFE0B040, glow), gB = lerpc(0xFF1D2738, 0xFFB07C1E, glow);   // -> gold when dirty
-            vg(dev, bx, bY, saveW, bH, canSave ? gT : 0xFF1E2630, canSave ? gB : 0xFF141A22);
-            outline(dev, bx, bY, saveW, bH, lerpc(C_BORDERHI, dirty ? C_GOLDHI : C_ACCENTHI, glow));
-            fo->begin(dev); fo->draw_c(dev, bx + saveW * 0.5f, barCy, dirty ? "Save changes" : "Saved", snap(14.0f), fa(canSave ? (dirty ? 0xFF26190A : C_TEXT) : C_MUTE), fa(C_STROKE), 1.0f);
+            const float t = ease(410, hov ? 1.0f : 0.0f);
+            const float sr = snap(bH * 0.30f);
+            if (dirty) {                                  // unsaved -> a SOLID gold pill + dark, high-contrast label
+                halo(dev, bx, bY, saveW, bH, C_GOLD, 0.55f + 0.35f * pulse);
+                rpanel(dev, bx, bY, saveW, bH, sr, lerpc(0xFFF2C24E, 0xFFFFE08A, t), lerpc(0xFFCB901C, 0xFFE3A626, t), C_GOLDHI, snap(1.5f));
+                rrect_top(dev, bx + snap(2.0f), bY + snap(2.0f), saveW - snap(4.0f), bH * 0.42f, snap(sr * 0.6f), 0x44FFFFFF, 0x08FFFFFF);
+                fo->begin(dev); fo->draw_c(dev, bx + saveW * 0.5f, barCy, "Save changes", snap(14.0f), fa(0xFF241600), 0, 0.0f);
+            } else {                                      // saved / nothing to save -> quiet navy
+                if (canSave) halo(dev, bx, bY, saveW, bH, C_ACCENT, t * 0.7f);
+                rpanel(dev, bx, bY, saveW, bH, sr, canSave ? lerpc(0xFF2A3548, 0xFF3A82E0, t) : 0xFF1E2630, canSave ? lerpc(0xFF1D2738, 0xFF2A61B6, t) : 0xFF141A22, lerpc(C_BORDERHI, C_ACCENTHI, t), snap(1.5f));
+                fo->begin(dev); fo->draw_c(dev, bx + saveW * 0.5f, barCy, "Saved", snap(14.0f), fa(canSave ? C_TEXT : C_MUTE), fa(C_STROKE), 1.0f);
+            }
             if (canSave && dirty && hov && click) { profile_save(activeProf_); }
         }
 
@@ -611,21 +646,36 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         const float ctrlW = coW - previewW - splitGap;
         const float coY = barY + barH + snap(26.0f);
 
-        // section title (GOLD)
+        // section title (GOLD) -- underline spans the FULL title width (wipes in)
         fo->begin(dev);
+        const float secW = fo->measure(MODULES[section_], snap(20.0f));
         fo->draw_lc(dev, coX, coY, MODULES[section_], snap(20.0f), fa(C_GOLD), fa(C_STROKE), 1.4f);
-        flat(dev, coX, coY + snap(18.0f), snap(44.0f) * e, snap(2.0f), lerpc(C_GOLD, C_GOLDHI, pulse));
+        flat(dev, coX, coY + snap(18.0f), secW * e, snap(2.0f), lerpc(C_GOLD, C_GOLDHI, pulse));
 
-        // live preview fills the right column (reflects skin + Buff Size)
-        draw_party_preview(dev, fo, f, coX + ctrlW + splitGap, coY - snap(2.0f), previewW);
+        // LIVE PREVIEW stage : a recessed backdrop in the right column. The HUD draws the REAL
+        // party + 2-alliance demo boxes (forced //aio alliance2 demo) on top, anchored bottom-right
+        // here -- so the preview is exactly what ships in game (cost box space included).
+        {
+            const float pvx = coX + ctrlW + splitGap, pvy = coY - snap(2.0f);
+            fo->begin(dev); fo->draw_lc(dev, pvx, pvy + snap(7.0f), "LIVE PREVIEW", snap(12.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.4f);
+            const float stageY = pvy + snap(22.0f), stageH = pageBot - stageY;
+            drop_shadow(dev, pvx, stageY, previewW, stageH, snap(6.0f), 60);
+            rpanel(dev, pvx, stageY, previewW, stageH, snap(12.0f), 0x40080C16, 0x40060A12, C_BORDER, snap(1.5f));
+            rrect_top(dev, pvx + snap(2.0f), stageY + snap(2.0f), previewW - snap(4.0f), snap(40.0f), snap(10.0f), 0x10FFFFFF, 0x00FFFFFF);   // faint top sheen
+            pvRightX_  = pvx + previewW - snap(18.0f);
+            pvBottomY_ = pageBot - snap(14.0f);
+            pvOn_ = true;
+        }
 
         // each control row sits on an alternating band (label<->control tie) + eases in, staggered.
         const float bandX = coX - snap(12.0f), bandW = ctrlW + snap(24.0f);
         float ry = coY + snap(44.0f); int ri = 0;
         // ROW_BAND : draw the alternating background band + set the staggered entrance (g_fade, yo).
         // ROW_NEXT : advance ry by the row's slot height and bump the stagger index.
+        // yo also vertically CENTERS the row content (helper rows are 40px tall) inside the taller band.
         #define ROW_BAND(slotH)   row_band(dev, bandX, ry, bandW, snap(slotH), (ri & 1) != 0, 0.0f); \
-            float ap = stagger(anim_, ri); g_fade = e * ap; float yo = (1.0f - ap) * snap(14.0f); (void)ap;
+            float ap = stagger(anim_, ri); g_fade = e * ap; \
+            float yo = (1.0f - ap) * snap(14.0f) + (snap(slotH) - snap(40.0f)) * 0.5f; (void)ap;
         #define ROW_NEXT(adv)     ry += snap(adv); ri++;
 
         // Box Theme (name only -- the live preview shows the actual skin)
@@ -670,8 +720,8 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, "Borders", snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
             const char* blbl[4] = { "Party", "Cost", "Ally 1", "Ally 2" };
             bool* bval[4] = { &ui_config().border[0], &ui_config().borderCost, &ui_config().border[1], &ui_config().border[2] };
-            const float bbw = snap(72.0f), bgap = snap(8.0f), bbh = snap(28.0f);
-            const float bx0 = coX + ctrlW - (4 * bbw + 3 * bgap), bty = ty + (rowH - bbh) * 0.5f;
+            const float bbw = snap(76.0f), bgap = snap(8.0f), bbh = snap(34.0f);
+            const float bx0 = coX + ctrlW - (4 * bbw + 3 * bgap), bty = ty + (rowH - bbh) * 0.5f;   // centred in the band
             for (int i = 0; i < 4; ++i) {
                 const float bx2 = bx0 + i * (bbw + bgap);
                 if (toggle_chip(dev, fo, mo, click, 50 + i * 2, bx2, bty, bbw, bbh, blbl[i], *bval[i])) { *bval[i] = !*bval[i]; save_ui_config(); }
@@ -680,7 +730,8 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         ROW_NEXT(56.0f)
         // Buttons : Edit Layout (enter drag/resize) + Default (reset EVERYTHING)
         { ROW_BAND(56.0f)
-            const float bh = snap(34.0f), bw = snap(168.0f), gap = snap(10.0f), ty = ry + yo;
+            const float bh = snap(34.0f), bw = snap(168.0f), gap = snap(10.0f);
+            const float ty = ry + yo + (snap(40.0f) - bh) * 0.5f;   // these buttons are 34px (not 40) -> recentre in the band
             const float defX = coX + ctrlW - bw, edX = defX - gap - bw;
             fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ty + bh * 0.5f, "Layout", snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
@@ -694,91 +745,121 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     } else if (tab_ == 1) {
         ui_config().wheel = 0;
         if (profDirty_) { profile_refresh(); profDirty_ = false; }
-        // ===== PROFILE tab : the full library -- create / load / rename / delete =====
-        const float pX = ix + snap(40.0f), pW = iw - snap(80.0f);
-        float py = bodyY + snap(28.0f);
-        fo->begin(dev);
-        fo->draw_lc(dev, pX, py, "Profiles", snap(22.0f), fa(C_GOLD), fa(C_STROKE), 1.4f);
-        flat(dev, pX, py + snap(20.0f), snap(48.0f) * e, snap(2.0f), lerpc(C_GOLD, C_GOLDHI, pulse));
-        fo->begin(dev);
-        fo->draw_lc(dev, pX, py + snap(42.0f), "A profile snapshots every module's settings. Load to switch instantly ; the active one is also saved from the Configuration bar.",
-                    snap(13.0f), fa(C_DIM), fa(C_STROKE), 1.0f);
-
-        // --- CREATE / EDIT card ---
-        py += snap(64.0f);
-        const float cardH = snap(86.0f);
-        vg(dev, pX, py, pW, cardH, 0x40101826, 0x400A111C);
-        outline(dev, pX, py, pW, cardH, C_BORDER);
-        flat(dev, pX, py, snap(3.0f), cardH, lerpc(C_GOLD, C_GOLDHI, pulse));
-        fo->begin(dev);
-        fo->draw_lc(dev, pX + snap(18.0f), py + snap(18.0f), "NEW  /  RENAME", snap(11.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.2f);
-        const float inX = pX + snap(18.0f), inY = py + snap(34.0f);
-        const float fH = snap(38.0f), btnW = snap(130.0f), fGap = snap(12.0f);
-        const float fW = pW - snap(36.0f) - btnW - fGap;
-        const bool fldHov = inrect(mo, inX, inY, fW, fH);
-        if (click) nameFocus_ = fldHov;
         bool commit = kbCommit_; kbCommit_ = false;
-        const float ft = ease(700, nameFocus_ ? 1.0f : 0.0f);
-        halo(dev, inX, inY, fW, fH, C_ACCENT, ft * 0.7f);
-        vg(dev, inX, inY, fW, fH, 0x55101620, 0x550A0F16);
-        outline(dev, inX, inY, fW, fH, lerpc(C_BORDER, C_ACCENT, ft));
-        flat(dev, inX, inY, snap(2.0f), fH, lerpc(0x00000000, C_ACCENT, ft));
+        const char* charName = (f.game && f.game->inGame && f.game->me.name[0]) ? f.game->me.name : 0;
+        const int   nprof = profile_count();
+        const bool  dirty = activeProf_[0] && profile_dirty();
+
+        // ===== LEFT RAIL : the current character + one-click saves =====
+        const float sbW = snap(290.0f);
+        vg(dev, ix, bodyY, sbW, bodyH, C_SIDEBAR, 0xF0121A27);
+        flat(dev, ix + sbW, bodyY, 1, bodyH, C_BORDER);
+        const float cx0 = ix + snap(20.0f), cw0 = sbW - snap(40.0f);
+        fo->begin(dev); fo->draw_lc(dev, cx0, bodyY + snap(24.0f), "CHARACTER", snap(12.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.4f);
+
+        float ry0 = bodyY + snap(40.0f); const float ccH = snap(98.0f);
+        drop_shadow(dev, cx0, ry0, cw0, ccH, snap(4.0f), 50);
+        rpanel(dev, cx0, ry0, cw0, ccH, snap(11.0f), 0x55101826, 0x550A111C, C_BORDER, snap(1.5f));
+        rrect_fill(dev, cx0 + snap(4.0f), ry0 + snap(9.0f), snap(4.0f), ccH - snap(18.0f), snap(2.0f), lerpc(C_GOLD, C_GOLDHI, pulse), lerpc(C_GOLD, C_GOLDHI, pulse));
+        const float avR = snap(22.0f), avX = cx0 + snap(34.0f), avY = ry0 + snap(34.0f);
+        cs(dev); disc(dev, avX, avY, avR, fa(0xFF2C6AC4)); disc(dev, avX, avY, avR - snap(2.0f), fa(0xFF15315C));
+        if (charName) { char ini[2] = { (char)(charName[0] >= 'a' && charName[0] <= 'z' ? charName[0] - 32 : charName[0]), 0 };
+            fo->begin(dev); fo->draw_cc(dev, avX, avY, ini, snap(22.0f), fa(C_GOLDHI), fa(C_STROKE), 1.6f); }
+        else { fo->begin(dev); fo->draw_cc(dev, avX, avY, "?", snap(22.0f), fa(C_MUTE), fa(C_STROKE), 1.4f); }
+        const float nlx = avX + avR + snap(14.0f);
         fo->begin(dev);
-        const float txY = inY + fH * 0.5f, txX = inX + snap(13.0f);
+        fo->draw_lc(dev, nlx, ry0 + snap(26.0f), charName ? charName : "(not logged in)", snap(17.0f), fa(charName ? C_TEXT : C_MUTE), fa(C_STROKE), 1.2f);
+        char actl[80]; if (activeProf_[0]) _snprintf(actl, sizeof(actl), "Active : %s", activeProf_); else strcpy(actl, "Active : none");
+        fo->draw_lc(dev, nlx, ry0 + snap(50.0f), actl, snap(12.0f), fa(C_DIM), fa(C_STROKE), 1.0f);
+        if (dirty) { cs(dev); disc(dev, nlx + snap(3.0f), ry0 + snap(70.0f), snap(3.5f), fa(0xFFFFB454));
+            fo->begin(dev); fo->draw_lc(dev, nlx + snap(12.0f), ry0 + snap(70.0f), "unsaved changes", snap(11.0f), fa(0xFFFFB454), fa(C_STROKE), 1.0f); }
+
+        // quick-save buttons
+        ry0 += ccH + snap(18.0f);
+        fo->begin(dev); fo->draw_lc(dev, cx0, ry0, "QUICK SAVE", snap(11.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.2f);
+        ry0 += snap(16.0f); const float qbH = snap(40.0f);
+        { char lbl[48]; if (charName) _snprintf(lbl, sizeof(lbl), "Save for %s", charName); else strcpy(lbl, "Save for character");
+          if (push_btn(dev, fo, mo, click, 710, cx0, ry0, cw0, qbH, lbl, 0) && charName) {
+              profile_save(charName); strncpy(activeProf_, charName, 31); activeProf_[31] = 0;
+              strncpy(nameBuf_, charName, 31); nameBuf_[31] = 0; nameLen_ = (int)strlen(nameBuf_); profDirty_ = true; } }
+        ry0 += qbH + snap(10.0f);
+        if (push_btn(dev, fo, mo, click, 711, cx0, ry0, cw0, qbH, "Save as Default", 0)) {
+            profile_save("Default"); strcpy(activeProf_, "Default");
+            strcpy(nameBuf_, "Default"); nameLen_ = 7; profDirty_ = true; }
+        ry0 += qbH + snap(18.0f);
+        fo->begin(dev); fo->draw_lc(dev, cx0, ry0, "A profile snapshots every setting. Quick-save", snap(11.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
+        fo->draw_lc(dev, cx0, ry0 + snap(16.0f), "binds one to this character or the default.", snap(11.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
+
+        // ===== RIGHT : create / rename + the saved library =====
+        const float pX = ix + sbW + snap(34.0f), pW = (ix + iw) - pX - snap(30.0f);
+        float py = bodyY + snap(26.0f);
+        fo->begin(dev);
+        const float ptW = fo->measure("Profiles", snap(22.0f));
+        fo->draw_lc(dev, pX, py, "Profiles", snap(22.0f), fa(C_GOLD), fa(C_STROKE), 1.4f);
+        flat(dev, pX, py + snap(22.0f), ptW * e, snap(2.0f), lerpc(C_GOLD, C_GOLDHI, pulse));
+        fo->draw_lc(dev, pX, py + snap(44.0f), "Load to switch instantly. Rename a loaded profile by editing its name and pressing Rename.", snap(13.0f), fa(C_DIM), fa(C_STROKE), 1.0f);
+
+        // create / rename field (rounded recessed) + action button
+        py += snap(66.0f);
+        fo->begin(dev); fo->draw_lc(dev, pX, py, "NEW  /  RENAME", snap(11.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.2f);
+        py += snap(16.0f);
+        const float fH = snap(42.0f), btnW = snap(148.0f), fGap = snap(12.0f), fW = pW - btnW - fGap;
+        const bool fldHov = inrect(mo, pX, py, fW, fH);
+        if (click) nameFocus_ = fldHov;
+        const float ft = ease(700, nameFocus_ ? 1.0f : 0.0f);
+        halo(dev, pX, py, fW, fH, C_ACCENT, ft * 0.6f);
+        rpanel(dev, pX, py, fW, fH, snap(8.0f), 0xE6080C14, 0xE605080F, lerpc(C_CTL_BR, C_ACCENT, ft), snap(1.5f));
+        const float txY = py + fH * 0.5f, txX = pX + snap(15.0f);
+        fo->begin(dev);
         if (nameLen_ > 0) fo->draw_lc(dev, txX, txY, nameBuf_, snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
         else              fo->draw_lc(dev, txX, txY, "Type a profile name...", snap(14.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
-        if (nameFocus_ && sinf(f.t * 5.0f) > 0.0f) { const float cx = txX + (nameLen_ > 0 ? fo->measure(nameBuf_, snap(15.0f)) : 0.0f) + snap(2.0f);
-            flat(dev, cx, inY + snap(9.0f), snap(2.0f), fH - snap(18.0f), C_ACCENTHI); }
+        if (nameFocus_ && sinf(f.t * 5.0f) > 0.0f) { const float cxx = txX + (nameLen_ > 0 ? fo->measure(nameBuf_, snap(15.0f)) : 0.0f) + snap(2.0f);
+            flat(dev, cxx, py + snap(11.0f), snap(2.0f), fH - snap(22.0f), C_ACCENTHI); }
         const bool canSave = nameLen_ > 0, exists = canSave && profile_exists(nameBuf_);
         const bool renaming = canSave && activeProf_[0] && strcmp(nameBuf_, activeProf_) != 0;
-        const float saveX = inX + fW + fGap;
-        {
-            const bool hov = canSave && inrect(mo, saveX, inY, btnW, fH);
-            const float t = ease(701, hov ? 1.0f : 0.0f);
-            halo(dev, saveX, inY, btnW, fH, C_ACCENT, t * 0.8f);
-            vg(dev, saveX, inY, btnW, fH, canSave ? lerpc(0xFF2A3548, 0xFF3A82E0, t) : 0xFF1E2630, canSave ? lerpc(0xFF1D2738, 0xFF2A61B6, t) : 0xFF141A22);
-            outline(dev, saveX, inY, btnW, fH, lerpc(C_BORDERHI, C_ACCENTHI, t));
-            const char* lbl = renaming ? "Rename" : (exists ? "Overwrite" : "Create");
-            fo->begin(dev); fo->draw_c(dev, saveX + btnW * 0.5f, txY, lbl, snap(14.0f), fa(canSave ? C_TEXT : C_MUTE), fa(C_STROKE), 1.0f);
-            if (canSave && ((hov && click) || commit)) {
-                profile_save(nameBuf_); if (renaming) profile_delete(activeProf_);
-                strncpy(activeProf_, nameBuf_, sizeof(activeProf_) - 1); activeProf_[sizeof(activeProf_) - 1] = 0; profDirty_ = true;
-            }
+        const char* lbl = renaming ? "Rename" : (exists ? "Overwrite" : "Create");
+        if (push_btn(dev, fo, mo, click, 701, pX + fW + fGap, py, btnW, fH, lbl, 0)) {
+            if (canSave) { profile_save(nameBuf_); if (renaming) profile_delete(activeProf_);
+                strncpy(activeProf_, nameBuf_, 31); activeProf_[31] = 0; profDirty_ = true; }
+        } else if (commit && canSave) {
+            profile_save(nameBuf_); if (renaming) profile_delete(activeProf_);
+            strncpy(activeProf_, nameBuf_, 31); activeProf_[31] = 0; profDirty_ = true;
         }
 
-        // --- saved list ---
-        py += cardH + snap(22.0f);
-        fo->begin(dev);
-        char hdr[48]; sprintf(hdr, "SAVED  (%d)", profile_count());
+        // saved library
+        py += fH + snap(24.0f);
+        fo->begin(dev); char hdr[48]; sprintf(hdr, "SAVED  (%d)", nprof);
         fo->draw_lc(dev, pX, py, hdr, snap(12.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.2f);
-        py += snap(22.0f);
-        const float rowH = snap(46.0f), rGap = snap(8.0f);
-        const int nprof = profile_count();
+        py += snap(24.0f);
+        const float rowH = snap(50.0f), rGap = snap(9.0f);
         if (nprof == 0) {
-            vg(dev, pX, py, pW, snap(56.0f), 0x2A101826, 0x2A0A111C);
-            outline(dev, pX, py, pW, snap(56.0f), C_BORDER);
-            fo->begin(dev); fo->draw_c(dev, pX + pW * 0.5f, py + snap(28.0f), "No profiles yet -- type a name above and Create.", snap(14.0f), fa(C_DIM), fa(C_STROKE), 1.0f);
+            rpanel(dev, pX, py, pW, snap(62.0f), snap(11.0f), 0x2A101826, 0x2A0A111C, C_BORDER, snap(1.5f));
+            fo->begin(dev); fo->draw_c(dev, pX + pW * 0.5f, py + snap(31.0f), "No profiles yet -- quick-save one, or type a name and Create.", snap(14.0f), fa(C_DIM), fa(C_STROKE), 1.0f);
         }
         const int maxRows = (int)((pageBot - py) / (rowH + rGap));
+        const int cnLen = charName ? (int)strlen(charName) : 0;
         for (int i = 0; i < nprof && i < maxRows; ++i) {
             const char* nm = profile_name(i);
             const bool active = activeProf_[0] && strcmp(nm, activeProf_) == 0;
+            const bool isDef  = strcmp(nm, "Default") == 0;
+            const bool isChar = charName && (strcmp(nm, charName) == 0 || (strncmp(nm, charName, cnLen) == 0 && nm[cnLen] == '/'));
             const float ap = stagger(anim_, i); g_fade = e * ap;
             const float ry = py + i * (rowH + rGap) + (1.0f - ap) * snap(12.0f);
             const bool rowHov = inrect(mo, pX, ry, pW, rowH);
             const float rt = ease(320 + i, rowHov ? 1.0f : 0.0f);
-            vg(dev, pX, ry, pW, rowH, lerpc(active ? 0x402C6AC4 : 0x22141C28, active ? 0x553A82E0 : 0x33223A5C, rt),
-                                      lerpc(active ? 0x40234E92 : 0x220E141E, active ? 0x552A61B6 : 0x331A2A44, rt));
-            outline(dev, pX, ry, pW, rowH, active ? C_GOLD : lerpc(C_BORDER, C_BORDERHI, rt));
-            flat(dev, pX, ry, snap(3.0f), rowH, lerpc(C_GOLD, C_GOLDHI, active ? 1.0f : pulse));
-            fo->begin(dev); fo->draw_lc(dev, pX + snap(18.0f), ry + rowH * 0.5f, nm, snap(16.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float lbw = snap(80.0f), dbw = snap(80.0f), bgap = snap(8.0f), bH = snap(30.0f);
+            rpanel(dev, pX, ry, pW, rowH, snap(11.0f),
+                   lerpc(active ? 0x55203A66 : 0x26141C28, active ? 0x55295082 : 0x33223A5C, rt),
+                   lerpc(active ? 0x55172C4E : 0x260E141E, active ? 0x55203F6E : 0x331A2A44, rt),
+                   active ? C_GOLD : lerpc(C_BORDER, C_BORDERHI, rt), snap(1.5f));
+            rrect_fill(dev, pX + snap(4.0f), ry + snap(9.0f), snap(4.0f), rowH - snap(18.0f), snap(2.0f), lerpc(C_GOLD, C_GOLDHI, active ? 1.0f : pulse), lerpc(C_GOLD, C_GOLDHI, active ? 1.0f : pulse));
+            fo->begin(dev); fo->draw_lc(dev, pX + snap(20.0f), ry + rowH * 0.5f, nm, snap(16.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            float bxa = pX + snap(20.0f) + fo->measure(nm, snap(16.0f)) + snap(12.0f);
+            const float bcy = ry + rowH * 0.5f;
+            if (active) bxa += badge(dev, fo, bxa, bcy, "ACTIVE",  0xCC2E8C49, 0xFF49C46A, 0xFFEAFBEF) + snap(6.0f);
+            if (isDef)  bxa += badge(dev, fo, bxa, bcy, "DEFAULT", 0xCC8A6A1E, C_GOLD,     0xFF2A1C06) + snap(6.0f);
+            if (isChar) bxa += badge(dev, fo, bxa, bcy, charName,  0xCC2C6AC4, 0xFF64B4FF, 0xFFEAF3FF) + snap(6.0f);
+            const float lbw = snap(84.0f), dbw = snap(84.0f), bgap = snap(8.0f), bH = snap(32.0f);
             const float dX = pX + pW - dbw - snap(10.0f), lX = dX - bgap - lbw, bY = ry + (rowH - bH) * 0.5f;
-            if (active) {
-                const float pillW = snap(58.0f), pillX = lX - snap(12.0f) - pillW, pillH = snap(20.0f), pillY = ry + (rowH - pillH) * 0.5f;
-                vg(dev, pillX, pillY, pillW, pillH, 0xFF2E8C49, 0xFF206030); outline(dev, pillX, pillY, pillW, pillH, 0xFF49C46A);
-                fo->begin(dev); fo->draw_c(dev, pillX + pillW * 0.5f, pillY + pillH * 0.5f, "ACTIVE", snap(10.0f), fa(C_TEXT), fa(C_STROKE), 0.8f);
-            }
             if (push_btn(dev, fo, mo, click, 760 + i * 2, lX, bY, lbw, bH, "Load", 0)) {
                 profile_load(nm);
                 strncpy(nameBuf_, nm, sizeof(nameBuf_) - 1); nameBuf_[sizeof(nameBuf_) - 1] = 0; nameLen_ = (int)strlen(nameBuf_); nameFocus_ = false;

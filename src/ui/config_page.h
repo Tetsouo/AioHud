@@ -21,6 +21,13 @@ public:
     // draw the overlay for the current frame (screen size in the HUD coord space). No-op if closed.
     void draw(const Frame& f, float sw, float sh);
 
+    // LIVE PREVIEW anchor : when open on the Configuration tab, the HUD draws the real party +
+    // alliance demo boxes (bottom-right) into the page. Returns false otherwise. (rightX, bottomY)
+    // is where the party box's bottom-right corner should sit, in the HUD coord space.
+    bool preview_anchor(float& rightX, float& bottomY) const {
+        rightX = pvRightX_; bottomY = pvBottomY_; return pvOn_;
+    }
+
     // ---- keyboard (fed by the plugin's slot-14 hook ; only while a text field is focused) ----
     bool wants_keys() const { return open_ && nameFocus_; }   // -> the hook consumes keys (name field is on the Config tab)
     void feed_char(char c)  {
@@ -50,6 +57,9 @@ private:
     char  activeProf_[32] = { 0 };// last saved/loaded profile -> highlighted in the list
     int   helpSel_     = 0;       // Help tab : selected module in the left menu
     float helpScroll_  = 0.0f;    // Help tab vertical scroll (mouse wheel)
+    // live-preview anchor published each frame for the HUD (Configuration tab only)
+    bool  pvOn_        = false;
+    float pvRightX_    = 0.0f, pvBottomY_ = 0.0f;
 };
 
 } // namespace aio

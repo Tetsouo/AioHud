@@ -1,6 +1,7 @@
 // hud.cpp -- see hud.h.
 #include "hud.h"
 #include "ui/factory.h"
+#include "ui/party.h"
 #include "model/layout.h"
 #include "model/game_mem.h"
 #include "model/gamestate.h"
@@ -9,6 +10,7 @@
 #include "windower_debug.h"
 #include <windows.h>
 #include <algorithm>
+#include <string.h>
 
 namespace aio {
 
@@ -186,11 +188,56 @@ void Hud::render(u32 dev) {
     __try {
         for (size_t i = 0; i < widgets_.size(); ++i) widgets_[i]->draw(f);
         config_.draw(f, screenW_, screenH_);   // full-screen config overlay, on top of everything
+        draw_config_preview(f);                // real party+alliance demo boxes inside the config preview stage
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         static bool logged = false;
         if (!logged) { logged = true; windower::debug::log("HUD draw threw (SEH)"); }
     }
     if (tok) { dApplySB(dev, tok); dDelSB(dev, tok); }
+}
+
+// Draw the REAL party + 2-alliance demo boxes into the config page's preview stage. Runs AFTER
+// config_.draw so the boxes sit on top of the page. We force //aio alliance2 demo for the duration
+// and temporarily place the party box bottom-right at the stage anchor (the alliance boxes + cost-box
+// space stack above it via the normal logic), then restore every value we touched.
+void Hud::draw_config_preview(const Frame& f) {
+    float rightX = 0.0f, bottomY = 0.0f;
+    if (!config_.preview_anchor(rightX, bottomY)) return;
+
+    Party* tiers[3] = { nullptr, nullptr, nullptr };
+    for (size_t i = 0; i < widgets_.size(); ++i) {
+        Widget* w = widgets_[i];
+        if (strcmp(w->type_name(), "PartyList") != 0) continue;   // PartyList + AllianceList both => Party
+        Party* p = static_cast<Party*>(w);
+        int t = p->tier();
+        if (t >= 0 && t < 3) tiers[t] = p;
+    }
+    if (!tiers[0]) return;
+
+    UiConfig& C = ui_config();
+    const int   savedLvl = party_demo_level(), savedCnt = party_demo_count();
+    const bool  sp0 = C.box[0].posSet, sp1 = C.box[1].posSet, sp2 = C.box[2].posSet;
+    const float sref = C.partyRefY;
+    const float opx[3] = { tiers[0]->px(), tiers[1] ? tiers[1]->px() : 0.0f, tiers[2] ? tiers[2]->px() : 0.0f };
+    const float opy[3] = { tiers[0]->py(), tiers[1] ? tiers[1]->py() : 0.0f, tiers[2] ? tiers[2]->py() : 0.0f };
+
+    set_party_demo_level(3);                            // party + alliance 1 + alliance 2
+    set_party_demo_count(6);                            // full 6-member party for a representative preview
+    // use px_/py_ for ALL three (not the user's box overrides) so they SHARE the same right edge :
+    // the party sits at the anchor, the alliances align to it and stack upward (cost-box space included).
+    C.box[0].posSet = false; C.box[1].posSet = false; C.box[2].posSet = false;
+    C.partyRefY = -1.0f;
+
+    float pw = 0.0f, ph = 0.0f; tiers[0]->measure(pw, ph);   // party box footprint (bottom-anchored, full 6 rows)
+    const float boxX = rightX - pw, partyTop = bottomY - ph;
+    for (int t = 0; t < 3; ++t) if (tiers[t]) tiers[t]->set_origin(boxX, partyTop);   // shared X ; party Y anchors the stack
+
+    for (int t = 0; t < 3; ++t) if (tiers[t]) tiers[t]->draw(f);   // tier 0 first (publishes the stack ref)
+
+    C.box[0].posSet = sp0; C.box[1].posSet = sp1; C.box[2].posSet = sp2;
+    C.partyRefY = sref;
+    for (int t = 0; t < 3; ++t) if (tiers[t]) tiers[t]->set_origin(opx[t], opy[t]);   // restore real placement
+    set_party_demo_level(savedLvl); set_party_demo_count(savedCnt);
 }
 
 void Hud::dispose() {

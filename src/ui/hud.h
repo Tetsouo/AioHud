@@ -53,6 +53,7 @@ private:
     void add_default();     // a single LiquidBars at its default position (fallback)
     void place_widgets();   // (re)build + place widgets from layout_ at the current screen size
     void update_screen(u32 dev);   // read the real viewport ; re-place if the resolution changed
+    void draw_config_preview(const Frame& f);   // draw the real party+alliance demo boxes into the config page's preview stage
 
     GameState            state_;
     FontManager          fonts_;                   // atlas cache (default + per-text faces/weights)

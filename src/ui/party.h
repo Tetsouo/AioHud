@@ -21,6 +21,7 @@ public:
     void on_device_lost() override;          // forget the dot handle (zoning)
     void dispose() override;                  // release the dot texture (unload)
     void draw(const Frame& f) override;
+    int  tier() const { return tier_; }      // 0 = main party, 1/2 = alliance boxes (used by the config preview)
 
 private:
     void row(int i, void* out) const;        // fill one demo Row ; void* keeps Row out of the header

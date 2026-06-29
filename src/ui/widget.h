@@ -71,6 +71,9 @@ public:
     void set_scale(float s) { scale_ = s; }   // global UI scale (real screen / authored viewport)
     int  z()       const { return z_; }
     bool visible() const { return visible_; }
+    float px()     const { return px_; }       // current pixel origin (read for save/restore)
+    float py()     const { return py_; }
+    void  set_origin(float x, float y) { px_ = x; py_ = y; }   // relocate without a full re-place (config preview)
 
 protected:
     float px_ = 0.0f, py_ = 0.0f;   // pixel origin (top-left) on the real screen
