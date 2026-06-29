@@ -74,5 +74,9 @@ unsigned    job_role_color(int id);       // role tint (tank/healer/dd/support) 
 // level > tier (tier 0 = main party, 1 = alliance1, 2 = alliance2).
 int  party_demo_level();
 void set_party_demo_level(int level);
+// party demo member count (1..6) -> //aio party demo N. Lets the demo preview the adaptive party
+// height / mask / Set-Ref growth at any count (alliances always preview full 6).
+int  party_demo_count();
+void set_party_demo_count(int c);
 
 } // namespace aio

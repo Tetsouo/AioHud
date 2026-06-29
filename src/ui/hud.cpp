@@ -15,17 +15,21 @@ namespace aio {
 // Poll the OS cursor + left button and map into the HUD coord space. The plugin runs inside the
 // game process, so Win32 gives us the cursor directly (the IPlugin mouse slot doesn't carry it).
 // Cursor is client-relative to the focused (game) window, scaled by client size -> coord space.
-static void poll_mouse(MouseState& m, float coordW, float coordH) {
+static void poll_mouse(MouseState& m, float coordW, float coordH, HWND gameHw) {
     POINT p;
-    if (!GetCursorPos(&p)) { m.clicked = false; return; }
-    HWND hw = GetForegroundWindow();
-    if (hw) {
-        POINT cp = p; ScreenToClient(hw, &cp);
-        RECT rc;
-        if (GetClientRect(hw, &rc)) {
-            float ww = (float)(rc.right - rc.left), wh = (float)(rc.bottom - rc.top);
-            if (ww > 1.0f && wh > 1.0f) { m.x = (float)cp.x * coordW / ww; m.y = (float)cp.y * coordH / wh; }
-        }
+    if (!GetCursorPos(&p)) { m.clicked = false; m.down = false; return; }
+    HWND fg = GetForegroundWindow();
+    // Only act when the GAME window is the OS foreground. If the user alt-tabbed / clicked into a
+    // browser, the cursor + button belong to THAT window -> ignore them (no phantom config clicks),
+    // and flag the frame as unfocused so we hide our drawn cursor. The click that RE-focuses the game
+    // is left for Windows to consume (see aio_plugin_mouse) so the window activates like any app.
+    m.focused = (gameHw != nullptr && fg == gameHw);
+    if (!m.focused) { m.clicked = false; m.down = false; return; }
+    POINT cp = p; ScreenToClient(fg, &cp);
+    RECT rc;
+    if (GetClientRect(fg, &rc)) {
+        float ww = (float)(rc.right - rc.left), wh = (float)(rc.bottom - rc.top);
+        if (ww > 1.0f && wh > 1.0f) { m.x = (float)cp.x * coordW / ww; m.y = (float)cp.y * coordH / wh; }
     }
     bool down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
     m.clicked = down && !m.down;   // press edge = one-shot click
@@ -171,7 +175,7 @@ void Hud::render(u32 dev) {
     f.t     = (float)(GetTickCount() % 1000000) / 1000.0f;
     f.game  = &state_;            // the per-frame snapshot widgets read from
     f.skin  = &skin_;             // the shared FFXI window skin (9-slice chrome)
-    poll_mouse(mouse_, screenW_, screenH_);   // cursor + click for this frame
+    poll_mouse(mouse_, screenW_, screenH_, (HWND)dFocusWindow(dev));   // cursor + click for this frame (gated on game focus)
     f.mouse = &mouse_;
     f.screenW = screenW_; f.screenH = screenH_;
 

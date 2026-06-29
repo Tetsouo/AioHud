@@ -19,6 +19,10 @@ static int g_demoLevel = 0;
 int  party_demo_level() { return g_demoLevel; }
 void set_party_demo_level(int level) { g_demoLevel = level < 0 ? 0 : (level > 3 ? 3 : level); }
 
+static int g_demoCount = 6;                                                  // party demo member count (1..6)
+int  party_demo_count() { return g_demoCount; }
+void set_party_demo_count(int c) { g_demoCount = c < 1 ? 1 : (c > 6 ? 6 : c); }
+
 static const char* CACHE = "D:\\Windower Tetsouo\\plugins\\aiohud_party.bin";
 
 static const char* JOBS[] = {

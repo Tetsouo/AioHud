@@ -317,8 +317,14 @@ int Party::build_rows(void* outRows, const GameState& gs) const {
         }
         return cnt;
     }
-    // Main party box : a demo command forces the baked roster; else live / cached fallback.
-    if (demo >= 1) { for (int i = 0; i < 6; ++i) demo_row(i, &rows[i]); return 6; }
+    // Main party box : a demo command forces the baked roster; else live / cached fallback. The demo
+    // member COUNT is configurable (//aio party demo N) so you can preview the adaptive height / mask /
+    // Set-Ref growth at any size -- edit mode keeps the full 6 for the footprint.
+    if (demo >= 1) {
+        const int dc = ui_config().editLayout ? 6 : party_demo_count();
+        for (int i = 0; i < dc; ++i) demo_row(i, &rows[i]);
+        return dc;
+    }
 
     // self comes from the snapshot: gs.me lives in the HUD's GameState -> it outlives this call,
     // so fill_self can safely store r.name = gs.me.name (the rows are rendered by the caller).
@@ -379,7 +385,7 @@ void Party::demo_row(int i, void* out) const {
     r.offzone = false; r.zone = 0; r.id = (unsigned)(tier_ * 10 + i + 1); r.sel = false; r.subsel = false; r.castPct = 0.0f; r.castAlpha = 0.0f;
     r.dist = (float)i * 6.7f; r.outRange = (r.dist > kCastRange);   // demo : spread distances, last rows out of range
     const Member& dm = DEMO[tier_ * 6 + i];
-    const bool edit = ui_config().editLayout;             // edit mode : everything full to show the MAX footprint
+    const bool edit = ui_config().editLayout || party_demo_level() > 0;   // edit AND //aio demo : everything full -> a faithful preview of the REAL configured layout
     int hp = edit ? 100 : dhp_[i]; if (hp < 0) hp = 0; if (hp > 100) hp = 100;
     int mp = edit ? 100 : dmp_[i]; if (mp < 0) mp = 0; if (mp > 100) mp = 100;
     int tp = edit ? 3000 : dtp_[i]; if (tp < 0) tp = 0; if (tp > 3000) tp = 3000;
@@ -487,6 +493,10 @@ void Party::draw(const Frame& f) {
     if (n <= 0) return;                           // nothing to show (e.g. an alliance box outside demo)
 
     const float S = scale_ * BOOST * ui_config().box[tier_].scale;   // per-box size (config Font Size / edit-mode wheel)
+    // editLike = edit mode OR a //aio demo command. Both are PREVIEWS, so both must show the REAL
+    // configured layout (full footprint, cost box, full bars) -- NOT the live adaptive shrink / mask /
+    // Set-Ref growth that hugs the native UI in-game (there's no native UI to hug in a preview).
+    const bool editLike = ui_config().editLayout || party_demo_level() > 0;
     // Snap ALL box geometry to whole pixels so EVERY row sits at an identical pixel phase ->
     // the 1px borders (badge / selection frame) are crisp on every row, never blurred or
     // "truncated" on some rows (which happens with a fractional row pitch).
@@ -507,9 +517,13 @@ void Party::draw(const Frame& f) {
     if (posSet) { px = snap(ui_config().box[tier_].x * f.screenW); oy = snap(ui_config().box[tier_].y * f.screenH); }
 
     const float sepH = 0.0f;                               // no separator between the two alliance boxes
-    // alliances stack on the party's DEFAULT top (py_), NOT its dragged position -> moving the party
-    // does NOT move the alliances (they stay independent ; drag them separately to reposition).
-    if (tier_ == 0) { g_partyTopY = snap(py_); g_partyTopReady = true; }
+    // alliances stack on the party's CURRENT top (its placed/dragged position if set, else the default)
+    // -> the demo preview is coherent with where you actually put the party. Drag an alliance to give it
+    // its own independent position (then it ignores this stack).
+    if (tier_ == 0) {
+        g_partyTopY = (ui_config().box[0].posSet && f.screenH > 0.0f) ? snap(ui_config().box[0].y * f.screenH) : snap(py_);
+        g_partyTopReady = true;
+    }
     else if (!posSet && g_partyTopReady) {                 // alliances stack on the party ONLY when not user-placed
         const float fsC      = nameSz_ * S;
         const float costBoxH = 2.0f * fsC + 10.0f * S;     // reserve the 2-line cost/next box (its max height)
@@ -517,12 +531,9 @@ void Party::draw(const Frame& f) {
         oy = snap(g_partyTopY - costBoxH - (float)tier_ * H - (float)(tier_ - 1) * sepH - allLift);
     }
 
-    // PARTY (tier 0) adapts its height to the live member count, BOTTOM-anchored : the box shrinks
-    // from the TOP (members fill the bottom rows ; no empty space), and its bottom-right corner stays
-    // exactly where it was placed/dragged. (Alliances + edit mode keep the full 6-row footprint.)
-    if (tier_ == 0 && !ui_config().editLayout && n < 6) {
-        // Party adapts to the live member count : exactly n rows, BOTTOM-anchored (shrinks from the
-        // top, members at the top, no empty box below).
+    // PARTY (tier 0) : BOTTOM-anchored (the bottom-right stays exactly where you place/drag it) and the
+    // box GROWS UPWARD. First shrink to n rows (members at the top, bottom fixed)...
+    if (tier_ == 0 && !editLike && n < 6) {
         const float Hn = rowpit * (float)n + 2.0f * pad;
         oy += (H - Hn);
         H = Hn;
@@ -531,22 +542,28 @@ void Party::draw(const Frame& f) {
     // height of the Cost/Next box that floats ABOVE the party (tier 0 only) -> used for snap + clamp.
     const float costH = (tier_ == 0) ? snap(2.0f * nameSz_ * S + 10.0f * S) : 0.0f;
 
-    // TOP mask band : extends the box UP to also cover the game's target box. Our member block already
-    // covers the native party (our rows are bigger), so the band SHRINKS as members are added (linear,
-    // MASK_B < 0). Calibrate MASK_A (solo) + MASK_B (per member) from 2 counts. 0 in edit mode.
-    const float MASK_A = 2.0f, MASK_B = -0.24f, MASK_OFF = 2.0f;   // MASK_OFF = constant px tweak
-    float maskBand = (tier_ == 0 && !ui_config().editLayout) ? rowpit * (MASK_A + MASK_B * (float)(n - 1)) + MASK_OFF * S : 0.0f;
+    // ...then GROW UP by the mask band so the top reaches the game's native block top. Our member rows
+    // are BIGGER than the game's, so the band (linear, SHRINKS per member) just tops it up. Calibrated.
+    const float MASK_A = 2.0f, MASK_B = -0.24f, MASK_OFF = 2.0f;
+    float maskBand = (tier_ == 0 && !editLike) ? rowpit * (MASK_A + MASK_B * (float)(n - 1)) + MASK_OFF * S : 0.0f;
     if (maskBand < 0.0f) maskBand = 0.0f;
     maskBand = snap(maskBand);
-    // Put the mask BELOW the members : grow the box UP (top moves up = same coverage), keep the members
-    // at the TOP (no empty above), the empty/mask sits below them, bottom stays anchored.
-    if (tier_ == 0 && !ui_config().editLayout) { oy -= maskBand; H += maskBand; }
+    if (tier_ == 0 && !editLike) { oy -= maskBand; H += maskBand; }   // grow UP, bottom anchored
+
+    // "Set reference" : once you align the box on the native block and lock the reference, lowering the
+    // box below it just makes it TALLER (top pinned, bottom follows the placement). delta = how far the
+    // box was lowered from the reference Y. LIVE only -- in edit the box stays its raw footprint so the
+    // drag/snap/clamp work on a clean rect (the growth would otherwise fight the bottom snap).
+    if (tier_ == 0 && !editLike && ui_config().partyRefY >= 0.0f && ui_config().box[0].posSet && f.screenH > 0.0f) {
+        float delta = snap((ui_config().box[0].y - ui_config().partyRefY) * f.screenH);
+        if (delta > 0.0f) { oy -= delta; H += delta; }
+    }
 
     // The chrome / cost box / edit overlay use the real box rect (boxOy, boxH). For the rows, EVENLY
     // DISTRIBUTE the members across the box : equal top/bottom margins AND equal gaps between members
     // (widen rowpit + shift the row origin so oy+pad+i*rowpit lands them with n+1 identical spaces).
     const float boxOy = oy, boxH = H;
-    if (tier_ == 0 && !ui_config().editLayout && n > 0) {
+    if (tier_ == 0 && !editLike && n > 0) {
         const float gap = (H - (float)n * rowh) / (float)(n + 1);
         if (gap > 0.0f) { oy += snap(gap) - pad; rowpit = snap(rowh + gap); }
     }
@@ -957,7 +974,7 @@ void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy
         else if (menuType_ == 3) { const WSRow* ws = ws_info(menuSpell_); if (ws) { nm = ws->en;             // Weapon Skill : show live TP
             if (f.game) { int tp = f.game->me.tp; sprintf(infobuf, "TP %d", tp); info = infobuf; infoCol = (tp >= 1000) ? 0xFF7CFF8A : 0xFFB0B0B0; } } }  // green when usable (>=1000)
     }
-    if (ui_config().editLayout) {   // edit mode : always show a demo Cost/Next box so its footprint is visible
+    if (ui_config().editLayout || party_demo_level() > 0) {   // edit AND //aio demo : always show a demo Cost/Next box so its footprint is visible
         nm = "Protect V"; sprintf(infobuf, "Cost 24 MP"); info = infobuf; infoCol = 0xFFFFFFFF;
         sprintf(info2buf, "Next 0:00"); info2 = info2buf; info2Col = 0xFF8FA0B8;
     }

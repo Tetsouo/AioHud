@@ -125,14 +125,22 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     //     floating toolbar. The party/alliance boxes handle their own drag/resize (see party.cpp). ---
     if (ui_config().editLayout) {
         g_fade = 1.0f;
-        const float bw = snap(600.0f), bh = snap(46.0f), bx = snap((sw - bw) * 0.5f), by = snap(22.0f);
+        const float bw = snap(760.0f), bh = snap(46.0f), bx = snap((sw - bw) * 0.5f), by = snap(22.0f);
         vg(dev, bx, by, bw, bh, 0xF0202B3C, 0xF0141C28);
         outline(dev, bx, by, bw, bh, C_BORDERHI);
         fo->begin(dev);
-        fo->draw_lc(dev, bx + snap(16.0f), by + bh * 0.5f, "EDIT LAYOUT  \xC2\xB7  drag = move,  wheel = resize", snap(14.0f), C_TEXT, C_STROKE, 1.0f);
+        fo->draw_lc(dev, bx + snap(16.0f), by + bh * 0.5f, "EDIT LAYOUT  |  drag,  wheel = size", snap(14.0f), C_TEXT, C_STROKE, 1.0f);
         const float bh2 = snap(30.0f), dby = by + (bh - bh2) * 0.5f;
         const float db = snap(80.0f), dbx = bx + bw - db - snap(10.0f);         // Done (far right)
-        const float rb = snap(96.0f), rbx = dbx - rb - snap(8.0f);              // Default (left of Done)
+        const float rb = snap(90.0f), rbx = dbx - rb - snap(8.0f);              // Default (left of Done)
+        const float sb = snap(120.0f), sbx = rbx - sb - snap(8.0f);             // Set Ref (left of Default)
+        // Set Ref : lock the party reference Y (align the party box on the native block, then click).
+        const bool sh = inrect(mo, sbx, dby, sb, bh2);
+        const bool refSet = ui_config().partyRefY >= 0.0f;
+        vg(dev, sbx, dby, sb, bh2, sh ? 0xFF3A82E0 : (refSet ? 0xFF2E6E3A : 0xFF2A3548), sh ? 0xFF2A61B6 : (refSet ? 0xFF205028 : 0xFF1D2738));
+        outline(dev, sbx, dby, sb, bh2, C_BORDERHI);
+        fo->begin(dev); fo->draw_c(dev, sbx + sb * 0.5f, dby + bh2 * 0.5f, refSet ? "Ref set" : "Set Ref", snap(13.0f), C_TEXT, C_STROKE, 1.0f);
+        if (sh && click && ui_config().box[0].posSet) { ui_config().partyRefY = ui_config().box[0].y; save_ui_config(); }
         const bool rh = inrect(mo, rbx, dby, rb, bh2);
         vg(dev, rbx, dby, rb, bh2, rh ? 0xFFB85050 : 0xFF3A2A2E, rh ? 0xFF8A3A3A : 0xFF281D20);
         outline(dev, rbx, dby, rb, bh2, C_BORDERHI);
@@ -143,7 +151,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         outline(dev, dbx, dby, db, bh2, C_BORDERHI);
         fo->begin(dev); fo->draw_c(dev, dbx + db * 0.5f, dby + bh2 * 0.5f, "Done", snap(14.0f), C_TEXT, C_STROKE, 1.0f);
         if (dh && click) { ui_config().editLayout = false; save_ui_config(); } // persist position/size on exit
-        if (mo) cursor(dev, mo->x, mo->y);
+        if (mo && mo->focused) cursor(dev, mo->x, mo->y);   // hide our cursor when the game isn't the OS foreground
         return;
     }
 
@@ -299,7 +307,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     // footer + cursor on top
     fo->begin(dev);
     fo->draw_lc(dev, ix, pageBot + snap(14.0f), "click X  or  //aio config  to close", snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
-    if (mo) cursor(dev, mo->x, mo->y);
+    if (mo && mo->focused) cursor(dev, mo->x, mo->y);   // hide our cursor when the game isn't the OS foreground
 }
 
 } // namespace aio

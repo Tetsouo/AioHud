@@ -21,6 +21,8 @@ struct UiConfig {
     BoxLayout box[3];          // 0 = party (+cost), 1 = alliance 1, 2 = alliance 2 (independent)
     bool  editLayout = false;  // layout edit mode : boxes draggable / resizable on the live game
     int   wheel = 0;           // pending wheel steps (mouse slot -> consumed by the hovered box in edit mode)
+    float partyRefY = -1.0f;   // party "Set reference" Y (box[0].y when aligned on the native block) ; -1 = unset.
+                               // Lowering the box below it adds the delta to the height (top stays pinned).
 };
 
 UiConfig& ui_config();         // the singleton

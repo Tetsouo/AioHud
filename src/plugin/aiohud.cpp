@@ -259,9 +259,15 @@ static int g_sub_tick  = 0;
 static int g_pcur_probe = 0;
 static int g_pcur_tick  = 0;
 
+// the game's window handle, cached each frame from the D3D device (the mouse hook runs without a
+// device, so it reads this to tell whether the GAME is the OS foreground window).
+static u32 g_gameHwnd = 0;
+
 void aio_plugin_render6()
 {
-    g_hud.render(g_host.service_raw(2));   // host vtbl[2] = D3D8 device
+    u32 dev = g_host.service_raw(2);   // host vtbl[2] = D3D8 device
+    if (valid_ptr(dev)) g_gameHwnd = aio::dFocusWindow(dev);
+    g_hud.render(dev);
 
     if (g_sub_probe) {                                    // FIND the sub-active flag : follow target_t = *(FFXiMain+0x57876C), dump on change
         static u32 prevkey = 0;
@@ -368,19 +374,38 @@ unsigned int aio_plugin_mouse(u32 eventtype, u32 x, u32 y, u32 delta, u32 blocke
         static int cnt = 0;
         if (cnt < 500) { ++cnt; debug::log("MOUSE et=%u x=%d y=%d d=%d blocked=%u", eventtype, (int)x, (int)y, (int)delta, blocked); }
     }
-    static bool held = false;                  // a press began while we were blocking
-    const bool active = g_hud.config().is_open() || aio::ui_config().editLayout;
-    if (active || held) {
-        // Wheel : in edit mode it resizes the hovered box ; consume it. (delta != 0 => a scroll event.)
-        if (aio::ui_config().editLayout && (int)delta != 0) { aio::ui_config().wheel += ((int)delta > 0) ? 1 : -1; return 1u; }
-        // Block only CLICKS (with a block-until-release latch). Plain MOVES pass through -> avoids the
-        // high-frequency move-event flood that tanked the framerate, and a bare move is a no-op in FFXI.
-        if (eventtype == 1) { held = true;  return 1u; }   // Ldown : swallow + latch
-        if (eventtype == 2) { held = false; return 1u; }   // Lup   : swallow + release latch
-        if (held)             return 1u;                   // mid-press : keep swallowing (move + the up)
-        return blocked;                                    // moves / hover : let them through
+    // Only capture the mouse when the GAME window is the OS foreground. Otherwise a click coming back
+    // INTO the game (from a browser / the desktop) must reach Windows so it re-activates the window.
+    const bool focused = g_gameHwnd && (HWND)g_gameHwnd == GetForegroundWindow();
+    const bool active  = focused && (g_hud.config().is_open() || aio::ui_config().editLayout);
+
+    // A left-click is treated as ONE gesture (down -> moves -> up) with a SINGLE decision locked at the
+    // down : either we swallow the whole gesture, or we pass it. Deciding once (not per-event) is what
+    // fixes the "stuck character" : the old code passed the down (game not yet focused) but swallowed the
+    // up (game focused by then) -> the game saw a button stuck DOWN forever and the avatar kept walking.
+    static bool inGesture = false;   // a left button is currently held
+    static bool blockGest = false;   // ...and we're swallowing this gesture (vs a refocus click we pass)
+
+    // Wheel : edit-mode box resize. Only when focused + in edit (not part of a click gesture).
+    if ((int)delta != 0) {
+        if (active && aio::ui_config().editLayout) { aio::ui_config().wheel += ((int)delta > 0) ? 1 : -1; return 1u; }
+        return blocked;
     }
-    return blocked;
+    if (eventtype == 1) {                 // Ldown : lock the gesture's fate now
+        inGesture = true;
+        blockGest = active;               // focused + overlay -> swallow ; else pass (let Windows activate)
+        return blockGest ? 1u : blocked;
+    }
+    if (eventtype == 2) {                 // Lup : end the gesture with the SAME fate as its down
+        const bool b = blockGest;
+        inGesture = false; blockGest = false;
+        return b ? 1u : blocked;
+    }
+    // mid-gesture move : swallow it either way. While swallowing it's obvious ; while PASSING (a refocus
+    // click) we still eat the moves so a drag can't trigger FFXI mouselook -> the down+up alone is a
+    // stationary click that just re-focuses, the avatar never turns.
+    if (inGesture) return 1u;
+    return blocked;                       // bare hover : pass through (a move is a no-op in FFXI)
 }
 
 void aio_plugin_unload()
@@ -396,8 +421,8 @@ void aio_plugin_command(const char* cmd)
     for (; cmd[i] && i < 255; i++) { char c = cmd[i]; buf[i] = (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c; }
     buf[i] = 0;
 
-    // //aio [party|alliance1|alliance2] demo [off] -> fake roster for previewing the layout.
-    //   party demo      -> a full 6-man party
+    // //aio [party|alliance1|alliance2] demo [N] [off] -> fake roster for previewing the layout.
+    //   party demo [N]  -> a party of N members (1-6, default 6) -> preview the adaptive height/mask
     //   alliance1 demo  -> party + 1 alliance party (12)
     //   alliance2 demo  -> party + 2 alliance parties (18)
     //   demo off        -> back to live data
@@ -406,9 +431,11 @@ void aio_plugin_command(const char* cmd)
                     strstr(buf, "alliance2")  ? 3 :
                     strstr(buf, "alliance1")  ? 2 : 1;   // bare "party demo" / "demo" -> party only
         aio::set_party_demo_level(level);
+        const char* p = strstr(buf, "demo");             // optional member count after "demo" (1-6)
+        if (p) { p += 4; while (*p == ' ' || *p == '\t') ++p; aio::set_party_demo_count((*p >= '1' && *p <= '6') ? (*p - '0') : 6); }
         const char* what = level == 0 ? "off" : level == 1 ? "party" :
                            level == 2 ? "party + alliance1" : "party + 2 alliances";
-        char msg[96]; sprintf(msg, ">>> demo: %s <<<", what);
+        char msg[112]; sprintf(msg, ">>> demo: %s (party x%d) <<<", what, aio::party_demo_count());
         g_host.console().print(msg);
         return;
     }
@@ -463,6 +490,16 @@ void aio_plugin_command(const char* cmd)
 
     // //aio config -> toggle the full-screen configuration overlay. "config N" = select tab N (1..3).
     if (strstr(buf, "config")) {
+        // In edit layout the config flag is kept "open" (toolbar + mouse capture) -> a bare //aio config
+        // must act like the "Done" button : leave edit mode (persisting positions/sizes) AND close, not
+        // just drop the toolbar while editLayout silently stays on.
+        if (aio::ui_config().editLayout) {
+            aio::ui_config().editLayout = false;
+            aio::save_ui_config();
+            g_hud.config().set_open(false);
+            g_host.console().print(">>> edit layout OFF (config closed) <<<");
+            return;
+        }
         const char* cp = strstr(buf, "config") + 6; while (*cp == ' ') ++cp;
         if (*cp >= '1' && *cp <= '3') { g_hud.config().set_tab(atoi(cp) - 1); g_hud.config().set_open(true); }
         else                          g_hud.config().toggle();
