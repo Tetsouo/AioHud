@@ -46,7 +46,7 @@ private:
     float base_ = 32.0f;                    // baked em (px)
     float cap_top_ = 0.0f, cap_h_ = 0.0f;   // ink box of caps/digits (offset from cell top, height), base px
     struct G { float u0, v0, u1, v1; float w, h, adv; float il, ir, it, ib; };  // il..ib = ink bbox in base px (rel. cell top-left)
-    G g_[96];                               // ASCII 32..127
+    G g_[96] = {};                          // ASCII 32..127 (zero-init : an unbaked glyph is invisible, never garbage)
 };
 
 // Cache of Font atlases keyed by (face, weight). Lets different text use different faces

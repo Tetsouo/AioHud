@@ -595,7 +595,6 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         if (arrow_btn(dev, fo, mo, click, 400, lx, ay, aS, "<") && nprof > 0) {
             const char* nm = profile_name((cur <= 0) ? nprof - 1 : cur - 1);
             profile_load(nm); strncpy(activeProf_, nm, 31); activeProf_[31] = 0;
-            strncpy(nameBuf_, nm, 31); nameBuf_[31] = 0; nameLen_ = (int)strlen(nameBuf_);
         }
         // a recessed BLACK field holds the active profile, BETWEEN the two steppers.
         const float fX = lx + aS + snap(10.0f);
@@ -612,7 +611,6 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         if (arrow_btn(dev, fo, mo, click, 401, nX, ay, aS, ">") && nprof > 0) {
             const char* nm = profile_name((cur < 0 || cur >= nprof - 1) ? 0 : cur + 1);
             profile_load(nm); strncpy(activeProf_, nm, 31); activeProf_[31] = 0;
-            strncpy(nameBuf_, nm, 31); nameBuf_[31] = 0; nameLen_ = (int)strlen(nameBuf_);
         }
         // right : Save (updates the active profile in place ; GOLD glow while there are unsaved changes)
         const float bH = snap(30.0f), bY = barCy - bH * 0.5f, saveW = snap(140.0f);
@@ -781,11 +779,11 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         { char lbl[48]; if (charName) _snprintf(lbl, sizeof(lbl), "Save for %s", charName); else strcpy(lbl, "Save for character");
           if (push_btn(dev, fo, mo, click, 710, cx0, ry0, cw0, qbH, lbl, 0) && charName) {
               profile_save(charName); strncpy(activeProf_, charName, 31); activeProf_[31] = 0;
-              strncpy(nameBuf_, charName, 31); nameBuf_[31] = 0; nameLen_ = (int)strlen(nameBuf_); profDirty_ = true; } }
+              nameBuf_[0] = 0; nameLen_ = 0; nameFocus_ = false; profDirty_ = true; } }
         ry0 += qbH + snap(10.0f);
         if (push_btn(dev, fo, mo, click, 711, cx0, ry0, cw0, qbH, "Save as Default", 0)) {
             profile_save("Default"); strcpy(activeProf_, "Default");
-            strcpy(nameBuf_, "Default"); nameLen_ = 7; profDirty_ = true; }
+            nameBuf_[0] = 0; nameLen_ = 0; nameFocus_ = false; profDirty_ = true; }
         ry0 += qbH + snap(18.0f);
         fo->begin(dev); fo->draw_lc(dev, cx0, ry0, "A profile snapshots every setting. Quick-save", snap(11.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
         fo->draw_lc(dev, cx0, ry0 + snap(16.0f), "binds one to this character or the default.", snap(11.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
@@ -797,11 +795,12 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         const float ptW = fo->measure("Profiles", snap(22.0f));
         fo->draw_lc(dev, pX, py, "Profiles", snap(22.0f), fa(C_GOLD), fa(C_STROKE), 1.4f);
         flat(dev, pX, py + snap(22.0f), ptW * e, snap(2.0f), lerpc(C_GOLD, C_GOLDHI, pulse));
-        fo->draw_lc(dev, pX, py + snap(44.0f), "Load to switch instantly. Rename a loaded profile by editing its name and pressing Rename.", snap(13.0f), fa(C_DIM), fa(C_STROKE), 1.0f);
+        fo->begin(dev);   // re-bind the glyph atlas : the underline flat() above left a colour-only state
+        fo->draw_lc(dev, pX, py + snap(44.0f), "Load to switch instantly. Type a name to create a new profile, or an existing name to overwrite it.", snap(13.0f), fa(C_DIM), fa(C_STROKE), 1.0f);
 
         // create / rename field (rounded recessed) + action button
         py += snap(66.0f);
-        fo->begin(dev); fo->draw_lc(dev, pX, py, "NEW  /  RENAME", snap(11.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.2f);
+        fo->begin(dev); fo->draw_lc(dev, pX, py, "NEW PROFILE", snap(11.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.2f);
         py += snap(16.0f);
         const float fH = snap(42.0f), btnW = snap(148.0f), fGap = snap(12.0f), fW = pW - btnW - fGap;
         const bool fldHov = inrect(mo, pX, py, fW, fH);
@@ -816,14 +815,13 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         if (nameFocus_ && sinf(f.t * 5.0f) > 0.0f) { const float cxx = txX + (nameLen_ > 0 ? fo->measure(nameBuf_, snap(15.0f)) : 0.0f) + snap(2.0f);
             flat(dev, cxx, py + snap(11.0f), snap(2.0f), fH - snap(22.0f), C_ACCENTHI); }
         const bool canSave = nameLen_ > 0, exists = canSave && profile_exists(nameBuf_);
-        const bool renaming = canSave && activeProf_[0] && strcmp(nameBuf_, activeProf_) != 0;
-        const char* lbl = renaming ? "Rename" : (exists ? "Overwrite" : "Create");
-        if (push_btn(dev, fo, mo, click, 701, pX + fW + fGap, py, btnW, fH, lbl, 0)) {
-            if (canSave) { profile_save(nameBuf_); if (renaming) profile_delete(activeProf_);
-                strncpy(activeProf_, nameBuf_, 31); activeProf_[31] = 0; profDirty_ = true; }
-        } else if (commit && canSave) {
-            profile_save(nameBuf_); if (renaming) profile_delete(activeProf_);
-            strncpy(activeProf_, nameBuf_, 31); activeProf_[31] = 0; profDirty_ = true;
+        const char* lbl = exists ? "Overwrite" : "Create";   // always non-destructive : never auto-renames the active one
+        const bool doSave = (push_btn(dev, fo, mo, click, 701, pX + fW + fGap, py, btnW, fH, lbl, 0) || commit) && canSave;
+        if (doSave) {
+            profile_save(nameBuf_);
+            strncpy(activeProf_, nameBuf_, sizeof(activeProf_) - 1); activeProf_[sizeof(activeProf_) - 1] = 0;
+            nameBuf_[0] = 0; nameLen_ = 0; nameFocus_ = false;   // clear the field -> ready for the NEXT new profile
+            profDirty_ = true;
         }
 
         // saved library
@@ -862,8 +860,8 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             const float dX = pX + pW - dbw - snap(10.0f), lX = dX - bgap - lbw, bY = ry + (rowH - bH) * 0.5f;
             if (push_btn(dev, fo, mo, click, 760 + i * 2, lX, bY, lbw, bH, "Load", 0)) {
                 profile_load(nm);
-                strncpy(nameBuf_, nm, sizeof(nameBuf_) - 1); nameBuf_[sizeof(nameBuf_) - 1] = 0; nameLen_ = (int)strlen(nameBuf_); nameFocus_ = false;
                 strncpy(activeProf_, nm, sizeof(activeProf_) - 1); activeProf_[sizeof(activeProf_) - 1] = 0;
+                nameBuf_[0] = 0; nameLen_ = 0; nameFocus_ = false;   // keep the create field free for a NEW profile
             }
             if (push_btn(dev, fo, mo, click, 761 + i * 2, dX, bY, dbw, bH, "Delete", 1)) {
                 if (active) { activeProf_[0] = 0; nameBuf_[0] = 0; nameLen_ = 0; }
@@ -933,8 +931,6 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     }
 
     // footer + cursor on top
-    fo->begin(dev);
-    fo->draw_lc(dev, ix, pageBot + snap(14.0f), "click X  or  //aio config  to close", snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
     if (mo && mo->focused) cursor(dev, mo->x, mo->y);   // hide our cursor when the game isn't the OS foreground
 }
 

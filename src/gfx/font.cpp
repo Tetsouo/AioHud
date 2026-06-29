@@ -6,7 +6,9 @@
 
 namespace aio {
 
-static const int   AW = 512, AH = 256;     // atlas dims (pow2)
+static const int   AW = 512, AH = 512;     // atlas dims (pow2) -- 512 tall so even WIDE faces (Verdana)
+                                           // fit all 96 glyphs ; a 256-tall atlas overflowed mid-bake
+                                           // (later glyphs unbaked -> tofu boxes for long strings).
 static const int   FIRST = 32, LAST = 127; // printable ASCII (+ DEL slot)
 static const float BASE_EM = 32.0f;        // bake size -> downscaled at draw
 
