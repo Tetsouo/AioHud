@@ -80,7 +80,7 @@ private:
     float gaugeH()   const { return barSz_   + 6.0f; }
     float gaugeGap() const { return 3.0f; }
     float marksW()   const { return 20.0f; }   // holds up to ~3 leader/QM dots, centred -> badge stays clear
-    float padB()     const { return 3.0f; }
+    float padB()     const { return 4.0f; }   // top/bottom inner margin -> rows + selection frame stay off the box border
     // row height = tallest element + vertical margin, so the badge never touches the row
     // edges / the selection frame.
     float rowH()     const { float a = badgeH(), b = gaugeH(), c = nameSz_ + 2.0f, m = a > b ? a : b; m = m > c ? m : c; return m + 1.0f; }

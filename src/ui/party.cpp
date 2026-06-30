@@ -572,8 +572,16 @@ void Party::draw(const Frame& f) {
     const float maskOff = placedOy - boxOy;   // how much the box grew UP from its placed top (mask + solo + Set-Ref) -> drag store-back removes it so the position round-trips
     if (tier_ == 0) g_partyTopY = boxOy;   // refine the alliance-stack reference to the REAL party top (after mask / solo bump / Set-Ref) so alliances sit on the actual cost-box top
     if (tier_ == 0 && n > 0) {
-        const float gap = (H - (float)n * rowh) / (float)(n + 1);
-        if (gap > 0.0f) { oy += snap(gap) - pad; rowpit = snap(rowh + gap); }
+        const float evenGap = (H - (float)n * rowh) / (float)(n + 1);   // equal spaces (top, between rows, bottom)
+        if (n == 1) {                                                   // solo : keep it centred
+            if (evenGap > 0.0f) { oy += snap(evenGap) - pad; }
+        } else {
+            const float minM = snap(3.0f * S);                         // guaranteed top/bottom margin when packed
+            float vm  = evenGap < minM ? minM : evenGap;               // reserve >= minM at top AND bottom
+            float gap = (H - 2.0f * vm - (float)n * rowh) / (float)(n - 1);   // distribute the remainder BETWEEN rows
+            if (gap < 0.0f) { vm = evenGap; gap = evenGap; }           // too tight -> fall back to even distribution
+            if (vm > 0.0f) { oy += snap(vm) - pad; rowpit = snap(rowh + gap); }
+        }
     }
 
     // EDIT MODE : drag this box to reposition it live on the game (stores a fraction-of-screen pos).
@@ -890,7 +898,10 @@ void Party::draw(const Frame& f) {
 
     // Row overlays (selection / sub-target / out-of-range veil) stay INSIDE the skin border : inset
     // by the box padding so they sit on the background, never overlapping the window frame.
-    const float sx = px + pad, sw = w - 2.0f * pad;
+    // selection / veil span the BACKGROUND width : inset a CONSTANT (native frame thickness, not scaled
+    // by S like pad) so they reach the inner border edge at any box size, without spilling onto it.
+    const float selIn = snap(3.0f);
+    const float sx = px + selIn, sw = w - 2.0f * selIn;
 
     // ---------- sub-target bar : ocean blue (the game's <st> colour), on top, below the main selection ----------
     if (subA_ > 0.02f) {
@@ -934,9 +945,11 @@ void Party::draw(const Frame& f) {
     {
         setup_color_state(dev);
         const u32 veil = 0x8E101620;   // ~55% dark blue-grey
+        const float veilBot = boxOy + boxH - snap(2.0f * S);   // never let the veil reach the box bottom border
         for (int i = 0; i < n; ++i) if (rows[i].outRange) {
             const float ry = oy + pad + (float)i * rowpit;
-            grad_quad(dev, sx, ry, sw, rowpit, veil, veil, veil, veil);
+            float vh = rowpit; if (ry + vh > veilBot) vh = veilBot - ry;   // clamp the LAST row's veil to the inner margin
+            if (vh > 1.0f) grad_quad(dev, sx, ry, sw, vh, veil, veil, veil, veil);
         }
     }
 
