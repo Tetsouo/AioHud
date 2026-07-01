@@ -33,6 +33,12 @@ public:
     void set_layers(int n) { if (n < 0) n = 0; if (n > 4) n = 4; layers_ = n; }
     int  layers() const { return layers_; }
 
+    // are the real fiole assets (liquid + caps) built and resident on this device ?
+    bool vial_ready() const { return tex_[0] && tex_[1] && tex_[2] && cap_front_ && cap_back_; }
+    // draw ONE real fiole into an arbitrary rect (party rows / Help), reusing this widget's textures.
+    // Geometry scales with w/h. kind : 0 = HP, 1 = MP, 2 = TP. fill01 0..1. layers = effect level.
+    void draw_vial_scaled(u32 dev, float t, float x, float y, float w, float h, int kind, float fill01, int layers);
+
 private:
     const GameState* state_;
     int layers_ = 4;                 // 1 = liquid only; >=4 = full effects
@@ -44,5 +50,10 @@ private:
     int   flash_prev_tier_ = -1;     // -1 = uninitialised (first frame on this device)
     float flash_ = 0.0f;
 };
+
+// The HUD registers its LiquidBars here each frame so the party rows / Help can borrow the REAL fiole
+// assets (draw_vial_scaled) without owning a second texture set. Null / not-ready -> callers fall back.
+void        set_vial_provider(LiquidBars* p);
+LiquidBars* vial_provider();
 
 } // namespace aio

@@ -216,6 +216,7 @@ void Hud::render(u32 dev) {
         // EDIT LAYOUT "Rules" mode : hide the WHOLE HUD so only the reference lines + the edit toolbar
         // (both drawn by config_.draw below) remain -- you align the rules onto the game's native windows.
         const bool hideForRules = ui_config().editLayout && config_.edit_lines_active();
+        set_vial_provider(bars_);   // let the party rows / Help borrow the real fiole assets this frame (null-safe -> fallback)
         for (size_t i = 0; !hideForRules && i < widgets_.size(); ++i) {
             if (pvActive && strcmp(widgets_[i]->type_name(), "PartyList") == 0) continue;
             widgets_[i]->draw(f);

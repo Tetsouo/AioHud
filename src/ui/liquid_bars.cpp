@@ -544,4 +544,82 @@ void LiquidBars::draw(const Frame& f)
     draw_cap_pass(dev, cap_front_, ys, x, w, h);
 }
 
+// ---- shared provider : the HUD hands its LiquidBars here so party/help can borrow the real assets ----
+static LiquidBars* g_vialProvider = nullptr;
+void        set_vial_provider(LiquidBars* p) { g_vialProvider = p; }
+LiquidBars* vial_provider()                  { return g_vialProvider; }
+
+// Draw ONE fiole into (x,y,w,h) reusing this widget's textures + the file-static helpers above. This is
+// LiquidBars::draw() reduced to a single, arbitrarily-sized bar (no per-instance unlock flash). The core
+// identity -- glass caps + streaming liquid + curved glass -- scales cleanly ; the big absolute-px extras
+// (TP halo / electricity) are tuned for the 70px showcase bars and are left to the full widget.
+void LiquidBars::draw_vial_scaled(u32 dev, float t, float x, float y, float w, float h, int kind, float fill01, int layers)
+{
+    if (kind < 0 || kind > 2 || !vial_ready()) return;
+    if (fill01 < 0.0f) fill01 = 0.0f; if (fill01 > 1.0f) fill01 = 1.0f;
+
+    const u32* PALS[3] = { PAL_HP, PAL_MP, PAL_TP };
+    const u32* pal = PALS[kind];
+    u32 dyn[3];
+    if      (kind == 0) { hp_palette(fill01, dyn); pal = dyn; }   // HP : green / orange / red
+    else if (kind == 2) { tp_palette(fill01, dyn); pal = dyn; }   // TP : continuous tiers
+
+    // --- full textured state (same block as LiquidBars::draw, so it survives the game's leftovers) ---
+    dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
+    dSetRS(dev, D3DRS_ZENABLE, 0); dSetRS(dev, D3DRS_CULLMODE, D3DCULL_NONE); dSetRS(dev, D3DRS_LIGHTING, 0);
+    dSetRS(dev, D3DRS_FOGENABLE, 0); dSetRS(dev, D3DRS_SPECULARENABLE, 0); dSetRS(dev, D3DRS_ALPHATESTENABLE, 0);
+    dSetRS(dev, D3DRS_COLORWRITEENABLE, 0x0000000F); dSetRS(dev, D3DRS_TEXTUREFACTOR, 0xFFFFFFFF);
+    dSetRS(dev, D3DRS_BLENDOP, D3DBLENDOP_ADD); dSetRS(dev, D3DRS_WRAP0, 0);
+    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1); dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+    dSetTSS(dev, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MIPFILTER, D3DTEXF_NONE);
+    dSetTSS(dev, 0, D3DTSS_TEXCOORDINDEX, 0); dSetTSS(dev, 0, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE);
+    dSetTSS(dev, 1, D3DTSS_COLOROP, D3DTOP_DISABLE); dSetTSS(dev, 1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+
+    // cap geometry (mirrors draw_cap_pass, one bar)
+    const float capH = h * 1.42f, capW = capH * ((float)CAP_W / (float)CAP_H);
+    const float ccy = y + h * 0.5f - capH * 0.5f;
+    const float clx = x - capW * 0.70f, crx = x + w - capW * 0.30f;
+
+    // BACK cap (clamp)
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
+    dSetTex(dev, 0, cap_back_);
+    cap_quad(dev, clx, ccy, capW, capH, true); cap_quad(dev, crx, ccy, capW, capH, false);
+
+    // LIQUID : wrap addressing + vertex-alpha (zoning-glitch fix)
+    preload_texture(tex_[kind]);
+    dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_WRAP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_WRAP);
+    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
+    dSetTex(dev, 0, tex_[kind]);
+    draw_bar(dev, x, y, w, h, t, pal, fill01, kind);
+    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
+
+    // MP bubbles (only worth it when the bar is tall enough to read them)
+    if (layers >= 4 && kind == 1 && h >= 26.0f)
+        draw_bubbles(dev, bubble_, x, y, w, h, fill01, t, 0x00A0E8FF, 1.0f, h / 70.0f);
+
+    // GLASS : untextured diffuse geometry
+    dSetVS(dev, FVF_XYZRHW_DIFFUSE); dSetTex(dev, 0, 0);
+    dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
+    glass_overlay(dev, x, y, w, h);
+    // meniscus at the exact fill level
+    float fwi = w * fill01;
+    if (fwi > 2.0f && fwi < w - 1.0f) {
+        u32 men = 0x40000000u | (scale_rgb(pal[1], 1.3f) & 0x00FFFFFF);
+        surface_glow(dev, x + fwi, y, h, men);
+    }
+
+    // FRONT cap (over everything)
+    dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+    dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
+    dSetTex(dev, 0, cap_front_);
+    cap_quad(dev, clx, ccy, capW, capH, true); cap_quad(dev, crx, ccy, capW, capH, false);
+}
+
 } // namespace aio

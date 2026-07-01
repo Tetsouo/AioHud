@@ -40,6 +40,7 @@ struct UiConfig {
     float buffScale = 0.92f;   // buff-icon size as a FRACTION of the member row height (0.40 .. 1.00, capped at the row)
     float barHeight = 1.0f;    // HP/MP/TP gauge HEIGHT scale (the taller rows give vertical room)
     float barWidth  = 1.0f;    // HP/MP/TP gauge WIDTH scale (the box auto-fits wider)
+    int   gaugeStyle = 0;      // HP/MP/TP gauge look : 0 = current bars, 1 = glass "vial" (rounded liquid hugging the tube)
     int   jobBadge  = 2;       // job badge : 0 = off (column collapses), 1 = main job only, 2 = main + sub
     bool  castParty = true;    // show the casting-spell line for PARTY members
     bool  castAlly  = true;    // show the casting-spell line for ALLIANCE members

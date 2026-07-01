@@ -1,5 +1,6 @@
 // party.cpp -- see party.h.
 #include "ui/party.h"
+#include "ui/liquid_bars.h"   // borrow the real fiole assets for the "Vial" gauge style
 #include "gfx/draw.h"
 #include "gfx/font.h"
 #include "gfx/texture.h"
@@ -209,7 +210,7 @@ static void rrnd_l(u32 dev, float x, float y, float w, float h, float r, u32 c) 
     qfan(dev, x + r, y + h - r, r, 0.5f * GPI, GPI,        c);   // BL
 }
 
-void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32 col, float t, float pulse, float danger) {   // exposed for the Help live samples
+void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32 col, float t, float pulse, float danger, int kind) {   // exposed for the Help live samples
     // untextured colour-quad state : the party rows draw gauges BEFORE any text, but the Help draws them
     // AFTER text (font texture still bound + MODULATE) -> reset so the rounded/gradient quads render right.
     dSetVS(dev, FVF_XYZRHW_DIFFUSE); dSetTex(dev, 0, 0);
@@ -217,6 +218,12 @@ void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32
     dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
     dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
     if (pct < 0) pct = 0; if (pct > 100) pct = 100;
+    // "Vial" style : borrow the REAL fiole (LiquidBars) assets at party scale. Falls through to the bar
+    // below if the assets aren't resident yet (e.g. a layout without a PlayerHub widget).
+    if (ui_config().gaugeStyle == 1 && kind >= 0) {
+        LiquidBars* p = vial_provider();
+        if (p && p->vial_ready()) { p->draw_vial_scaled(dev, t, gx, gy, gw, gh, kind, pct / 100.0f, 4); return; }
+    }
     const float cyc = gy + gh * 0.5f;
     float r = gh * 0.24f;                                 // gentle corner radius
 
@@ -917,7 +924,7 @@ void Party::draw(const Frame& f) {
         const float gdng[3] = { hpDanger, 0.0f, 0.0f };
         for (int gi = 0; gi < 3; ++gi) {                 // bars are NOT affected by the selection zoom (geometry or brightness)
             const float gx = gx0 + gi * (gw + ggap);
-            party_gauge(dev, gx, gy, gw, gh, gpct[gi], gcol[gi], t, gpls[gi], gdng[gi]);
+            party_gauge(dev, gx, gy, gw, gh, gpct[gi], gcol[gi], t, gpls[gi], gdng[gi], gi);   // gi = kind : 0 HP, 1 MP, 2 TP (for the vial style)
         }
     }
 

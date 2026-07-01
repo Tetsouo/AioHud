@@ -36,6 +36,7 @@ static void save_config_to(const char* path) {
     fprintf(f, "buffScale=%.4f\n", c.buffScale);
     fprintf(f, "barHeight=%.4f\n", c.barHeight);
     fprintf(f, "barWidth=%.4f\n", c.barWidth);
+    fprintf(f, "gaugeStyle=%d\n", c.gaugeStyle);
     fprintf(f, "jobBadge=%d\n", c.jobBadge);
     fprintf(f, "casts=%d,%d\n", c.castParty ? 1 : 0, c.castAlly ? 1 : 0);
     fprintf(f, "dist=%d,%d,%d\n", c.dist[0] ? 1 : 0, c.dist[1] ? 1 : 0, c.dist[2] ? 1 : 0);
@@ -66,6 +67,7 @@ static bool load_config_from(const char* path) {
         else if (sscanf(line, "buffScale=%f", &fv) == 1) c.buffScale = fv;
         else if (sscanf(line, "barHeight=%f", &fv) == 1) c.barHeight = fv;
         else if (sscanf(line, "barWidth=%f", &fv) == 1) c.barWidth = fv;
+        else if (sscanf(line, "gaugeStyle=%d", &v) == 1) c.gaugeStyle = v;
         else if (sscanf(line, "jobBadge=%d", &v) == 1) c.jobBadge = v;
         else if (sscanf(line, "casts=%d,%d", &b0, &b1) == 2) { c.castParty = (b0 != 0); c.castAlly = (b1 != 0); }
         else if (sscanf(line, "dist=%d,%d,%d", &b0, &b1, &b2) == 3) { c.dist[0] = (b0 != 0); c.dist[1] = (b1 != 0); c.dist[2] = (b2 != 0); }
@@ -226,7 +228,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
             strcmp(a.guideGroup[i].name, b.guideGroup[i].name) != 0) return false;
         for (int k = 0; k < ZPERM_COUNT; ++k) if (a.guideGroup[i].allow[k] != b.guideGroup[i].allow[k]) return false;
     }
-    if (a.barHeight != b.barHeight || a.barWidth != b.barWidth) return false;
+    if (a.barHeight != b.barHeight || a.barWidth != b.barWidth || a.gaugeStyle != b.gaugeStyle) return false;
     if (a.jobBadge != b.jobBadge || a.castParty != b.castParty || a.castAlly != b.castAlly) return false;
     if (a.dist[0] != b.dist[0] || a.dist[1] != b.dist[1] || a.dist[2] != b.dist[2]) return false;
     if (a.borderCost != b.borderCost) return false;
@@ -310,7 +312,7 @@ void guide_push_out(int perm, float sw, float sh, float& ex, float& ey, float ew
 
 void reset_ui_config() {   // general Default : everything
     UiConfig& c = ui_config();
-    c.skinTheme = 0; c.fontFace = 0; c.buffScale = 0.92f; c.barHeight = 1.0f; c.barWidth = 1.0f;
+    c.skinTheme = 0; c.fontFace = 0; c.buffScale = 0.92f; c.barHeight = 1.0f; c.barWidth = 1.0f; c.gaugeStyle = 0;
     c.jobBadge = 2; c.castParty = true; c.castAlly = true; c.dist[0] = c.dist[1] = c.dist[2] = true;
     c.border[0] = c.border[1] = c.border[2] = c.borderCost = true;   // all borders back on
     reset_boxes();   // (also saves)

@@ -1290,6 +1290,14 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             }
         }
         ROW_NEXT(46.0f)
+        // Bar Style : the current bars, or the glass "vial" look (rounded liquid hugging the tube)
+        { ROW_BAND(52.0f)
+            int s = ui_config().gaugeStyle; if (s < 0 || s > 1) s = 0;
+            const char* sb[2] = { tr("Bars", "Barres"), tr("Vial", "Fiole") };
+            if (int d = row_selector(dev, fo, mo, click, 36, coX, ry + yo, ctrlW, tr("Bar Style", "Style des barres"), sb[s])) {
+                ui_config().gaugeStyle = wrap(s + d, 2); save_ui_config(); }
+        }
+        ROW_NEXT(52.0f)
         // Job Badge : Off / Main job only / Main + Sub
         { ROW_BAND(52.0f)
             int m = ui_config().jobBadge; if (m < 0 || m > 2) m = 2;
@@ -1570,7 +1578,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                 if (y >= top && y + rh2 <= bot) {
                     const float hp = 0.5f + 0.5f * sinf(f.t * 0.55f);   // 0..1
                     const u32 hc = (hp >= 0.5f) ? lerpc(0xFFEFD24A, 0xFF5ADC5A, (hp - 0.5f) / 0.5f) : lerpc(0xFFFF4646, 0xFFEFD24A, hp / 0.5f);
-                    party_gauge(dev, hx + snap(4.0f), y + snap(5.0f), gw, gh, hp * 100.0f, hc, f.t, 0.0f, hp <= 0.25f ? 1.0f : 0.0f);
+                    party_gauge(dev, hx + snap(4.0f), y + snap(5.0f), gw, gh, hp * 100.0f, hc, f.t, 0.0f, hp <= 0.25f ? 1.0f : 0.0f, 0);
                     fo->begin(dev); fo->draw_lc(dev, hx + gw + snap(24.0f), y + rh2 * 0.5f, txt, bsz, fa(C_DIM), fa(C_STROKE), 1.0f);
                 }
                 y += rh2 + snap(8.0f);
@@ -1578,10 +1586,10 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                 const float gh = snap(22.0f), gw = snap(130.0f), gap = snap(16.0f), rh2 = gh + snap(12.0f);
                 if (y >= top && y + rh2 <= bot) {
                     const float mp = 0.45f + 0.35f * sinf(f.t * 0.4f + 1.0f);
-                    party_gauge(dev, hx + snap(4.0f), y + snap(5.0f), gw, gh, mp * 100.0f, 0xFF4F9DFF, f.t, 0.0f, 0.0f);
+                    party_gauge(dev, hx + snap(4.0f), y + snap(5.0f), gw, gh, mp * 100.0f, 0xFF4F9DFF, f.t, 0.0f, 0.0f, 1);
                     const float tpf = 0.5f + 0.5f * sinf(f.t * 0.5f);   // 0..1 = 0..3000 TP
                     const bool ready = tpf >= (1000.0f / 3000.0f);
-                    party_gauge(dev, hx + snap(4.0f) + gw + gap, y + snap(5.0f), gw, gh, tpf * 100.0f, ready ? 0xFFFF7AE8 : 0xFF7A5C8E, f.t, ready ? 1.0f : 0.0f, 0.0f);
+                    party_gauge(dev, hx + snap(4.0f) + gw + gap, y + snap(5.0f), gw, gh, tpf * 100.0f, ready ? 0xFFFF7AE8 : 0xFF7A5C8E, f.t, ready ? 1.0f : 0.0f, 0.0f, 2);
                     fo->begin(dev); fo->draw_lc(dev, hx + snap(4.0f) + 2 * gw + gap + snap(22.0f), y + rh2 * 0.5f, txt, bsz, fa(C_DIM), fa(C_STROKE), 1.0f);
                 }
                 y += rh2 + snap(8.0f);
