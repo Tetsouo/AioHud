@@ -16,6 +16,7 @@ public:
     void  dispose();                        // release all slot textures
     bool  ready() const { return nslot_ > 0 && slot_[0].tex != 0; }
     void  set_face(const char* face, int weight, bool italic = false);   // change the baked GDI face/weight/italic (drops the cached slots)
+    void  set_upper(bool u) { upper_ = u; }   // force UPPERCASE at draw/measure time (used for the config Interface element)
 
     void  begin(u32 dev);                   // set textured-quad render state (the texture is bound per draw, by size)
     // draw `s` with its CELL top-left at (x,y); `size` = em px; `color` = ARGB. Returns advance width.
@@ -43,6 +44,8 @@ private:
     char  face_[64] = "Segoe UI";           // GDI face name (configurable, global)
     int   weight_ = 600;                    // FW_SEMIBOLD
     bool  italic_ = false;                  // GDI italic flag
+    bool  upper_ = false;                   // force uppercase (ASCII + Latin-1) at draw/measure
+    int   upcase(int c) const { if (upper_) { if (c >= 'a' && c <= 'z') c -= 32; else if (c >= 0xE0 && c <= 0xFE && c != 0xF7) c -= 32; } return c; }
 };
 
 // Cache of Font atlases keyed by (face, weight). Lets different text use different faces

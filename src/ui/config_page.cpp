@@ -638,6 +638,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     if (fo) fo->ensure(dev);
     if (!fo || !fo->ready()) fo = f.font;
     if (!fo || !fo->ready() || sw <= 0 || sh <= 0) return;
+    fo->set_upper(tsUI.upper);   // Interface element : UPPERCASE the whole menu font (reset at the end so it never leaks)
     const MouseState* mo = f.mouse;
     const bool click = mo && mo->clicked;
 
@@ -1724,6 +1725,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         }
     }
 
+    fo->set_upper(false);   // clear the Interface UPPERCASE so the shared font atlas doesn't stay forced elsewhere
     // (no custom cursor : the game/OS already shows one -> avoid a double pointer)
 }
 

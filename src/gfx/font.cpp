@@ -235,7 +235,7 @@ void Font::emit(u32 dev, u32 tex, const G* g, float x, float y, const char* s, f
     dSetTex(dev, 0, tex);
     float penx = x;
     for (const char* p = s; *p; ) {
-        int c = utf8_next(p); if (c < FIRST || c > LAST) c = '?';
+        int c = upcase(utf8_next(p)); if (c < FIRST || c > LAST) c = '?';
         const G& gg = g[c - FIRST];
         if (c != ' ') tquad(dev, penx, y, gg.w * scale, gg.h * scale, gg.u0, gg.u1, gg.v0, gg.v1, color, color);
         penx += gg.adv * scale;
@@ -247,7 +247,7 @@ float Font::measure(const char* s, float size) const {
     int si = pickC(size); if (si < 0) return 0.0f;
     const Slot& S = slot_[si];
     float scale = size / S.base, w = 0.0f;
-    for (const char* p = s; *p; ) { int c = utf8_next(p); if (c < FIRST || c > LAST) c = '?'; w += S.g[c - FIRST].adv * scale; }
+    for (const char* p = s; *p; ) { int c = upcase(utf8_next(p)); if (c < FIRST || c > LAST) c = '?'; w += S.g[c - FIRST].adv * scale; }
     return w;
 }
 
@@ -264,7 +264,7 @@ float Font::draw(u32 dev, float x, float y, const char* s, float size, u32 color
     }
     emit(dev, S.tex, S.g, x, y, s, scale, color);
     float w = 0.0f;
-    for (const char* p = s; *p; ) { int c = utf8_next(p); if (c < FIRST || c > LAST) c = '?'; w += S.g[c - FIRST].adv * scale; }
+    for (const char* p = s; *p; ) { int c = upcase(utf8_next(p)); if (c < FIRST || c > LAST) c = '?'; w += S.g[c - FIRST].adv * scale; }
     return w;
 }
 
@@ -286,7 +286,7 @@ float Font::draw_lc(u32 dev, float x, float cy, const char* s, float size, u32 c
     const Slot& S = slot_[si];
     float scale = size / S.base, top = 1e9f, bot = -1e9f;
     for (const char* p = s; *p; ) {
-        int c = utf8_next(p); if (c < FIRST || c > LAST) c = '?';
+        int c = upcase(utf8_next(p)); if (c < FIRST || c > LAST) c = '?';
         const G& g = S.g[c - FIRST];
         if (c != ' ') { float t = g.it * scale, b = g.ib * scale; if (t < top) top = t; if (b > bot) bot = b; }
     }
@@ -301,7 +301,7 @@ float Font::draw_cc(u32 dev, float cx, float cy, const char* s, float size, u32 
     float scale = size / S.base, penx = 0.0f;
     float left = 1e9f, right = -1e9f, top = 1e9f, bot = -1e9f;
     for (const char* p = s; *p; ) {
-        int c = utf8_next(p); if (c < FIRST || c > LAST) c = '?';
+        int c = upcase(utf8_next(p)); if (c < FIRST || c > LAST) c = '?';
         const G& g = S.g[c - FIRST];
         if (c != ' ') {
             float l = penx + g.il * scale, r = penx + g.ir * scale, t = g.it * scale, b = g.ib * scale;
