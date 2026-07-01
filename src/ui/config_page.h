@@ -89,9 +89,7 @@ private:
     // user-drawn ZONES : selection + inline rename (reuses the nameBuf_ text field) + rubber-band draw
     int   groupSel_      = -1;      // selected zone (-1 = none)
     int   editZoneName_  = -1;      // zone being renamed via the keyboard (-1 = none)
-    float rulesPanelX_   = -1.0f;   // draggable panel top-left (fraction of screen ; -1 = default top-right)
-    float rulesPanelY_   = -1.0f;
-    float guideScroll_   = 0.0f;    // zone-list scroll in the panel
+    float guideScroll_   = 0.0f;    // zone-list scroll in the panel  (panel position persists in ui_config.zonePanelX/Y)
     float zoneDrawX_     = 0.0f;    // rubber-band : start corner (screen px) while zoneDrawing_ is set
     float zoneDrawY_     = 0.0f;
     bool  zoneDrawing_   = false;

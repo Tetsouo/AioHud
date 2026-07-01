@@ -606,7 +606,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                 const GuideGroup& g = ui_config().guideGroup[zg[i]];
                 const bool openZone = g.allow[ZPERM_PARTY] || g.allow[ZPERM_ALLIANCE] || g.allow[ZPERM_HUB];
                 const u32 col = ZC[zg[i] % 8];
-                flat(dev, zx[i], zy[i], zw[i], zh[i], (col & 0x00FFFFFF) | (openZone ? 0x14000000 : 0x24000000));   // faint fill (forbidden = a touch denser)
+                flat(dev, zx[i], zy[i], zw[i], zh[i], (col & 0x00FFFFFF) | (openZone ? 0x28000000 : 0x40000000));   // fill (forbidden = a touch denser)
                 outline(dev, zx[i], zy[i], zw[i], zh[i], col);
                 char zl[28]; if (g.name[0]) sprintf(zl, "%s", g.name); else sprintf(zl, tr("Zone %d", "Zone %d"), zg[i] + 1);
                 fo->begin(dev); fo->draw_lc(dev, zx[i] + snap(6.0f), zy[i] + snap(10.0f), zl, snap(11.0f), col, C_STROKE, 1.2f);
@@ -631,8 +631,8 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         { const float hw2 = fo->measure(pHint, snap(11.0f)) + snap(24.0f); if (hw2 > pw) pw = hw2; }
         if (pw < snap(200.0f)) pw = snap(200.0f); if (pw > snap(420.0f)) pw = snap(420.0f); pw = snap(pw);
         const float ph = snap(tbh + newBtnRow + listH + snap(6.0f) + actionsH + snap(8.0f));
-        float pxp = (rulesPanelX_ >= 0.0f) ? snap(rulesPanelX_ * sw) : snap(sw - pw - 20.0f);
-        float pyp = (rulesPanelY_ >= 0.0f) ? snap(rulesPanelY_ * sh) : snap(80.0f);
+        float pxp = (C.zonePanelX >= 0.0f) ? snap(C.zonePanelX * sw) : snap(sw - pw - 20.0f);
+        float pyp = (C.zonePanelY >= 0.0f) ? snap(C.zonePanelY * sh) : snap(80.0f);
         if (pxp > sw - pw) pxp = snap(sw - pw); if (pxp < 0.0f) pxp = 0.0f;
         if (pyp > sh - ph) pyp = snap(sh - ph); if (pyp < 0.0f) pyp = 0.0f;
         const bool overPanel = inrect(mo, pxp, pyp, pw, ph);
@@ -664,15 +664,15 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             // ---- draw + edit each ZONE rectangle on screen ----
             const float HS = snap(9.0f);   // corner-handle half-size
             static int grabZone = -1, grabMode = 0;   // grabMode : 0 move ; 1..4 = TL/TR/BL/BR corner resize
-            static float gzOffX = 0.0f, gzOffY = 0.0f;
-            if (!(mo && mo->down)) { if (grabZone >= 0) save_ui_config(); grabZone = -1; }
+            static float gzOffX = 0.0f, gzOffY = 0.0f, grabPX = 0.0f, grabPY = 0.0f; static bool grabMoved = false;
+            if (!(mo && mo->down)) { if (grabZone >= 0 && grabMoved) save_ui_config(); grabZone = -1; grabMoved = false; }
             for (int i = 0; i < C.guideGroupCount; ++i) {
                 GuideGroup& z = C.guideGroup[i];
                 const float rx = snap(z.x * sw), ry = snap(z.y * sh), rw = snap(z.w * sw), rh = snap(z.h * sh);
                 const bool sel = (groupSel_ == i);
                 const u32  col = GRP_COL[i % 8];
                 const bool openZone = z.allow[0] || z.allow[1] || z.allow[2];
-                flat(dev, rx, ry, rw, rh, (col & 0x00FFFFFF) | (openZone ? 0x18000000 : 0x2C000000));
+                flat(dev, rx, ry, rw, rh, (col & 0x00FFFFFF) | (openZone ? 0x40000000 : 0x60000000));   // less transparent fill
                 outline(dev, rx, ry, rw, rh, sel ? 0xFFFFE59E : col);
                 if (sel) outline(dev, rx + snap(1.0f), ry + snap(1.0f), rw - snap(2.0f), rh - snap(2.0f), (col & 0x00FFFFFF) | 0x88000000);
                 if (sel) {   // corner handles for the selected zone
@@ -690,15 +690,18 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                     GuideGroup& z = C.guideGroup[groupSel_];
                     const float rx = z.x * sw, ry = z.y * sh, rw = z.w * sw, rh = z.h * sh;
                     const float cxs[4] = { rx, rx + rw, rx, rx + rw }, cys[4] = { ry, ry, ry + rh, ry + rh };
-                    for (int cci = 0; cci < 4 && !got; ++cci) if (inrect(mo, cxs[cci] - HS, cys[cci] - HS, 2 * HS, 2 * HS)) { grabZone = groupSel_; grabMode = 1 + cci; got = true; }
+                    for (int cci = 0; cci < 4 && !got; ++cci) if (inrect(mo, cxs[cci] - HS, cys[cci] - HS, 2 * HS, 2 * HS)) { grabZone = groupSel_; grabMode = 1 + cci; grabPX = mo->x; grabPY = mo->y; grabMoved = false; got = true; }
                 }
                 if (!got) for (int i = C.guideGroupCount - 1; i >= 0 && !got; --i) {
                     GuideGroup& z = C.guideGroup[i];
-                    if (inrect(mo, z.x * sw, z.y * sh, z.w * sw, z.h * sh)) { grabZone = i; grabMode = 0; groupSel_ = i; gzOffX = mo->x - z.x * sw; gzOffY = mo->y - z.y * sh; got = true; }
+                    if (inrect(mo, z.x * sw, z.y * sh, z.w * sw, z.h * sh)) { grabZone = i; grabMode = 0; groupSel_ = i; gzOffX = mo->x - z.x * sw; gzOffY = mo->y - z.y * sh; grabPX = mo->x; grabPY = mo->y; grabMoved = false; got = true; }
                 }
                 if (!got) { zoneDrawing_ = true; zoneDrawX_ = mo->x; zoneDrawY_ = mo->y; }
             }
-            if (grabZone >= 0 && grabZone < C.guideGroupCount && mo) {   // apply an active move / corner resize
+            if (grabZone >= 0 && grabZone < C.guideGroupCount && mo && !grabMoved) {   // 4px dead-zone : a plain click only SELECTS
+                const float dx = mo->x - grabPX, dy = mo->y - grabPY; if (dx * dx + dy * dy > 16.0f) grabMoved = true;
+            }
+            if (grabZone >= 0 && grabZone < C.guideGroupCount && mo && grabMoved) {   // apply an active move / corner resize
                 GuideGroup& z = C.guideGroup[grabZone];
                 if (grabMode == 0) { z.x = clampf((mo->x - gzOffX) / sw, 0.0f, 1.0f - z.w); z.y = clampf((mo->y - gzOffY) / sh, 0.0f, 1.0f - z.h); }
                 else {
@@ -727,20 +730,20 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                 }
             }
 
-            // ---- draggable PANEL : the zone LIST + rename / delete / permissions for the selected zone ----
-            drop_shadow(dev, pxp, pyp, pw, ph, snap(6.0f), 74);
-            vg(dev, pxp, pyp, pw, ph, 0xF01C2636, 0xF0121A26);
-            outline(dev, pxp, pyp, pw, ph, C_BORDERHI);
+            // ---- draggable PANEL : move it FIRST (so background + content share one position), then draw ----
             static float panDX = 0.0f, panDY = 0.0f; static int grabPan = 0;
             const bool tbHov = inrect(mo, pxp, pyp, pw, tbh);
             if (mo && mo->down && !grabPan && tbHov && editConfirm_ == 0 && grabZone < 0 && !zoneDrawing_) { grabPan = 1; panDX = mo->x - pxp; panDY = mo->y - pyp; }
-            if (!(mo && mo->down)) grabPan = 0;
+            if (!(mo && mo->down)) { if (grabPan) save_ui_config(); grabPan = 0; }   // persist the panel position on drop
             if (grabPan && mo) {
-                rulesPanelX_ = (mo->x - panDX) / sw; rulesPanelY_ = (mo->y - panDY) / sh;
-                pxp = snap(rulesPanelX_ * sw); pyp = snap(rulesPanelY_ * sh);
+                pxp = snap(mo->x - panDX); pyp = snap(mo->y - panDY);
                 if (pxp > sw - pw) pxp = snap(sw - pw); if (pxp < 0.0f) pxp = 0.0f;
                 if (pyp > sh - ph) pyp = snap(sh - ph); if (pyp < 0.0f) pyp = 0.0f;
+                C.zonePanelX = pxp / sw; C.zonePanelY = pyp / sh;   // store the CLAMPED position -> stays == what's drawn
             }
+            drop_shadow(dev, pxp, pyp, pw, ph, snap(6.0f), 74);
+            vg(dev, pxp, pyp, pw, ph, 0xF01C2636, 0xF0121A26);
+            outline(dev, pxp, pyp, pw, ph, C_BORDERHI);
             vg(dev, pxp, pyp, pw, tbh, (tbHov || grabPan) ? 0xF02C3A50 : 0xF0243044, 0xF01A2434);
             flat(dev, pxp, pyp, pw, 1, 0x55FFFFFF);
             fo->begin(dev); fo->draw_lc(dev, pxp + snap(12.0f), pyp + tbh * 0.5f, pTitle, snap(11.0f), C_GOLD, C_STROKE, 1.0f);

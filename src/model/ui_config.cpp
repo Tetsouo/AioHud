@@ -44,6 +44,7 @@ static void save_config_to(const char* path) {
     fprintf(f, "partyBottom=%.5f\n", c.partyBottomY);
     fprintf(f, "partyRefX=%.5f,%.5f\n", c.partyRefX[0], c.partyRefX[1]);
     fprintf(f, "allyRef=%.5f,%.5f,%.5f,%.5f\n", c.allyRefY[0], c.allyRefY[1], c.allyRefY[2], c.allyRefY[3]);
+    fprintf(f, "zonePanel=%.5f,%.5f\n", c.zonePanelX, c.zonePanelY);
     for (int i = 0; i < c.guideGroupCount; ++i)   // user-drawn zones : rect + permissions + role ; name LAST (comma-safe).
         fprintf(f, "zone=%.5f,%.5f,%.5f,%.5f,%d,%d,%d,%d,%s\n", c.guideGroup[i].x, c.guideGroup[i].y, c.guideGroup[i].w, c.guideGroup[i].h,
                 c.guideGroup[i].allow[0] ? 1 : 0, c.guideGroup[i].allow[1] ? 1 : 0, c.guideGroup[i].allow[2] ? 1 : 0, c.guideGroup[i].role, c.guideGroup[i].name);
@@ -76,6 +77,7 @@ static bool load_config_from(const char* path) {
         else if (sscanf(line, "partyBottom=%f", &fv) == 1) c.partyBottomY = fv;
         else if (sscanf(line, "partyRefX=%f,%f", &x, &y) == 2) { c.partyRefX[0] = x; c.partyRefX[1] = y; }
         else if (strncmp(line, "allyRef=", 8) == 0) { float ar[4]; int g = sscanf(line + 8, "%f,%f,%f,%f", &ar[0], &ar[1], &ar[2], &ar[3]); for (int k = 0; k < g && k < 4; ++k) c.allyRefY[k] = ar[k]; }
+        else if (sscanf(line, "zonePanel=%f,%f", &x, &y) == 2) { c.zonePanelX = x; c.zonePanelY = y; }
         else if (strncmp(line, "zone=", 5) == 0 && c.guideGroupCount < GUIDE_GROUPS_MAX) {
             GuideGroup z; char nm[24] = { 0 }; float x = 0, y = 0, w = 0, h = 0; int a0 = 0, a1 = 0, a2 = 0, rl = 0;
             int got = sscanf(line + 5, "%f,%f,%f,%f,%d,%d,%d,%d,%23[^\r\n]", &x, &y, &w, &h, &a0, &a1, &a2, &rl, nm);   // new (with role)

@@ -63,6 +63,7 @@ struct UiConfig {
     // ---- user-drawn zones ----
     GuideGroup guideGroup[GUIDE_GROUPS_MAX];
     int        guideGroupCount = 0;
+    float      zonePanelX = -1.0f, zonePanelY = -1.0f;   // draggable Zones panel top-left (fraction ; -1 = default top-right)
     // ---- Global ----
     int   lang = 0;            // config UI language : 0 = English, 1 = French (toggle in the config header)
 };
