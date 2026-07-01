@@ -18,6 +18,10 @@ namespace aio {
 void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32 col, float t, float pulse, float danger = 0.0f);
 // The REAL selection hand (tex from the Party widget), exposed so the Help can show it. sub = blue sub-target.
 void party_cursor(u32 dev, u32 tex, float cx, float cy, float size, bool sub);
+// The REAL selection frame (gold glass main / ocean-blue sub) with its moving glass sweep, exposed for the Help.
+void party_selframe(u32 dev, float x, float y, float w, float h, float t, float alpha, bool sub);
+// The cursor's horizontal bob offset (px) for a time + icon size, on the same rhythm as the live rows.
+float party_cursor_bob(float t, float size);
 
 class Party : public Widget {
 public:

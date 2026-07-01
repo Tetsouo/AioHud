@@ -1587,21 +1587,9 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                 const float rh2 = snap(44.0f), hand = snap(44.0f), bx2 = hx + hand + snap(8.0f), bw = snap(200.0f);
                 for (int t2 = 0; t2 < 2; ++t2) {
                     if (y >= top && y + rh2 <= bot) {
-                        const u32 base = (t2 == 0) ? 0xFFFFDC78 : 0xFF5AA2FF;
-                        flat(dev, bx2, y, bw, rh2, (base & 0x00FFFFFF) | 0x30000000);        // tinted fill
-                        // moving glass sheen sweeping left -> right, like the party selection frame
-                        const float shW = bw * 0.20f;
-                        const float sph = fmodf(f.t * 0.55f + t2 * 0.4f, 1.35f) / 1.35f;     // 0..1 loop with a pause between sweeps
-                        float shx = bx2 - shW + (bw + shW) * sph, shw = shW;
-                        if (shx < bx2)            { shw -= (bx2 - shx); shx = bx2; }
-                        if (shx + shw > bx2 + bw)   shw = bx2 + bw - shx;
-                        if (shw > 1.0f) {
-                            const u32 e = 0x00FFFFFF, m = 0x66FFFFFF;
-                            q4(dev, shx,              y, shw * 0.5f, rh2, e, m, e, m);        // ramp up to the bright centre
-                            q4(dev, shx + shw * 0.5f, y, shw * 0.5f, rh2, m, e, m, e);        // ramp back down
-                        }
-                        outline(dev, bx2, y, bw, rh2, (base & 0x00FFFFFF) | 0x99000000);
-                        const float bob = snap(3.0f) * sinf(f.t * 4.6f + t2 * 1.6f);         // horizontal bob, same rhythm as the in-game cursor
+                        // the EXACT party selection frame (gold glass + glass sweep + rims, or ocean-blue for the sub)
+                        party_selframe(dev, bx2, y, bw, rh2, f.t, 1.0f, t2 == 1);
+                        const float bob = party_cursor_bob(f.t, hand);                       // same horizontal bob as the in-game cursor
                         party_cursor(dev, helpCursorTex_, hx + hand * 0.5f + bob, y + rh2 * 0.5f, hand, t2 == 1);
                         const char* cl = (t2 == 0) ? (ui_config().lang == 1 ? "Cible principale, curseur blanc" : "Main target, white hand")
                                                    : (ui_config().lang == 1 ? "Sous-cible, curseur bleu" : "Sub-target, blue hand");

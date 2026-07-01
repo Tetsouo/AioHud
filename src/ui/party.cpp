@@ -279,6 +279,39 @@ void party_cursor(u32 dev, u32 tex, float cx, float cy, float size, bool sub) {
     dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
 }
 
+// The EXACT selection frame the party draws : gold glass fill + the moving glass sweep + darkened rims
+// for the main target, ocean-blue fill + a stronger blue sweep for a sub-target. Exposed so the Help
+// shows the identical look/rhythm. t = time (drives the sweep on the same 1.4s cycle) ; alpha 0..1.
+void party_selframe(u32 dev, float x, float y, float w, float h, float t, float alpha, bool sub) {
+    setup_color_state(dev);
+    const float a = alpha < 0.0f ? 0.0f : (alpha > 1.0f ? 1.0f : alpha);
+    const float gSwT = t > 0.0f ? t : 0.0f;
+    const float gSweep = gSwT / 1.4f - (float)(int)(gSwT / 1.4f);   // 0..1 sweep phase, same as the live rows
+    if (sub) {
+        const u32 fillT = ((u32)(0x80 * a) << 24) | 0x00159CFF;     // vivid ocean blue
+        const u32 fillB = ((u32)(0x34 * a) << 24) | 0x00064FB0;     // deeper toward the bottom
+        vgrad(dev, x, y, w, h, fillT, fillB);
+        shine_sweep(dev, x, y, w, h, gSweep, 0x00BFEFFF, 0.80f * a);
+    } else {
+        const u32 fillT = ((u32)(0x3C * a) << 24) | 0x00FFE08A;     // faint gold glass
+        const u32 fillB = ((u32)(0x16 * a) << 24) | 0x00FFC850;
+        vgrad(dev, x, y, w, h, fillT, fillB);
+        shine_sweep(dev, x, y, w, h, gSweep, 0x00FFFFFF, 0.65f * a);
+        const float rw = w * 0.085f;                                // curved rims : darken the far edges (lens bulge)
+        const u32 rO = ((u32)(0x3E * a) << 24), rI = 0x00000000;
+        grad_quad(dev, x,          y, rw, h, rO, rI, rO, rI);       // left rim
+        grad_quad(dev, x + w - rw, y, rw, h, rI, rO, rI, rO);       // right rim
+    }
+}
+
+// The cursor's horizontal bob offset (px) for a given time + icon size, matching the live rhythm
+// (bob = 1.5*S*sin, over an icon ~= mainBand*1.3*S -> about 6% of the icon size, on the same 4.6 clock).
+float party_cursor_bob(float t, float size) {
+    const float gPulseT = t - 0.35f;
+    const float gPulse  = gPulseT > 0.0f ? sinf(gPulseT * 4.6f) : 0.0f;
+    return size * 0.06f * gPulse;
+}
+
 // The main party box (tier 0) is configured FIRST (file order), and publishes its exact style
 // here so the alliance boxes adopt the identical gabarit (size / stroke / bold / font) instead
 // of their own config -> they always match the party, even if the design tool regenerates them.
