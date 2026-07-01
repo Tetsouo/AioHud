@@ -48,6 +48,8 @@ struct UiConfig {
     BoxLayout box[3];          // 0 = party (+cost), 1 = alliance 1, 2 = alliance 2 (independent)
     bool  border[3] = { true, true, true };   // per-box window-skin border/chrome on/off (0=party, 1=alliance1, 2=alliance2)
     bool  borderCost = true;   // the floating Cost MP / Next box border/chrome on/off (independent of the party box)
+    bool  animHP = true;       // HP gauges : critical-low blink animation on/off
+    bool  animTP = true;       // TP gauges : WS-ready (>= 1000) pulse animation on/off
     bool  editLayout = false;  // layout edit mode : boxes draggable / resizable on the live game
     int   wheel = 0;           // pending wheel steps (mouse slot -> consumed by the hovered box in edit mode)
     // reference LINE per native-party size : the party box grows UP to this Y (fraction of screen height)

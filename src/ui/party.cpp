@@ -243,13 +243,14 @@ static void liquid_segment(u32 dev, float cx, float cy, float r, float yTop, u32
     const float PI = 3.14159265f, a0 = asinf(s), a1 = PI - a0;   // arc through the bottom (theta = +pi/2, screen y down)
     const int N = 48;
     float span = (cy + r) - yTop; if (span < 1.0f) span = 1.0f;
-    // solid fan from the surface midpoint to the arc (per-vertex vertical shade)
+    // solid fan from the surface midpoint to the arc. VOLUMETRIC shade : bright at the top-centre, darker
+    // toward the bottom (f) AND toward the sides (ex) -> the liquid reads as a rounded 3D body, not a flat fill.
     VtxC fan[N + 2];
-    fan[0] = { cx, yTop - 0.5f, 0.0f, 1.0f, scl(col, 1.06f) };
+    fan[0] = { cx, yTop - 0.5f, 0.0f, 1.0f, scl(col, 1.34f) };
     for (int i = 0; i <= N; ++i) {
-        float a = a0 + (a1 - a0) * (float)i / N, y = cy + r * sinf(a);
+        float a = a0 + (a1 - a0) * (float)i / N, ca = cosf(a), y = cy + r * sinf(a);
         float f = (y - (yTop - 0.5f)) / span; if (f < 0) f = 0; if (f > 1) f = 1;
-        fan[i + 1] = { cx + r * cosf(a), y, 0.0f, 1.0f, scl(col, 1.12f - 0.55f * f) };
+        fan[i + 1] = { cx + r * ca, y, 0.0f, 1.0f, scl(col, 1.34f - 1.05f * f - 0.15f * fabsf(ca)) };
     }
     dDrawUP(dev, D3DPT_TRIANGLEFAN, N, fan, sizeof(VtxC));
     // feathered rim along the ARC only (opaque at r -> transparent at r+f) = the anti-aliased edge
@@ -258,11 +259,64 @@ static void liquid_segment(u32 dev, float cx, float cy, float r, float yTop, u32
     for (int i = 0; i <= N; ++i) {
         float a = a0 + (a1 - a0) * (float)i / N, ca = cosf(a), sa = sinf(a), y = cy + r * sa;
         float f = (y - (yTop - 0.5f)) / span; if (f < 0) f = 0; if (f > 1) f = 1;
-        u32 ci = scl(col, 1.12f - 0.55f * f);
+        u32 ci = scl(col, 1.34f - 1.05f * f - 0.15f * fabsf(ca));
         ring[2 * i]     = { cx + r * ca,         y,               0.0f, 1.0f, ci };
         ring[2 * i + 1] = { cx + (r + fth) * ca, cy + (r + fth) * sa, 0.0f, 1.0f, ci & 0x00FFFFFF };
     }
     dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * N, ring, sizeof(VtxC));
+}
+
+// a horizontal band centred on cx : from (yT, half-width hcT, colour cT) down to (yB, half-width hcB, cB).
+// Used for the level line so each edge follows the shape's half-width at ITS y -> the band hugs the shape.
+static void aa_hstrip(u32 dev, float cx, float yT, float hcT, u32 cT, float yB, float hcB, u32 cB) {
+    VtxC v[4] = { { cx - hcT, yT, 0.0f, 1.0f, cT }, { cx - hcB, yB, 0.0f, 1.0f, cB }, { cx + hcT, yT, 0.0f, 1.0f, cT }, { cx + hcB, yB, 0.0f, 1.0f, cB } };
+    dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, v, sizeof(VtxC));
+}
+// per-vertex coloured triangle (for volumetric fills).
+static void fill_tri_c(u32 dev, float x0, float y0, u32 c0, float x1, float y1, u32 c1, float x2, float y2, u32 c2) {
+    VtxC v[3] = { { x0, y0, 0.0f, 1.0f, c0 }, { x1, y1, 0.0f, 1.0f, c1 }, { x2, y2, 0.0f, 1.0f, c2 } };
+    dDrawUP(dev, D3DPT_TRIANGLEFAN, 1, v, sizeof(VtxC));
+}
+// vertical shade : bright at yTop (br0) -> dark at yBot (br1), for a lit-from-the-surface liquid body.
+static u32 vshade(u32 col, float y, float yTop, float yBot, float br0, float br1) {
+    float d = yBot - yTop; float f = d > 0.5f ? (y - yTop) / d : 0.0f; if (f < 0.0f) f = 0.0f; if (f > 1.0f) f = 1.0f;
+    return scl(col, br0 - (br0 - br1) * f);
+}
+// the fiole-style LEVEL LINE (dark contrast band + additive glow + bright core) at yFill, using the shape's
+// half-widths wM/wA/wB (at yFill, yFill-g, yFill+g) so it hugs whatever form. Call in the colour-quad state.
+static float shape_hw(int shape, float rad, float cy, float y) {   // shape half-width at height y : 0 = circle, 1 = diamond
+    float d = y - cy;
+    if (shape == 0) { float v = rad * rad - d * d; return v > 0.0f ? sqrtf(v) : 0.0f; }
+    float w = rad - fabsf(d); return w > 0.0f ? w : 0.0f;
+}
+// HORIZONTAL level line (Sphere / Crystal), faithfully mirroring the fiole's surface_glow : a dark contrast
+// band + a WIDE additive coloured glow (moderate alpha keeps the hue -> not white) + a bright core. Each
+// band uses the shape's half-width at ITS y so the whole thing hugs the form.
+static void level_line(u32 dev, float cx, float cy, float yFill, u32 col, float rad, int shape) {
+    const float wM = shape_hw(shape, rad, cy, yFill);
+    if (wM <= 1.0f) return;
+    aa_hstrip(dev, cx, yFill, wM, 0x00000000, yFill + 4.0f, shape_hw(shape, rad, cy, yFill + 4.0f), 0x5A000000);   // dark contrast band below
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);                                   // additive WIDE coloured glow (fiole recipe)
+    const float G = 5.0f;
+    const u32 c = (scl(col, 1.3f) & 0x00FFFFFF) | 0x4A000000, c0 = c & 0x00FFFFFF;
+    aa_hstrip(dev, cx, yFill - G, shape_hw(shape, rad, cy, yFill - G), c0, yFill, wM, c);   // above : 0 -> glow
+    aa_hstrip(dev, cx, yFill, wM, c, yFill + G, shape_hw(shape, rad, cy, yFill + G), c0);   // below : glow -> 0
+    const u32 core = (scl(col, 1.9f) & 0x00FFFFFF) | 0x88000000;                  // bright core (like scale_rgb(c,1.6), alpha 0x88)
+    aa_hstrip(dev, cx, yFill - 1.2f, shape_hw(shape, rad, cy, yFill - 1.2f), core, yFill + 1.2f, shape_hw(shape, rad, cy, yFill + 1.2f), core);
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+}
+// VERTICAL level line (fiole surface_glow recipe) at xFill over [yT, yT+h] : dark contrast band + additive
+// glow + bright core. For the horizontal-fill styles (Bars / Segments / Minimal).
+static void level_line_v(u32 dev, float xFill, float yT, float h, u32 col) {
+    if (h < 1.0f) return;
+    const u32 c = (scl(col, 1.3f) & 0x00FFFFFF) | 0x4A000000, c0 = c & 0x00FFFFFF;   // like the fiole's `men` (moderate alpha)
+    grad_quad(dev, xFill - 6.0f, yT, 6.0f, h, 0x00000000, 0x5A000000, 0x00000000, 0x5A000000);   // dark thickness band (7px-ish)
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);                                       // additive WIDE coloured glow (6px each side)
+    grad_quad(dev, xFill - 6.0f, yT, 6.0f, h, c0, c, c0, c);   // glow rising to the surface
+    grad_quad(dev, xFill,        yT, 6.0f, h, c, c0, c, c0);   // glow falling past it
+    const u32 core = (scl(col, 1.9f) & 0x00FFFFFF) | 0x88000000;                      // bright core (2px)
+    grad_quad(dev, xFill - 1.0f, yT, 2.0f, h, core, core, core, core);
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
 }
 
 // SPHERE : a round glass bulb filling bottom -> top with liquid (horizontal bands clipped to the circle).
@@ -273,13 +327,10 @@ static void gauge_sphere(u32 dev, float gx, float gy, float gw, float gh, float 
     disc(dev, cx, cy, r + 1.0f, 0xFF243150);            // anti-aliased rim (feathered edge)
     disc(dev, cx, cy, r,        0xFF0A0E1C);            // anti-aliased dark glass bulb
     if (pct > 0.0f) {
-        const float rr = r - 1.0f;                       // keep the liquid just inside the smooth AA rim
-        const float yFill = cy + rr - 2.0f * rr * (pct / 100.0f);   // liquid surface Y
+        const float rr = r - 0.5f;                       // liquid hugs the glass (just inside the AA rim)
+        const float yFill = cy + rr - 2.0f * rr * (pct / 100.0f);   // FIXED surface level -> the fill LIMIT never moves
         liquid_segment(dev, cx, cy, rr, yFill, col);     // smooth AA circular segment (no stepped edge)
-        if (yFill > cy - rr + 1.0f && yFill < cy + rr - 1.0f) {     // bright meniscus at the surface
-            float sfrac = (yFill - cy) / rr; float hc = rr * sqrtf(1.0f - sfrac * sfrac);
-            u32 me = lt(col, 0.5f); grad_quad(dev, cx - hc, yFill, 2.0f * hc, 1.2f, me, me, me, me);
-        }
+        level_line(dev, cx, cy, yFill, col, rr, 0);   // level line hugging the sphere (circle)
     }
     { u32 hi = 0x66FFFFFF; soft_blob(dev, cx - r * 0.34f, cy - r * 0.42f, r * 0.5f, r * 0.42f, hi); }  // top-left gloss
 }
@@ -311,7 +362,10 @@ static void gauge_ring(u32 dev, float gx, float gy, float gw, float gh, float pc
     if (pct > 0.0f) {
         float a1 = a0 + TAU * (pct / 100.0f);
         ring_sector(dev, cx, cy, rIn, rOut, a0, a1, col);
-        if (pct < 99.5f) { u32 me = lt(col, 0.5f); float da = 2.2f / rOut; ring_sector(dev, cx, cy, rIn, rOut, a1 - da, a1, me); }   // bright radial level line
+        if (pct < 99.5f) {   // bright COLOURED radial marker at the fill tip (normal alpha -> keeps hue)
+            const u32 me = (scl(col, 1.35f) & 0x00FFFFFF) | 0xFF000000; float da = 2.6f / rOut;
+            ring_sector(dev, cx, cy, rIn, rOut, a1 - da, a1, me);
+        }
     }
     { u32 hi = 0x40FFFFFF; soft_blob(dev, cx - R * 0.3f, cy - R * 0.35f, R * 0.5f, R * 0.4f, hi); }
 }
@@ -342,17 +396,19 @@ static void gauge_crystal(u32 dev, float gx, float gy, float gw, float gh, float
     edge_feather(dev, cx - R, cy, cx, cy - R, -k, -k, rimC);
     if (pct > 0.0f) {
         const float Rin = R - 1.0f;                                   // liquid stays 1px inside -> the rim frames it
-        const float yFill = cy + Rin - 2.0f * Rin * (pct / 100.0f);
+        const float yFill = cy + Rin - 2.0f * Rin * (pct / 100.0f), yBot = cy + Rin;
         float hc = Rin - fabsf(yFill - cy); if (hc < 0.0f) hc = 0.0f;  // diamond half-width at the surface
-        u32 c = scl(col, 0.92f);
+        // VOLUMETRIC fill : per-vertex vertical shade (bright at the surface -> dark at the bottom tip)
+        #define CS(yy) vshade(col, (yy), yFill, yBot, 1.14f, 0.52f)
         if (yFill >= cy) {                                            // lower half : straight triangle to the bottom tip
-            fill_tri(dev, cx - hc, yFill, cx + hc, yFill, cx, cy + Rin, c);
+            fill_tri_c(dev, cx - hc, yFill, CS(yFill), cx + hc, yFill, CS(yFill), cx, yBot, CS(yBot));
         } else {                                                      // over half : pentagon (fan from the left surface point)
-            fill_tri(dev, cx - hc, yFill, cx + hc, yFill, cx + Rin, cy, c);
-            fill_tri(dev, cx - hc, yFill, cx + Rin, cy,   cx, cy + Rin, c);
-            fill_tri(dev, cx - hc, yFill, cx, cy + Rin,   cx - Rin, cy, c);
+            fill_tri_c(dev, cx - hc, yFill, CS(yFill), cx + hc, yFill, CS(yFill), cx + Rin, cy, CS(cy));
+            fill_tri_c(dev, cx - hc, yFill, CS(yFill), cx + Rin, cy, CS(cy),       cx, yBot, CS(yBot));
+            fill_tri_c(dev, cx - hc, yFill, CS(yFill), cx, yBot, CS(yBot),         cx - Rin, cy, CS(cy));
         }
-        u32 me = lt(col, 0.5f); grad_quad(dev, cx - hc, yFill, 2.0f * hc, 1.2f, me, me, me, me);   // meniscus
+        #undef CS
+        level_line(dev, cx, cy, yFill, col, Rin, 1);   // level line hugging the diamond
     }
     { u32 hi = 0x55FFFFFF; soft_blob(dev, cx - R * 0.28f, cy - R * 0.40f, R * 0.4f, R * 0.35f, hi); }
 }
@@ -372,7 +428,7 @@ static void gauge_segmented(u32 dev, float gx, float gy, float gw, float gh, flo
             vgrad(dev, x + 1, gy + 1,            fw, ih * 0.5f, lt(col, 0.25f), col);
             vgrad(dev, x + 1, gy + 1 + ih * 0.5f, fw, ih * 0.5f, col, scl(col, 0.6f));
             vgrad(dev, x + 1, gy + 1,            fw, ih * 0.44f, 0x66FFFFFF, 0x00FFFFFF);
-            if (lit < 0.999f) { u32 me = lt(col, 0.5f); grad_quad(dev, x + 1 + fw - 1.0f, gy + 1, 1.4f, ih, me, me, me, me); }   // bright level line on the partial cell
+            if (lit < 0.999f) level_line_v(dev, x + 1 + fw, gy + 1, ih, col);   // fiole-style level line on the partial cell
         }
     }
 }
@@ -386,7 +442,7 @@ static void gauge_minimal(u32 dev, float gx, float gy, float gw, float gh, float
     float fw = gw * (pct / 100.0f);
     if (fw > 1.0f) {
         rrnd(dev, gx, y, fw, bh, r, col);
-        if (fw < gw - 1.0f) { u32 me = lt(col, 0.4f); grad_quad(dev, gx + fw - 1.0f, y, 1.2f, bh, me, me, me, me); }
+        if (fw < gw - 1.0f) level_line_v(dev, gx + fw, y, bh, col);   // fiole-style level line
     }
 }
 
@@ -440,7 +496,7 @@ void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32
             u32 dw = 0x00FF1E1E | ((u32)(dl * danger * 0.55f * 255) << 24);
             grad_quad(dev, fx, fy, fillW, fh, dw, dw, dw, dw);
         }
-        if (fillW < innerW - 0.5f) { u32 me = lt(c, 0.5f); grad_quad(dev, fx + fillW - 1.0f, fy, 1.4f, fh, me, me, me, me); }   // bright level line at the fill edge
+        if (fillW < innerW - 0.5f) level_line_v(dev, fx + fillW, fy, fh, col);   // fiole-style level line at the fill edge
     }
 }
 
@@ -1103,8 +1159,8 @@ void Party::draw(const Frame& f) {
         const float hpDanger = (r.hpp > 0 && r.hpp <= 25) ? 1.0f : 0.0f;   // HP <= 25% (alive) -> red danger blink
         const u32   gcol[3] = { hp_color(hpp), C_MP, tp_color(r.tp) };
         const float gpct[3] = { hpp, mpp, tpp };
-        const float gpls[3] = { 0.0f, 0.0f, wsReady };
-        const float gdng[3] = { hpDanger, 0.0f, 0.0f };
+        const float gpls[3] = { 0.0f, 0.0f, ui_config().animTP ? wsReady : 0.0f };   // TP WS-ready pulse (config option)
+        const float gdng[3] = { ui_config().animHP ? hpDanger : 0.0f, 0.0f, 0.0f };   // HP critical blink (config option)
         const int   gstyleBox = ui_config().gaugeStyle[tcfg()];   // this box's gauge style
         for (int gi = 0; gi < 3; ++gi) {                 // bars are NOT affected by the selection zoom (geometry or brightness)
             const float gx = gx0 + gi * (gw + ggap);
@@ -1271,8 +1327,8 @@ void Party::draw(const Frame& f) {
             if (gstyle == 7) {   // TEXT style : the number itself is the gauge -> colour by state + animate
                 u32 base = (g == 0) ? hp_color((float)r.hpp) : (g == 1) ? C_MP : tp_color(r.tp);
                 float br = 1.0f;
-                if (g == 2 && r.tp >= 1000)                 br = 0.78f + 0.32f * (0.5f + 0.5f * sinf(t * 7.5f));   // TP ready : pulse
-                else if (g == 0 && r.hpp > 0 && r.hpp <= 25) br = 0.55f + 0.45f * (0.5f + 0.5f * sinf(t * 7.5f));   // HP critical : blink
+                if (g == 2 && r.tp >= 1000 && ui_config().animTP)                 br = 0.78f + 0.32f * (0.5f + 0.5f * sinf(t * 7.5f));   // TP ready : pulse (option)
+                else if (g == 0 && r.hpp > 0 && r.hpp <= 25 && ui_config().animHP) br = 0.55f + 0.45f * (0.5f + 0.5f * sinf(t * 7.5f));   // HP critical : blink (option)
                 tcol = scl(base, br);
             }
             fBar->draw_cc(dev, gx + gw * 0.5f, gy + gh * 0.5f, buf, barSz_ * S, tcol, vSTK, vOWf);   // bar values NOT zoomed

@@ -147,6 +147,19 @@ static void halo(u32 dev, float x, float y, float w, float h, u32 col, float t) 
     soft_blob(dev, cx, cy, hw + snap(12.0f), hh + snap(12.0f), rgb | ((u32)(58.0f * t) << 24));   // mid bloom
     soft_blob(dev, cx, cy, hw + snap(5.0f),  hh + snap(5.0f),  rgb | ((u32)(72.0f * t) << 24));   // bright core
 }
+// RECTANGULAR accent glow BEHIND a rectangular element (draw before it) : additive concentric rects that
+// peek out around the shape -> a shape-matched glow for the square buttons (not a round blob).
+static void halo_rect(u32 dev, float x, float y, float w, float h, u32 col, float t) {
+    if (t <= 0.01f) return;
+    t = clampf(t, 0.0f, 1.0f) * g_fade;
+    const u32 rgb = col & 0x00FFFFFF;
+    cs_add(dev);
+    const float g1 = snap(9.0f), g2 = snap(5.0f), g3 = snap(2.0f);
+    u32 c1 = rgb | ((u32)(30.0f * t) << 24), c2 = rgb | ((u32)(46.0f * t) << 24), c3 = rgb | ((u32)(64.0f * t) << 24);
+    grad_quad(dev, x - g1, y - g1, w + 2 * g1, h + 2 * g1, c1, c1, c1, c1);   // wide soft base
+    grad_quad(dev, x - g2, y - g2, w + 2 * g2, h + 2 * g2, c2, c2, c2, c2);   // mid
+    grad_quad(dev, x - g3, y - g3, w + 2 * g3, h + 2 * g3, c3, c3, c3, c3);   // tight bright edge
+}
 // a moving glass "shine" streak that sweeps across an element while hovered (additive, clipped to the
 // rect by clamping the band). amt = hover strength (0..1) ; tsec = wrapping seconds for the motion.
 static void shine(u32 dev, float x, float y, float w, float h, float amt, float tsec) {
@@ -268,9 +281,8 @@ static bool arrow_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int u
     (void)fo;
     const bool hov = inrect(mo, x, y, s, s);
     const float t = ease(uid, hov ? 1.0f : 0.0f);
-    halo(dev, x, y, s, s, C_ACCENT, t * 0.7f);
-    const float r = snap(s * 0.30f);
-    rpanel(dev, x, y, s, s, r, lerpc(C_CTL_T, 0x884E8FE0, t), lerpc(C_CTL_B, 0x6E2E63B4, t), lerpc(C_CTL_BR, C_ACCENTHI, t), snap(1.5f));
+    halo_rect(dev, x, y, s, s, C_ACCENT, t * 0.7f);
+    rpanel(dev, x, y, s, s, 0.0f, lerpc(C_CTL_T, 0x884E8FE0, t), lerpc(C_CTL_B, 0x6E2E63B4, t), lerpc(C_CTL_BR, C_ACCENTHI, t), snap(1.5f));   // RECTANGULAR stepper
     const int dir = (glyph[0] == '<') ? -1 : +1;
     chevron(dev, x + s * 0.5f, y + s * 0.5f, s * (0.62f + 0.06f * t), dir, lerpc(C_ARROW, C_GOLDHI, t));
     return hov && click;
@@ -318,7 +330,7 @@ static int row_theme(u32 dev, Font* fo, const MouseState* mo, bool click, int ui
     const float sx = cx + aS + agap, sy = y + (rowH - sq) * 0.5f;                 // square preview
     const bool sHov = inrect(mo, sx, sy, sq, sq);
     const float st = ease(uid + 2, sHov ? 1.0f : 0.0f);
-    halo(dev, sx, sy, sq, sq, C_ACCENT, st);
+    halo_rect(dev, sx, sy, sq, sq, C_ACCENT, st);
     if (skin && skin->ready()) draw_window(dev, *skin, sx, sy, sq, sq, fa(0xFFFFFFFF), 1.0f);
     else vg(dev, sx, sy, sq, sq, 0x33101620, 0x33080C12);
     outline(dev, sx, sy, sq, sq, lerpc(C_BORDER, C_ACCENT, st));
@@ -378,11 +390,11 @@ static bool toggle_chip(u32 dev, Font* fo, const MouseState* mo, bool click, int
     const bool hov = inrect(mo, x, y, w, h);
     const float st = ease(uid + 0, on ? 1.0f : 0.0f, 14.0f);         // on/off crossfade
     const float ht = ease(uid + 1, hov ? 1.0f : 0.0f);               // hover lift
-    halo(dev, x, y, w, h, on ? 0xFF49C46A : 0xFFB85A66, (st > 0.5f ? st : (1.0f - st)) * ht);
+    halo_rect(dev, x, y, w, h, on ? 0xFF49C46A : 0xFFB85A66, (st > 0.5f ? st : (1.0f - st)) * ht);
     const u32 onT = 0xFF2E8C49, onB = 0xFF206030, offT = 0xFF552530, offB = 0xFF3A1820;
     u32 t = lerpc(offT, onT, st), b = lerpc(offB, onB, st);
     t = lerpc(t, lerpc(0xFF6E2E38, 0xFF3FA85A, st), ht * 0.6f);       // brighten on hover
-    rpanel(dev, x, y, w, h, snap(h * 0.44f), t, b, lerpc(C_BORDER, C_BORDERHI, ht), snap(1.5f));
+    rpanel(dev, x, y, w, h, 0.0f, t, b, lerpc(C_BORDER, C_BORDERHI, ht), snap(1.5f));   // RECTANGULAR (crisp corners, no rounded aliasing)
     // a little round state dot, left of the label : green when on, dim red when off
     const float dr = snap(4.0f), dx = x + snap(11.0f), dy = y + h * 0.5f;
     cs(dev); disc(dev, dx, dy, dr, fa(lerpc(0xFF7E3A42, 0xFF8CF2A8, st)));
@@ -401,11 +413,10 @@ static bool push_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int ui
     const u32 hovT  = tone ? 0xFFB85050 : 0xFF3A82E0, hovB  = tone ? 0xFF8A3A3A : 0xFF2A61B6;
     const float pin = press ? snap(2.0f) : 0.0f;                     // press : nudge inward
     const float bx = x + pin, by = y + pin, bw = w - 2 * pin, bh = h - 2 * pin;
-    const float r = snap(h * 0.24f);
     drop_shadow(dev, bx, by, bw, bh, snap(4.0f), press ? 36 : 64);
-    halo(dev, bx, by, bw, bh, tone ? 0xFFE06868 : C_ACCENT, t * 0.8f);
-    rpanel(dev, bx, by, bw, bh, r, lerpc(idleT, hovT, t), lerpc(idleB, hovB, t), lerpc(C_BORDERHI, tone ? 0xFFE57078 : C_ACCENTHI, t), snap(1.5f));
-    rrect_top(dev, bx + snap(2.0f), by + snap(2.0f), bw - snap(4.0f), bh * 0.42f, snap(r * 0.6f), 0x33FFFFFF, 0x05FFFFFF);   // top sheen
+    halo_rect(dev, bx, by, bw, bh, tone ? 0xFFE06868 : C_ACCENT, t * 0.8f);
+    rpanel(dev, bx, by, bw, bh, 0.0f, lerpc(idleT, hovT, t), lerpc(idleB, hovB, t), lerpc(C_BORDERHI, tone ? 0xFFE57078 : C_ACCENTHI, t), snap(1.5f));   // RECTANGULAR
+    vg(dev, bx + snap(2.0f), by + snap(2.0f), bw - snap(4.0f), bh * 0.42f, 0x33FFFFFF, 0x05FFFFFF);   // flat top sheen
     shine(dev, bx + snap(2.0f), by + snap(2.0f), bw - snap(4.0f), bh - snap(4.0f), t, g_t);   // glass sweep on hover
     fo->begin(dev); fo->draw_c(dev, x + w * 0.5f, y + h * 0.5f, label, snap(13.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
     return hov && click;
@@ -929,7 +940,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         {
             const bool hov = inrect(mo, lbx, dby, lb, bh2);
             const float t = ease(904, (editShowLines_ || hov) ? 1.0f : 0.0f);
-            halo(dev, lbx, dby, lb, bh2, C_ACCENT, t * 0.8f);
+            halo_rect(dev, lbx, dby, lb, bh2, C_ACCENT, t * 0.8f);
             vg(dev, lbx, dby, lb, bh2, lerpc(0xFF2A3548, 0xFF3A82E0, t), lerpc(0xFF1D2738, 0xFF2A61B6, t));
             outline(dev, lbx, dby, lb, bh2, lerpc(C_BORDERHI, C_ACCENTHI, t));
             fo->begin(dev); fo->draw_c(dev, lbx + lb * 0.5f, dby + bh2 * 0.5f,
@@ -944,7 +955,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         {
             const bool shv = inrect(mo, sbx, dby, sb, bh2) && refSet;
             const float t = ease(901, shv ? 1.0f : 0.0f);
-            halo(dev, sbx, dby, sb, bh2, C_ACCENT, t * 0.8f);
+            halo_rect(dev, sbx, dby, sb, bh2, C_ACCENT, t * 0.8f);
             vg(dev, sbx, dby, sb, bh2, lerpc(0xFF2A3548, 0xFF3A82E0, t), lerpc(0xFF1D2738, 0xFF2A61B6, t));
             outline(dev, sbx, dby, sb, bh2, lerpc(C_BORDERHI, C_ACCENTHI, t));
             fo->begin(dev); fo->draw_c(dev, sbx + sb * 0.5f, dby + bh2 * 0.5f, tr("Clear lines", "Effacer lignes"), snap(13.0f), refSet ? C_TEXT : C_MUTE, C_STROKE, 1.0f);
@@ -1164,13 +1175,13 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             const float t = ease(410, hov ? 1.0f : 0.0f);
             const float sr = snap(bH * 0.30f);
             if (dirty) {                                  // unsaved -> a SOLID gold pill + dark, high-contrast label
-                halo(dev, bx, bY, saveW, bH, C_GOLD, 0.55f + 0.35f * pulse);
+                halo_rect(dev, bx, bY, saveW, bH, C_GOLD, 0.55f + 0.35f * pulse);
                 rpanel(dev, bx, bY, saveW, bH, sr, lerpc(0xFFF2C24E, 0xFFFFE08A, t), lerpc(0xFFCB901C, 0xFFE3A626, t), C_GOLDHI, snap(1.5f));
                 rrect_top(dev, bx + snap(2.0f), bY + snap(2.0f), saveW - snap(4.0f), bH * 0.42f, snap(sr * 0.6f), 0x44FFFFFF, 0x08FFFFFF);
                 shine(dev, bx + snap(2.0f), bY + snap(2.0f), saveW - snap(4.0f), bH - snap(4.0f), 0.85f, g_t);   // continuous sweep -> "act on me"
                 fo->begin(dev); fo->draw_c(dev, bx + saveW * 0.5f, barCy, tr("Save changes", "Enregistrer"), snap(14.0f), fa(0xFF241600), 0, 0.0f);
             } else {                                      // saved / nothing to save -> quiet navy
-                if (canSave) halo(dev, bx, bY, saveW, bH, C_ACCENT, t * 0.7f);
+                if (canSave) halo_rect(dev, bx, bY, saveW, bH, C_ACCENT, t * 0.7f);
                 rpanel(dev, bx, bY, saveW, bH, sr, canSave ? lerpc(0xFF2A3548, 0xFF3A82E0, t) : 0xFF1E2630, canSave ? lerpc(0xFF1D2738, 0xFF2A61B6, t) : 0xFF141A22, lerpc(C_BORDERHI, C_ACCENTHI, t), snap(1.5f));
                 fo->begin(dev); fo->draw_c(dev, bx + saveW * 0.5f, barCy, tr("Saved", "Enregistré"), snap(14.0f), fa(canSave ? C_TEXT : C_MUTE), fa(C_STROKE), 1.0f);
             }
@@ -1298,6 +1309,17 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                 ui_config().gaugeStyle[T] = wrap(s + d, 8); save_ui_config(); }
         }
         ROW_NEXT(52.0f)
+        // Animation : HP critical blink / TP ready pulse on or off (global)
+        { ROW_BAND(52.0f)
+            const float rowH = snap(40.0f), ty = ry + yo;
+            fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Animation", "Animation"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(112.0f), bgap = snap(8.0f), bbh = snap(34.0f);
+            const float bx0 = coX + ctrlW - (2 * bbw + bgap), bty = ty + (rowH - bbh) * 0.5f;
+            if (toggle_chip(dev, fo, mo, click, 90, bx0, bty, bbw, bbh, ui_config().animHP ? tr("HP on", "HP oui") : tr("HP off", "HP non"), ui_config().animHP)) { ui_config().animHP = !ui_config().animHP; save_ui_config(); }
+            if (toggle_chip(dev, fo, mo, click, 92, bx0 + bbw + bgap, bty, bbw, bbh, ui_config().animTP ? tr("TP on", "TP oui") : tr("TP off", "TP non"), ui_config().animTP)) { ui_config().animTP = !ui_config().animTP; save_ui_config(); }
+        }
+        ROW_NEXT(52.0f)
         // Job Badge : Off / Main job only / Main + Sub
         { ROW_BAND(52.0f)
             int m = ui_config().jobBadge[T]; if (m < 0 || m > 2) m = 2;
@@ -1423,7 +1445,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         const bool fldHov = inrect(mo, pX, py, fW, fH);
         if (click) { const bool was = nameFocus_; nameFocus_ = fldHov; if (fldHov && !was) nameCur_ = nameLen_; }
         const float ft = ease(700, nameFocus_ ? 1.0f : 0.0f);
-        halo(dev, pX, py, fW, fH, C_ACCENT, ft * 0.6f);
+        halo_rect(dev, pX, py, fW, fH, C_ACCENT, ft * 0.6f);
         rpanel(dev, pX, py, fW, fH, snap(8.0f), 0xE6080C14, 0xE605080F, lerpc(C_CTL_BR, C_ACCENT, ft), snap(1.5f));
         const float txY = py + fH * 0.5f, txX = pX + snap(15.0f);
         fo->begin(dev);

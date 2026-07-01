@@ -50,6 +50,7 @@ static void save_config_to(const char* path) {
         fprintf(f, "zone=%.5f,%.5f,%.5f,%.5f,%d,%d,%d,%d,%s\n", c.guideGroup[i].x, c.guideGroup[i].y, c.guideGroup[i].w, c.guideGroup[i].h,
                 c.guideGroup[i].allow[0] ? 1 : 0, c.guideGroup[i].allow[1] ? 1 : 0, c.guideGroup[i].allow[2] ? 1 : 0, c.guideGroup[i].role, c.guideGroup[i].name);
     fprintf(f, "border=%d,%d,%d,%d\n", c.border[0] ? 1 : 0, c.border[1] ? 1 : 0, c.border[2] ? 1 : 0, c.borderCost ? 1 : 0);
+    fprintf(f, "anim=%d,%d\n", c.animHP ? 1 : 0, c.animTP ? 1 : 0);
     for (int i = 0; i < 3; ++i)
         fprintf(f, "box%d=%d,%.5f,%.5f,%.4f\n", i, c.box[i].posSet ? 1 : 0, c.box[i].x, c.box[i].y, c.box[i].scale);
     fclose(f);
@@ -98,6 +99,7 @@ static bool load_config_from(const char* path) {
         else if (sscanf(line, "border=%d,%d,%d,%d", &b0, &b1, &b2, &bc) == 4) {
             c.border[0] = (b0 != 0); c.border[1] = (b1 != 0); c.border[2] = (b2 != 0); c.borderCost = (bc != 0);
         }
+        else if (sscanf(line, "anim=%d,%d", &b0, &b1) == 2) { c.animHP = (b0 != 0); c.animTP = (b1 != 0); }
         else if (sscanf(line, "box%d=%d,%f,%f,%f", &idx, &ps, &x, &y, &s) == 5 && idx >= 0 && idx < 3) {
             // sanitise : a corrupt position (out of the [0,1] screen fraction) must never brick the box
             // off-screen where it can't be grabbed back. Clamp the placed top-left to the viewport.
@@ -238,7 +240,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
         if (a.gaugeStyle[k] != b.gaugeStyle[k] || a.jobBadge[k] != b.jobBadge[k] || a.cast[k] != b.cast[k]) return false;
     }
     if (a.dist[0] != b.dist[0] || a.dist[1] != b.dist[1] || a.dist[2] != b.dist[2]) return false;
-    if (a.borderCost != b.borderCost) return false;
+    if (a.borderCost != b.borderCost || a.animHP != b.animHP || a.animTP != b.animTP) return false;
     for (int i = 0; i < 3; ++i) {
         if (a.border[i] != b.border[i]) return false;
         if (a.box[i].posSet != b.box[i].posSet || a.box[i].x != b.box[i].x ||
@@ -323,15 +325,21 @@ void reset_ui_config() {   // general Default : everything
     for (int k = 0; k < 3; ++k) { c.barHeight[k] = 1.0f; c.barWidth[k] = 1.0f; c.gaugeStyle[k] = 0; c.jobBadge[k] = 2; c.cast[k] = true; }
     c.dist[0] = c.dist[1] = c.dist[2] = true;
     c.border[0] = c.border[1] = c.border[2] = c.borderCost = true;   // all borders back on
+    c.animHP = c.animTP = true;
     reset_boxes();   // (also saves)
 }
 
-// index 0 = Default (keep the layout face). The rest are common Windows GDI faces.
+// index 0 = Default (keep the layout face). The rest are common, readable Windows GDI faces (a face that
+// isn't installed just falls back to a system default when GDI creates it -> always safe to list).
 static const char* FACE_LABEL[] = {
-    "Default", "Segoe UI", "Arial", "Tahoma", "Verdana", "Calibri", "Trebuchet MS", "Consolas", "Georgia",
+    "Default", "Segoe UI", "Segoe UI Semibold", "Roboto", "Open Sans", "Arial", "Tahoma", "Verdana",
+    "Calibri", "Candara", "Corbel", "Trebuchet MS", "Franklin Gothic Medium", "Century Gothic",
+    "Bahnschrift", "Lucida Sans Unicode", "Microsoft Sans Serif", "Consolas", "Courier New", "Georgia",
 };
 static const char* FACE_NAME[] = {
-    "",        "Segoe UI", "Arial", "Tahoma", "Verdana", "Calibri", "Trebuchet MS", "Consolas", "Georgia",
+    "", "Segoe UI", "Segoe UI Semibold", "Roboto", "Open Sans", "Arial", "Tahoma", "Verdana",
+    "Calibri", "Candara", "Corbel", "Trebuchet MS", "Franklin Gothic Medium", "Century Gothic",
+    "Bahnschrift", "Lucida Sans Unicode", "Microsoft Sans Serif", "Consolas", "Courier New", "Georgia",
 };
 static const int NFACE = (int)(sizeof(FACE_LABEL) / sizeof(FACE_LABEL[0]));
 
