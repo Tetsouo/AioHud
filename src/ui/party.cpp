@@ -1159,7 +1159,6 @@ void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy
         menuLive_ = false;                                       // menu closed -> next open re-evaluates
     }
     menuRawPrev_ = rawMenu;
-    prevSpRaw_ = (f.game ? f.game->examSpellRaw : 0);
     prevAbRaw_ = (f.game ? f.game->examAbilRaw : 0);
     const char* nm = 0; char infobuf[16]; const char* info = 0; u32 infoCol = 0xFFFFFFFF;
     char info2buf[16]; const char* info2 = 0; u32 info2Col = 0xFFFFFFFF;       // optional 2nd line (spell recast)

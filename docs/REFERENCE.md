@@ -679,6 +679,25 @@ Done: Magic shows name + Next(recast)/MP, Job Ability shows name + Next(recast),
 + live TP — all **zero-tap**. (No per-WS TP threshold exists on retail: every WS is usable at 1000 TP;
 1000/2000/3000 are the universal damage/effect tiers, so "live TP, green ≥ 1000" is already correct.)
 
+**The "ghost" fix — no-magic job / category level  (2026-07-01).** The `"magic"` menu name is shared by
+the real spell list AND the Trust list, and BOTH read the same examine cache `0x634F28`. On a job with no
+castable spell (WAR opening Magic) and on the magic **category** level, the game never re-examines, so
+`0x634F28` keeps its **last** value (a stale trust) → the box showed a "ghost". The examine cache is the
+ONLY per-item id (proved with the `//aio sfind` probe: there is no per-row spell id in the menu struct),
+so value alone can't tell fresh from stale on the open frame. The discriminator is the menu's **shared
+examine-DESCRIPTION object** at `*(mptr+0x0C)` (a singleton) : the game clears it when nothing is
+examinable and fills it for a real spell/trust —
+```
+*(mptr + 0x0C)          -> the examine-description singleton
+   +0x30  u32  description length : 0 when nothing examinable, > 0 for a real spell/trust
+   +0x34  u32  sentinel : 0xFFFFFFFF when empty, 0 when populated
+```
+`read_action_menu` sets `examValid = (len != 0 && sentinel != 0xFFFFFFFF)` (in `gamestate.menuExamValid`);
+`party.cpp` gates the magic box on it. Unlike the cache, this is NOT left stale, so it is correct on OPEN
+and on RE-OPEN of the same item. (Reversed via `//aio menu`, comparing an empty magic list vs a trust
+list: `+0x34` read `0xFFFFFFFF` vs `0`.) The keyboard hook also now eats DIK_RETURN's key-UP after a
+consumed key-DOWN, so committing a text field with Enter no longer opens the game chat (`aiohud.cpp`).
+
 ### 9h. Party-member buffs — the `0x076` packet  (WORKING, 2026-06-28)
 
 Status icons drawn to the **left of each party row** (2 stacked rows, mirror of

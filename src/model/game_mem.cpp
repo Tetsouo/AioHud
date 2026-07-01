@@ -244,11 +244,11 @@ void poll_game_state(GameState& gs) {
     int mt = 0; unsigned ma = 0, mc = 0; bool mev = false;
     if (read_action_menu(mt, ma, mc, mev)) { gs.menuType = mt; gs.menuAction = ma; gs.menuCursor = mc; gs.menuExamValid = mev; }
     else                                   { gs.menuType = 0; gs.menuAction = 0; gs.menuCursor = mc; gs.menuExamValid = false; }
-    // RAW examine memory, read EVERY frame (even with no menu) -> a change means the game examined a real
-    // item, which is how we tell a live selection (incl. the auto-selected one on open) from a stale ghost.
-    { u32 ffm2 = (u32)GetModuleHandleA("FFXiMain.dll"); u32 es = 0, ea = 0;
-      if (ffm2) { safe_read(ffm2 + EXAM_SPELL_RVA, &es); safe_read(ffm2 + EXAM_ABIL_RVA, &ea); }
-      gs.examSpellRaw = es; gs.examAbilRaw = ea; }
+    // RAW ability examine, read EVERY frame -> a change = the game examined a real ability, used to tell a
+    // live Job-Ability/WS selection from a stale one (the Magic box uses menuExamValid instead ; see party.cpp).
+    { u32 ffm2 = (u32)GetModuleHandleA("FFXiMain.dll"); u32 ea = 0;
+      if (ffm2) safe_read(ffm2 + EXAM_ABIL_RVA, &ea);
+      gs.examAbilRaw = ea; }
 
     // party-window picker : the focused menu is "partywin" with a 1-based cursor index at +0x4C.
     // (Reversed via //aio pcur: +0x4C tracks the hovered member, +0x08 = its row object.)

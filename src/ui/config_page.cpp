@@ -612,13 +612,9 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                 fo->begin(dev); fo->draw_lc(dev, zx[i] + snap(6.0f), zy[i] + snap(10.0f), zl, snap(11.0f), col, C_STROKE, 1.2f);
             }
         }
-        // REFERENCE LINES : the TOP of the game's native party window, which differs by member count.
-        // SIX lines -- one per count (1..6 players) -- each dragged onto the native top for that size ; the
-        // party box grows UP to the line matching its current member count. Drag a handle (saved on release).
-        // Drawn ONLY while the "Rules" toggle (editShowLines_) is ON -- and then the HUD boxes are hidden
-        // (hud.cpp) so nothing but these rules + the toolbar shows.
+        // RULES mode : the HUD is hidden (hud.cpp) so only the guide ZONES + the toolbar show. Party 1p-6p and
+        // Alliance 1/2 are real zones now (role-tagged) -- there is no separate reference-line handle system.
         if (editShowLines_) {
-        bool refGrabbed = false;   // a party-ref handle is being grabbed this frame -> don't also start a zone rubber-band
         UiConfig& C = ui_config();
         // ZONES panel geometry (auto-sized) computed FIRST so EVERY draggable element under it (party-ref
         // handles, zone handles) can ignore clicks that land on the panel -- else one click hits both.
@@ -640,7 +636,6 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         if (pxp > sw - pw) pxp = snap(sw - pw); if (pxp < 0.0f) pxp = 0.0f;
         if (pyp > sh - ph) pyp = snap(sh - ph); if (pyp < 0.0f) pyp = 0.0f;
         const bool overPanel = inrect(mo, pxp, pyp, pw, ph);
-        (void)refGrabbed;   // party 1p..6p / L / R and alliance A1/A2 are now real ZONES (role), edited below
 
         // ===== USER-DRAWN ZONES : drag on empty space to draw a rectangle (creates a zone). Move it by its
         // body, resize it by its corners, name it, set which boxes may sit on it. A box is pushed OUT of any
@@ -689,7 +684,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             }
             // start a grab on a FRESH press : selected zone's corner -> body of any zone -> else rubber-band draw.
             static bool zPrevDown = false; const bool freshPress = mo && mo->down && !zPrevDown; zPrevDown = mo && mo->down;
-            if (freshPress && grabZone < 0 && !zoneDrawing_ && editConfirm_ == 0 && !overPanel && !refGrabbed) {
+            if (freshPress && grabZone < 0 && !zoneDrawing_ && editConfirm_ == 0 && !overPanel) {
                 bool got = false;
                 if (groupSel_ >= 0 && groupSel_ < C.guideGroupCount) {
                     GuideGroup& z = C.guideGroup[groupSel_];

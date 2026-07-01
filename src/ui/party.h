@@ -49,8 +49,8 @@ private:
     int      menuHold_ = 0;                  // debounce : frames left to keep the action-menu box up
     int      menuType_ = 0;                  // 1 = spell, 2 = job ability, 3 = weapon skill
     unsigned menuSpell_ = 0;                 // last highlighted action id (spell / ability / WS)
-    unsigned prevSpRaw_ = 0, prevAbRaw_ = 0; // previous frame's RAW examine memory -> a change = the game just
-                                             // examined a real item (live : auto-select on open, or navigation)
+    unsigned prevAbRaw_ = 0;                 // previous frame's RAW ability examine -> a change = the game just
+                                             // examined a real ability (live : auto-select on open, or navigation)
     int      menuRawPrev_ = 0;               // previous frame's raw menu type -> detect a FRESH menu opening
     int      menuPrevCur_ = -1;              // previous menu cursor index -> detect a moved cursor (ghost check)
     bool     menuLive_ = false;              // is the current examine a REAL selection vs a stale ghost ?

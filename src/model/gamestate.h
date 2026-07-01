@@ -33,9 +33,8 @@ struct GameState {
     unsigned menuAction = 0;
     unsigned menuCursor = 0;   // the menu's 1-based highlight index (+0x4C) -> used to detect a STALE examine
                                // value : if the cursor moves but menuAction stays frozen, the value is ghost.
-    unsigned examSpellRaw = 0, examAbilRaw = 0;   // the RAW examine memory (spell / ability), read EVERY frame
-                               // even with no menu : a CHANGE = the game just examined a real item (live, even
-                               // the auto-selected one on open) ; frozen = a ghost left over from another menu.
+    unsigned examAbilRaw = 0;  // RAW ability examine, read EVERY frame : a CHANGE = the game examined a real
+                               // ability (live selection). (Magic uses menuExamValid, not this -- see below.)
     bool     menuExamValid = false;   // the menu's shared examine-DESCRIPTION object (*(mptr+0x0C)) holds real
                                // data (len@+0x30 != 0, sentinel@+0x34 != 0xFFFFFFFF) : true for a real highlighted
                                // spell/trust, false for a no-magic job's EMPTY magic list (and the category level).
