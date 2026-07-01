@@ -213,7 +213,10 @@ void Hud::render(u32 dev) {
         // aren't drawn twice -- the double draw left the preview pass with dt=0 (animations frozen ->
         // no selection cursor) and ghosted faintly through the dim (names looked truncated).
         float pvx_ = 0.0f, pvy_ = 0.0f; const bool pvActive = config_.preview_anchor(pvx_, pvy_);
-        for (size_t i = 0; i < widgets_.size(); ++i) {
+        // EDIT LAYOUT "Rules" mode : hide the WHOLE HUD so only the reference lines + the edit toolbar
+        // (both drawn by config_.draw below) remain -- you align the rules onto the game's native windows.
+        const bool hideForRules = ui_config().editLayout && config_.edit_lines_active();
+        for (size_t i = 0; !hideForRules && i < widgets_.size(); ++i) {
             if (pvActive && strcmp(widgets_[i]->type_name(), "PartyList") == 0) continue;
             widgets_[i]->draw(f);
         }

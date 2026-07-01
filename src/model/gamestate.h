@@ -31,6 +31,16 @@ struct GameState {
     // --- in-game action menu (drives the cost/next box) : type 1=spell 2=JA 3=WS, 0=none ---
     int      menuType = 0;
     unsigned menuAction = 0;
+    unsigned menuCursor = 0;   // the menu's 1-based highlight index (+0x4C) -> used to detect a STALE examine
+                               // value : if the cursor moves but menuAction stays frozen, the value is ghost.
+    unsigned examSpellRaw = 0, examAbilRaw = 0;   // the RAW examine memory (spell / ability), read EVERY frame
+                               // even with no menu : a CHANGE = the game just examined a real item (live, even
+                               // the auto-selected one on open) ; frozen = a ghost left over from another menu.
+    bool     menuExamValid = false;   // the menu's shared examine-DESCRIPTION object (*(mptr+0x0C)) holds real
+                               // data (len@+0x30 != 0, sentinel@+0x34 != 0xFFFFFFFF) : true for a real highlighted
+                               // spell/trust, false for a no-magic job's EMPTY magic list (and the category level).
+                               // This is the structural "is there an examinable item" gate -- works on OPEN and on
+                               // RE-OPEN of the same item, where the frozen-examine-value test cannot.
 
     // --- party-window picker (Menu>Party>Distribution>Quartermaster/Lottery, remove member, ...) :
     //     the focused menu "partywin" carries a 1-based cursor index at +0x4C -> the hovered member

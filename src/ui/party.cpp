@@ -271,6 +271,7 @@ static PartyStyle g_mainStyle = { 0,0,false,"", 0,0,false,"", 0,0,false,"", fals
 // shared vertical-stack origin : the main party box publishes its TOP Y so the alliance boxes
 // stack upward, starting ABOVE the cost/next action box that floats over the party.
 static float g_partyTopY = 0.0f;
+static float g_partyStackTop = 0.0f;   // top of the party CLUSTER (party box top - the floating Cost MP/Next box) -> alliances stack here
 static bool  g_partyTopReady = false;
 
 // edit-mode drag state (shared across the 3 box widgets so only ONE is grabbed at a time).
@@ -404,6 +405,9 @@ int Party::build_rows(void* outRows, const GameState& gs) const {
         // party-window picker (Quartermaster / Lottery / remove member / ...) : frame the hovered
         // member -- 1-based cursor index into the party list (= our row order). Reversed via //aio pcur.
         if (gs.partyMenuSel >= 1 && gs.partyMenuSel <= n) rows[gs.partyMenuSel - 1].sel = true;
+        // TEST (//aio sim N) : append N fake members so the live party box grows and the alliances react
+        // to its size -- lets you verify the dynamic placement without needing real extra players.
+        for (int k = party_sim_extra(); k > 0 && n < 6; --k) { demo_row(n, &rows[n]); ++n; }
     } else {                                                                 // not in game -> demo
         n = count_ > 6 ? 6 : count_;
         for (int i = 0; i < n; ++i) row(i, &rows[i]);
@@ -615,13 +619,13 @@ void Party::draw(const Frame& f) {
     // covers the bottom and the alliance rides UP ; the UPPER slot stacks flush on the lower one. So our
     // alliances move with the main party's member count, exactly like the native. (px / right-align kept.)
     if (tier_ > 0 && f.screenH > 0.0f) {
-        const float* ar = ui_config().allyRefY;
+        float az[4]; const float* ar = guide_alliance_refs(az) ? az : ui_config().allyRefY;   // alliance ZONES override the old markers
         if (ar[0] >= 0.0f && ar[1] >= 0.0f && ar[2] >= 0.0f && ar[3] >= 0.0f) {
             const bool aLower = (ar[1] >= ar[3]);                          // which marker pair sits lower (near party)
             const float loB = (aLower ? ar[1] : ar[3]) * f.screenH;       // lower slot bottom
             const float hiB = (aLower ? ar[3] : ar[1]) * f.screenH;       // upper slot bottom
             float bottom = (tier_ == 1) ? loB : ((g_boxRect[1].valid) ? g_boxRect[1].y : hiB);
-            if (g_partyTopReady && bottom > g_partyTopY) bottom = g_partyTopY;   // party (or its top) covers below it
+            if (g_partyTopReady && bottom > g_partyStackTop) bottom = g_partyStackTop;   // sit on the Cost MP/Next box top, not the party rows
             oy = snap(bottom - H);
         }
     }
@@ -634,9 +638,14 @@ void Party::draw(const Frame& f) {
     }
 
     const float placedOy = oy;   // box top AS PLACED (config / alliance stack), before the mask / solo / Set-Ref grow-up -> lets a drag convert the visual cluster back to a stored position
+    // In an ALLIANCE the party keeps its FULL 6-player footprint (whether 1 or 6 members), so the box reaches
+    // straight up to the alliance with no gap to bridge -- the members sit at the bottom, the empty rows above
+    // are just the (continuous) party box. Solo / no alliance : shrink to n rows as before.
+    const bool partyFull6 = (tier_ == 0) && (ui_config().editLayout || party_demo_level() >= 2
+                            || party().alliance_count(1) > 0 || party().alliance_count(2) > 0);
     // PARTY (tier 0) : BOTTOM-anchored (the bottom-right stays exactly where you place/drag it) and the
-    // box GROWS UPWARD. First shrink to n rows (members at the top, bottom fixed)...
-    if (tier_ == 0 && n < 6) {
+    // box GROWS UPWARD. First shrink to n rows (members at the bottom, bottom fixed)...
+    if (tier_ == 0 && n < 6 && !partyFull6) {
         const float Hn = rowpit * (float)n + 2.0f * pad;
         oy += (H - Hn);
         H = Hn;
@@ -653,10 +662,11 @@ void Party::draw(const Frame& f) {
     // party window is covered whatever the member count or row sizes -- no guessing. Set the lines in edit
     // layout (drag each onto the native party's top edge for that size). Unset -> no grow up.
     if (tier_ == 0 && f.screenH > 0.0f) {
-        const int ridx = (n <= 1) ? 0 : (n >= 6 ? 5 : n - 1);   // one reference line per member count (1..6)
-        const float frac = ui_config().partyRef[ridx];
-        if (frac >= 0.0f) {
-            const float lineY = snap(frac * f.screenH);
+        const int cnt = (n <= 1) ? 1 : (n >= 6 ? 6 : n);        // member count clamped to 1..6
+        float lineY = guide_party_top(cnt, f.screenH);          // the "Party Np" ZONE top drives the grow-up
+        if (lineY < 0.0f) { const float frac = ui_config().partyRef[cnt - 1]; if (frac >= 0.0f) lineY = frac * f.screenH; }   // fallback : old reference line
+        if (lineY >= 0.0f) {
+            lineY = snap(lineY);
             float maskBand = oy - lineY;   // grow up to the line (0 if already at/above it)
             if (maskBand < 0.0f) maskBand = 0.0f;
             oy -= maskBand; H += maskBand;
@@ -668,8 +678,12 @@ void Party::draw(const Frame& f) {
     // (widen rowpit + shift the row origin so oy+pad+i*rowpit lands them with n+1 identical spaces).
     const float boxOy = oy, boxH = H;
     const float maskOff = placedOy - boxOy;   // how much the box grew UP from its placed top (mask + solo + Set-Ref) -> drag store-back removes it so the position round-trips
-    if (tier_ == 0) g_partyTopY = boxOy;   // refine the alliance-stack reference to the REAL party top (after mask / solo bump / Set-Ref) so alliances sit on the actual cost-box top
-    if (tier_ == 0 && n > 0) {
+    // party top, and the stack top alliances sit on : ABOVE the reserved Cost MP/Next box (costH) -> the
+    // always-on cost box sits in that band between the party and the alliance.
+    if (tier_ == 0) { g_partyTopY = boxOy; g_partyStackTop = boxOy - costH; }
+    if (tier_ == 0 && partyFull6 && n < 6) {
+        oy = boxOy + (boxH - (rowpit * (float)n + 2.0f * pad));   // bottom-align the members in the full 6-box (empty rows on top bridge to the alliance)
+    } else if (tier_ == 0 && n > 0) {
         const float evenGap = (H - (float)n * rowh) / (float)(n + 1);   // equal spaces (top, between rows, bottom)
         if (n == 1) {                                                   // solo : keep it centred
             if (evenGap > 0.0f) { oy += snap(evenGap) - pad; }
@@ -709,6 +723,10 @@ void Party::draw(const Frame& f) {
                     else if (fabsf((ey + eh) - r.y) < SNAP)      ey = r.y - eh;         // bottom -> top
                 }
                 // keep the WHOLE cluster on screen
+                if (ex > f.screenW - ew) ex = f.screenW - ew; if (ex < 0.0f) ex = 0.0f;
+                if (ey > f.screenH - eh) ey = f.screenH - eh; if (ey < 0.0f) ey = 0.0f;
+                // P3 : push out of any guide ZONE that forbids this box (party -> ZPERM_PARTY, alliance -> ZPERM_ALLIANCE), then re-clamp on screen
+                guide_push_out(tier_ == 0 ? ZPERM_PARTY : ZPERM_ALLIANCE, f.screenW, f.screenH, ex, ey, ew, eh);
                 if (ex > f.screenW - ew) ex = f.screenW - ew; if (ex < 0.0f) ex = 0.0f;
                 if (ey > f.screenH - eh) ey = f.screenH - eh; if (ey < 0.0f) ey = 0.0f;
                 // cluster top-left -> stored PLACED top : undo costH (party box top) + maskOff (grow-up)
@@ -1113,11 +1131,39 @@ void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy
     u32 dev = f.dev;
     // the action-menu state is noisy frame-to-frame -> a confidence counter : several positive frames
     // to show (kills closed-menu spikes), and it lingers a few frames (kills open-menu flicker).
-    if (f.game && f.game->menuType) { menuType_ = f.game->menuType; menuSpell_ = f.game->menuAction; menuHold_ += 2; if (menuHold_ > 10) menuHold_ = 10; }
-    else { menuHold_ -= 1; if (menuHold_ < 0) menuHold_ = 0; }
+    const int rawMenu = (f.game ? f.game->menuType : 0);
+    if (rawMenu) {
+        menuType_ = rawMenu; menuSpell_ = f.game->menuAction; menuHold_ += 2; if (menuHold_ > 10) menuHold_ = 10;
+        // LIVE vs GHOST. The examine memory holds the auto-selected item's id immediately on open (the line you
+        // see highlighted), so a FRESH open shows it right away. It then proves itself : moving the cursor
+        // updates the id (live) ; if you move but the id stays FROZEN, it's a ghost (no examinable item, e.g. a
+        // no-magic job's magic menu) -> hide. (The box FRAME still shows either way -> empty Cost/Next box.)
+        const int cur = (int)f.game->menuCursor;
+        if (menuType_ == 1) {
+            // MAGIC : the reverse (//aio menu dumps) proved there is NO per-row spell id in the menu
+            // struct -- the static examine cache (0x634F28) is the only id, and it goes STALE (a no-magic job's
+            // empty magic menu, and re-opening Trust on the same trust, both leave it frozen). The robust signal
+            // is the menu's shared examine-DESCRIPTION object : it is empty (sentinel) for a ghost and populated
+            // for a real spell/trust -- correct on OPEN and on RE-OPEN of the same item. (menuExamValid.)
+            menuLive_ = f.game->menuExamValid;
+        } else {
+            // ABILITY / WS : the examine cache is reliable here (no shared-ghost problem) -- keep the simple
+            // open-shows-auto-selected + frozen-on-move-hides heuristic.
+            if (menuRawPrev_ == 0)                       menuLive_ = (menuSpell_ != 0);
+            else if (f.game->examAbilRaw != prevAbRaw_)  menuLive_ = true;
+            else if (cur != menuPrevCur_)                menuLive_ = false;
+        }
+        menuPrevCur_ = cur;
+    } else {
+        menuHold_ -= 1; if (menuHold_ < 0) menuHold_ = 0;
+        menuLive_ = false;                                       // menu closed -> next open re-evaluates
+    }
+    menuRawPrev_ = rawMenu;
+    prevSpRaw_ = (f.game ? f.game->examSpellRaw : 0);
+    prevAbRaw_ = (f.game ? f.game->examAbilRaw : 0);
     const char* nm = 0; char infobuf[16]; const char* info = 0; u32 infoCol = 0xFFFFFFFF;
     char info2buf[16]; const char* info2 = 0; u32 info2Col = 0xFFFFFFFF;       // optional 2nd line (spell recast)
-    if (menuHold_ >= 4 && menuSpell_) {
+    if (menuHold_ >= 4 && menuSpell_ && menuLive_) {   // CONTENT only for a live selection (ghost -> empty frame)
         if (menuType_ == 1) { const SpellRow* sp = spell_info(menuSpell_); if (sp) { nm = sp->en;     // Spell : MP cost on top, "Next m:ss" below while on recast
             if (sp->mp) { sprintf(infobuf, "Cost %u MP", sp->mp); info = infobuf; }                   // keep the MP cost (top line)
             unsigned rs = spell_recast_sec(sp->recast_id);                                            // per-id lookup in the live recast array
@@ -1134,42 +1180,60 @@ void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy
         nm = "Protect V"; sprintf(infobuf, "Cost 24 MP"); info = infobuf; infoCol = 0xFFFFFFFF;
         sprintf(info2buf, "Next 0:00"); info2 = info2buf; info2Col = 0xFF8FA0B8;
     }
-    if (nm && fName->ready()) {
-        const float fs = nameSz_ * S;
-        const float pdx = 7.0f * S, pdy = 4.0f * S, gapm = 9.0f * S, lineGap = 2.0f * S;
-        const float nameW = fName->measure(nm, fs);
-        const float infoW = info ? fName->measure(info, fs) : 0.0f;
-        const float info2W = info2 ? fName->measure(info2, fs) : 0.0f;
-        const float infoX  = pdx + nameW + gapm;                            // left x of the info column (Cost / Next stack)
+    if (!fName->ready()) return;
+    // The FRAME shows (empty when no live content) whenever : a magic/ability menu is OPEN (so you get an
+    // empty Cost/Next box even on a no-magic job's menu), OR we're in an alliance (a permanent slot between
+    // the party and the alliance). Solo + no menu : only while an action (nm) is up.
+    const bool menuOpen = (menuHold_ >= 4 && menuType_ != 0);
+    const bool inAlliance = party().alliance_count(1) > 0 || party().alliance_count(2) > 0
+                            || ui_config().editLayout || party_demo_level() >= 2;
+    if (!nm && !menuOpen && !inAlliance) return;
+    const float fs = nameSz_ * S;
+    const float pdx = 7.0f * S, pdy = 4.0f * S, gapm = 9.0f * S, lineGap = 2.0f * S;
+    const float topPad = snap(10.0f * S);                       // +10px empty at the TOP (text stays bottom-anchored)
+    const float infoW  = info  ? fName->measure(info, fs)  : 0.0f;
+    const float info2W = info2 ? fName->measure(info2, fs) : 0.0f;
+    const float bh2 = snap(fs + 2.0f * pdy + fs + lineGap) + topPad;   // reserve 2 lines (matches costH)
+    // DEFAULT (empty) size : as if showing a typical "name + Cost MP / Next" -> the box NEVER shrinks below it.
+    float defW;
+    {
+        const float nameW  = fName->measure("Protect V", fs);
+        const float infoX  = pdx + nameW + gapm;
+        const float line1W = pdx + nameW + gapm + fName->measure("Cost 24 MP", fs) + pdx;
+        const float line2W = infoX + fName->measure("Next 0:00", fs) + pdx;
+        defW = (line1W > line2W ? line1W : line2W);
+    }
+    // width = max(action content, default) so it grows for long names but never goes below the empty size.
+    float bw2 = defW;
+    if (nm) {
+        const float nameW  = fName->measure(nm, fs);
+        const float infoX  = pdx + nameW + gapm;
         const float line1W = pdx + nameW + (info ? gapm + infoW : 0.0f) + pdx;
-        const float line2W = info2 ? (infoX + info2W + pdx) : 0.0f;          // Next sits in the same column as Cost
-        // Anchor the BOTTOM-RIGHT corner to the party's top-right and grow LEFT + UP only. Snap the
-        // fixed edges AND the size to integers so every edge is pixel-aligned -> the right edge and
-        // bottom never move (not even sub-pixel) as the name length changes.
-        const float bw2 = snap(line1W > line2W ? line1W : line2W);
-        const float topPad = snap(10.0f * S);              // +10px of height at the TOP (box stays attached to the party ; just taller, applies to spell Cost/Next, JA, WS alike)
-        const float bh2 = snap(fs + 2.0f * pdy + (info2 ? fs + lineGap : 0.0f)) + topPad;   // grow for the recast line
-        const float rightX = snap(px + w);                 // party right edge (constant)
-        const float botY   = snap(oy);                     // party top edge (constant ; bottom stays flush/merged)
-        const float bx2 = rightX - bw2;                    // grow left (right edge pinned)
-        const float by2 = botY - bh2;                      // grow up   (bottom pinned)
-        // info column (Cost / Next / TP) is pinned to the RIGHT edge, NOT placed after the name ->
-        // it never moves when the spell/JA/WS name changes length. Snapped = pixel-stable.
+        const float line2W = info2 ? (infoX + info2W + pdx) : 0.0f;
+        const float cw = (line1W > line2W ? line1W : line2W);
+        if (cw > defW) bw2 = cw;
+    }
+    bw2 = snap(bw2);
+    const float rightX = snap(px + w);                          // party right edge (constant)
+    const float botY   = snap(oy);                              // party top edge (constant ; bottom stays flush/merged)
+    const float bx2 = snap(rightX - bw2);                       // grow left (right edge pinned)
+    const float by2 = snap(botY - bh2);                         // grow up   (bottom pinned to the party top)
+    setup_color_state(dev);
+    const bool costBorder = ui_config().borderCost;             // cost-box border on/off (config page) ; background stays either way
+    if (f.skin && f.skin->ready()) {                            // FFXI window skin, open at the bottom -> merges with the party's top edge
+        draw_window(dev, *f.skin, bx2, by2, bw2, bh2, 0xFFFFFFFF, S, true, costBorder);
+    } else {                                                    // fallback : built-in navy chrome
+        if (costBorder)
+            grad_quad(dev, bx2 - 1, by2 - 1, bw2 + 2, bh2 + 2, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF);  // outer glow (border)
+        vgrad(dev, bx2, by2, bw2, bh2, 0xF0232E54, 0xF0080B1A);          // dark fill (background)
+        vgrad(dev, bx2, by2, bw2, 3 * S, 0x4DBFD8FF, 0x00BFD8FF);        // top sheen
+    }
+    if (nm) {                                                   // CONTENT : only while on a spell / job ability / weapon skill
         const float maxInfoW = info2W > infoW ? info2W : infoW;
         const float infoColX = snap(rightX - pdx - maxInfoW);
         const float nameX    = snap(bx2 + pdx);
-        setup_color_state(dev);
-        const bool costBorder = ui_config().borderCost;                  // cost-box border on/off (config page) ; background stays either way
-        if (f.skin && f.skin->ready()) {                                 // FFXI window skin, open at the bottom -> merges with the party's top edge
-            draw_window(dev, *f.skin, bx2, by2, bw2, bh2, 0xFFFFFFFF, S, true, costBorder);
-        } else {                                                         // fallback : built-in navy chrome
-            if (costBorder)
-                grad_quad(dev, bx2 - 1, by2 - 1, bw2 + 2, bh2 + 2, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF);  // outer glow (border)
-            vgrad(dev, bx2, by2, bw2, bh2, 0xF0232E54, 0xF0080B1A);          // dark fill (background)
-            vgrad(dev, bx2, by2, bw2, 3 * S, 0x4DBFD8FF, 0x00BFD8FF);        // top sheen
-        }
         fName->begin(dev);
-        const float ty  = by2 + topPad + pdy + fs * 0.5f;                          // text anchored to the BOTTOM region -> the +topPad is empty space at the top, text doesn't drift
+        const float ty  = by2 + topPad + pdy + fs * 0.5f;                          // text anchored to the BOTTOM region
         fName->draw_lc(dev, nameX, ty, nm, fs, 0xFFFFD970, nSTK, nOWf);                              // action name (gold), left
         if (info) fName->draw_lc(dev, infoColX, ty, info, fs, infoCol, nSTK, nOWf);                  // "Cost XX MP" / live TP, right column
         if (info2) {                                                                                 // recast "Next", below, same column as Cost

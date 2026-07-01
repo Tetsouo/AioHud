@@ -145,22 +145,32 @@ static void read_tag(u32 addr, char* out, int n) {
     out[i] = 0;
 }
 
-bool read_action_menu(int& type, unsigned& id) {
-    type = 0; id = 0;
+bool read_action_menu(int& type, unsigned& id, unsigned& cursor, bool& examValid) {
+    type = 0; id = 0; cursor = 0; examValid = false;
     u32 ffm = (u32)GetModuleHandleA("FFXiMain.dll");
     if (!ffm) return false;
     u32 mptr = 0; safe_read(ffm + MENU_PTR_RVA, &mptr);
     if (!valid_ptr(mptr)) return false;                   // no menu open
+    safe_read(mptr + 0x4C, &cursor);                      // 1-based highlight index -> stale-examine detection
     u32 def = 0; safe_read(mptr + 0x04, &def);            // menu category definition
     if (!valid_ptr(def)) return false;
+    // The menu's shared examine-DESCRIPTION object (*(mptr+0x0C), a singleton) is the structural "is there a
+    // real examinable item here" signal. Reversed via //aio menu : on a no-magic job's EMPTY magic list it
+    // reads len@+0x30 = 0 and sentinel@+0x34 = 0xFFFFFFFF ; on a real spell/trust it holds len > 0 and +0x34 = 0
+    // (plus the description text). Unlike the static examine cache (0x634F28) it is NOT left stale, so it tells a
+    // real selection from a ghost on OPEN and on RE-OPEN of the same item (where the frozen-value test fails).
+    { u32 desc = 0; safe_read(mptr + 0x0C, &desc);
+      if (valid_ptr(desc)) { u32 dlen = 0, dsent = 0xFFFFFFFF; safe_read(desc + 0x30, &dlen); safe_read(desc + 0x34, &dsent);
+                             examValid = (dlen != 0) && (dsent != 0xFFFFFFFF); } }
     char tag[9]; read_tag(def + MENU_TAG_OFF, tag, 4);    // self-validate : real menu defs start "menu"
     if (tag[0] != 'm' || tag[1] != 'e' || tag[2] != 'n' || tag[3] != 'u') return false;
     char nm[9]; read_tag(def + MENU_NAME_OFF, nm, 8);     // 8-byte menu name -> menu type
 
-    if (nm[0]=='m' && nm[1]=='a' && nm[2]=='g' && nm[3]=='i' && nm[4]=='c') {        // "magic   "
+    if (nm[0]=='m' && nm[1]=='a' && nm[2]=='g' && nm[3]=='i' && nm[4]=='c') {        // "magic   " (real spells AND trusts)
         u32 spell = 0; safe_read(ffm + EXAM_SPELL_RVA, &spell);
-        if (spell == 0 || spell > 0x4000) return false;   // cache not populated yet
-        type = 1; id = spell; return true;
+        type = 1; id = (spell == 0 || spell > 0x4000) ? 0 : spell; return true;     // menu IS open (frame shows) ;
+        // id 0 = nothing valid examined yet. The caller filters the GHOST via the live-examine check + the
+        // box draws an EMPTY frame whenever the magic menu is open (id may be a trust / stale until proven live).
     }
     if (nm[0]=='a' && nm[1]=='b' && nm[2]=='i' && nm[3]=='l') {                      // "ability " (JA + WS list)
         u32 araw = 0; safe_read(ffm + EXAM_ABIL_RVA, &araw);                         // NB "abiselec" (nm[3]='s') is excluded
@@ -231,9 +241,14 @@ void poll_game_state(GameState& gs) {
     if (read_party_leaders(ld)) { gs.allianceLeader = ld.alliance; gs.partyLead1 = ld.p1; gs.partyLead2 = ld.p2; gs.partyLead3 = ld.p3; }
     else                        { gs.allianceLeader = gs.partyLead1 = gs.partyLead2 = gs.partyLead3 = 0; }
 
-    int mt = 0; unsigned ma = 0;
-    if (read_action_menu(mt, ma)) { gs.menuType = mt; gs.menuAction = ma; }
-    else                          { gs.menuType = 0; gs.menuAction = 0; }
+    int mt = 0; unsigned ma = 0, mc = 0; bool mev = false;
+    if (read_action_menu(mt, ma, mc, mev)) { gs.menuType = mt; gs.menuAction = ma; gs.menuCursor = mc; gs.menuExamValid = mev; }
+    else                                   { gs.menuType = 0; gs.menuAction = 0; gs.menuCursor = mc; gs.menuExamValid = false; }
+    // RAW examine memory, read EVERY frame (even with no menu) -> a change means the game examined a real
+    // item, which is how we tell a live selection (incl. the auto-selected one on open) from a stale ghost.
+    { u32 ffm2 = (u32)GetModuleHandleA("FFXiMain.dll"); u32 es = 0, ea = 0;
+      if (ffm2) { safe_read(ffm2 + EXAM_SPELL_RVA, &es); safe_read(ffm2 + EXAM_ABIL_RVA, &ea); }
+      gs.examSpellRaw = es; gs.examAbilRaw = ea; }
 
     // party-window picker : the focused menu is "partywin" with a 1-based cursor index at +0x4C.
     // (Reversed via //aio pcur: +0x4C tracks the hovered member, +0x08 = its row object.)

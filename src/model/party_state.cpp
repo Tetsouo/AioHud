@@ -27,6 +27,10 @@ static bool g_demoSelect = false;
 bool demo_select()            { return g_demoSelect; }
 void set_demo_select(bool on) { g_demoSelect = on; }
 
+static int g_simExtra = 0;                                                   // fake members appended to the LIVE party (test the layout reacting to size)
+int  party_sim_extra() { return g_simExtra; }
+void set_party_sim_extra(int n) { g_simExtra = n < 0 ? 0 : (n > 5 ? 5 : n); }
+
 static const char* CACHE = "D:\\Windower Tetsouo\\plugins\\aiohud_party.bin";
 
 static const char* JOBS[] = {

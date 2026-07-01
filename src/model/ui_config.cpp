@@ -44,6 +44,9 @@ static void save_config_to(const char* path) {
     fprintf(f, "partyBottom=%.5f\n", c.partyBottomY);
     fprintf(f, "partyRefX=%.5f,%.5f\n", c.partyRefX[0], c.partyRefX[1]);
     fprintf(f, "allyRef=%.5f,%.5f,%.5f,%.5f\n", c.allyRefY[0], c.allyRefY[1], c.allyRefY[2], c.allyRefY[3]);
+    for (int i = 0; i < c.guideGroupCount; ++i)   // user-drawn zones : rect + permissions + role ; name LAST (comma-safe).
+        fprintf(f, "zone=%.5f,%.5f,%.5f,%.5f,%d,%d,%d,%d,%s\n", c.guideGroup[i].x, c.guideGroup[i].y, c.guideGroup[i].w, c.guideGroup[i].h,
+                c.guideGroup[i].allow[0] ? 1 : 0, c.guideGroup[i].allow[1] ? 1 : 0, c.guideGroup[i].allow[2] ? 1 : 0, c.guideGroup[i].role, c.guideGroup[i].name);
     fprintf(f, "border=%d,%d,%d,%d\n", c.border[0] ? 1 : 0, c.border[1] ? 1 : 0, c.border[2] ? 1 : 0, c.borderCost ? 1 : 0);
     for (int i = 0; i < 3; ++i)
         fprintf(f, "box%d=%d,%.5f,%.5f,%.4f\n", i, c.box[i].posSet ? 1 : 0, c.box[i].x, c.box[i].y, c.box[i].scale);
@@ -53,6 +56,7 @@ static void save_config_to(const char* path) {
 static bool load_config_from(const char* path) {
     FILE* f = fopen(path, "r"); if (!f) return false;
     UiConfig& c = ui_config();
+    c.guideGroupCount = 0;   // dynamic list -> rebuilt from the file (a full-config load)
     char line[160];
     while (fgets(line, sizeof(line), f)) {
         int v, ps, idx, b0, b1, b2, bc; float x, y, s, fv;
@@ -72,6 +76,16 @@ static bool load_config_from(const char* path) {
         else if (sscanf(line, "partyBottom=%f", &fv) == 1) c.partyBottomY = fv;
         else if (sscanf(line, "partyRefX=%f,%f", &x, &y) == 2) { c.partyRefX[0] = x; c.partyRefX[1] = y; }
         else if (strncmp(line, "allyRef=", 8) == 0) { float ar[4]; int g = sscanf(line + 8, "%f,%f,%f,%f", &ar[0], &ar[1], &ar[2], &ar[3]); for (int k = 0; k < g && k < 4; ++k) c.allyRefY[k] = ar[k]; }
+        else if (strncmp(line, "zone=", 5) == 0 && c.guideGroupCount < GUIDE_GROUPS_MAX) {
+            GuideGroup z; char nm[24] = { 0 }; float x = 0, y = 0, w = 0, h = 0; int a0 = 0, a1 = 0, a2 = 0, rl = 0;
+            int got = sscanf(line + 5, "%f,%f,%f,%f,%d,%d,%d,%d,%23[^\r\n]", &x, &y, &w, &h, &a0, &a1, &a2, &rl, nm);   // new (with role)
+            if (got < 8) { nm[0] = 0; rl = 0; got = sscanf(line + 5, "%f,%f,%f,%f,%d,%d,%d,%23[^\r\n]", &x, &y, &w, &h, &a0, &a1, &a2, nm); }   // legacy
+            if (got >= 7) {
+                z.x = x; z.y = y; z.w = w; z.h = h; z.allow[0] = (a0 != 0); z.allow[1] = (a1 != 0); z.allow[2] = (a2 != 0); z.role = rl;
+                strncpy(z.name, nm, sizeof(z.name) - 1); z.name[sizeof(z.name) - 1] = 0;
+                c.guideGroup[c.guideGroupCount++] = z;
+            }
+        }
         else if (sscanf(line, "border=%d,%d,%d,%d", &b0, &b1, &b2, &bc) == 4) {
             c.border[0] = (b0 != 0); c.border[1] = (b1 != 0); c.border[2] = (b2 != 0); c.borderCost = (bc != 0);
         }
@@ -202,6 +216,14 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.partyBottomY != b.partyBottomY) return false;
     if (a.partyRefX[0] != b.partyRefX[0] || a.partyRefX[1] != b.partyRefX[1]) return false;
     for (int i = 0; i < 4; ++i) if (a.allyRefY[i] != b.allyRefY[i]) return false;
+    if (a.guideGroupCount != b.guideGroupCount) return false;
+    for (int i = 0; i < a.guideGroupCount; ++i) {
+        if (a.guideGroup[i].x != b.guideGroup[i].x || a.guideGroup[i].y != b.guideGroup[i].y ||
+            a.guideGroup[i].w != b.guideGroup[i].w || a.guideGroup[i].h != b.guideGroup[i].h ||
+            a.guideGroup[i].role != b.guideGroup[i].role ||
+            strcmp(a.guideGroup[i].name, b.guideGroup[i].name) != 0) return false;
+        for (int k = 0; k < ZPERM_COUNT; ++k) if (a.guideGroup[i].allow[k] != b.guideGroup[i].allow[k]) return false;
+    }
     if (a.barHeight != b.barHeight || a.barWidth != b.barWidth) return false;
     if (a.jobBadge != b.jobBadge || a.castParty != b.castParty || a.castAlly != b.castAlly) return false;
     if (a.dist[0] != b.dist[0] || a.dist[1] != b.dist[1] || a.dist[2] != b.dist[2]) return false;
@@ -233,6 +255,55 @@ void reset_boxes() {   // edit-mode Default : positions + sizes only
     for (int i = 0; i < 4; ++i) c.allyRefY[i] = -1.0f;
     save_ui_config();
     request_scale_baseline_reset();   // scales went back to 1.0 -> adopt as baseline (no re-anchor)
+}
+
+// top Y (px) of the party-role zone for `count` members (its rect top drives the party box), or -1 if none.
+float guide_party_top(int count, float sh) {
+    UiConfig& c = ui_config();
+    for (int g = 0; g < c.guideGroupCount; ++g) if (c.guideGroup[g].role == count) return c.guideGroup[g].y * sh;
+    return -1.0f;
+}
+
+// ar[0..3] = {A1 top, A1 bottom, A2 top, A2 bottom} (fractions) from the alliance-role zones (7 = A1, 8 = A2).
+bool guide_alliance_refs(float* ar) {
+    UiConfig& c = ui_config(); int a1 = -1, a2 = -1;
+    for (int g = 0; g < c.guideGroupCount; ++g) { if (c.guideGroup[g].role == 7) a1 = g; else if (c.guideGroup[g].role == 8) a2 = g; }
+    if (a1 < 0 || a2 < 0) return false;
+    ar[0] = c.guideGroup[a1].y; ar[1] = c.guideGroup[a1].y + c.guideGroup[a1].h;
+    ar[2] = c.guideGroup[a2].y; ar[3] = c.guideGroup[a2].y + c.guideGroup[a2].h;
+    return true;
+}
+
+// each user-drawn ZONE rectangle in pixels (from its stored fractions). Returns the number written.
+int guide_zones(float sw, float sh, float* ox, float* oy, float* ow, float* oh, int* ogrp, int cap) {
+    UiConfig& c = ui_config(); int n = 0;
+    for (int g = 0; g < c.guideGroupCount && n < cap; ++g) {
+        ox[n] = c.guideGroup[g].x * sw; oy[n] = c.guideGroup[g].y * sh;
+        ow[n] = c.guideGroup[g].w * sw; oh[n] = c.guideGroup[g].h * sh; ogrp[n] = g; ++n;
+    }
+    return n;
+}
+
+// P3 : if the box rect (ex,ey,ew,eh) overlaps a zone that FORBIDS `perm`, push it out by the smallest move.
+void guide_push_out(int perm, float sw, float sh, float& ex, float& ey, float ew, float eh) {
+    UiConfig& c = ui_config();
+    float zx[GUIDE_GROUPS_MAX], zy[GUIDE_GROUPS_MAX], zw[GUIDE_GROUPS_MAX], zh[GUIDE_GROUPS_MAX]; int zg[GUIDE_GROUPS_MAX];
+    const int nz = guide_zones(sw, sh, zx, zy, zw, zh, zg, GUIDE_GROUPS_MAX);
+    for (int it = 0; it < 4; ++it) {                          // a few passes to settle overlapping zones
+        bool moved = false;
+        for (int i = 0; i < nz; ++i) {
+            if (perm >= 0 && perm < ZPERM_COUNT && c.guideGroup[zg[i]].allow[perm]) continue;   // allowed here
+            if (ex < zx[i] + zw[i] && ex + ew > zx[i] && ey < zy[i] + zh[i] && ey + eh > zy[i]) {
+                const float pL = zx[i] - (ex + ew), pR = (zx[i] + zw[i]) - ex;   // move left (neg) / right (pos)
+                const float pU = zy[i] - (ey + eh), pD = (zy[i] + zh[i]) - ey;   // move up (neg) / down (pos)
+                const float ax = ((pL < 0 ? -pL : pL) < (pR < 0 ? -pR : pR)) ? pL : pR;
+                const float ay = ((pU < 0 ? -pU : pU) < (pD < 0 ? -pD : pD)) ? pU : pD;
+                if ((ax < 0 ? -ax : ax) <= (ay < 0 ? -ay : ay)) ex += ax; else ey += ay;
+                moved = true;
+            }
+        }
+        if (!moved) break;
+    }
 }
 
 void reset_ui_config() {   // general Default : everything

@@ -13,6 +13,26 @@ struct BoxLayout {
     float scale = 1.0f;        // size multiplier (font + geometry)
 };
 
+// ---- user-drawn ZONES (simplified model). A zone is a named RECTANGLE you draw by drag-and-drop in edit
+// mode's "Rules: ON" screen (rubber-band), then move / resize / rename. Permissions (allow[ZPERM_*]) say which
+// HUD box may sit on it -- a box is pushed OUT of any zone that forbids its type (all-false = fully forbidden).
+// The party-SIZING reference lines (partyRef / allyRefY below) are a SEPARATE system, kept as-is. ----
+enum { ZPERM_PARTY = 0, ZPERM_ALLIANCE, ZPERM_HUB, ZPERM_COUNT };
+struct GuideGroup {
+    float x = 0.40f, y = 0.42f, w = 0.20f, h = 0.16f;   // top-left + size, screen fractions
+    char  name[20] = { 0 };
+    bool  allow[ZPERM_COUNT] = { false, false, false };
+    int   role = 0;   // 0 = normal zone ; 1..6 = PARTY box for that member count (TOP sizes it) ; 7 = ALLIANCE 1, 8 = ALLIANCE 2
+};
+static const int GUIDE_GROUPS_MAX = 48;
+
+// top Y (pixels) of the party-role zone for `count` members (its rectangle top drives the party box grow-up),
+// or -1 if there is no such zone (caller then falls back to partyRef). See party.cpp.
+float guide_party_top(int count, float sh);
+// fill ar[0..3] = {A1 top, A1 bottom, A2 top, A2 bottom} (screen fractions) from the alliance-role zones
+// (role 7 = A1, role 8 = A2). Returns true only if BOTH exist ; else the caller uses allyRefY. See party.cpp.
+bool  guide_alliance_refs(float* ar);
+
 struct UiConfig {
     // ---- Party / Alliance ----
     int   skinTheme = 0;       // window-skin theme index (the Hud applies it -> all boxes)
@@ -40,11 +60,20 @@ struct UiConfig {
     // four FIXED horizontal markers for the native ALLIANCE windows (their size does NOT vary with member
     // count) : [0] = alliance 1 TOP, [1] = alliance 1 BOTTOM, [2] = alliance 2 TOP, [3] = alliance 2 BOTTOM.
     float allyRefY[4] = { -1.0f, -1.0f, -1.0f, -1.0f };
+    // ---- user-drawn zones ----
+    GuideGroup guideGroup[GUIDE_GROUPS_MAX];
+    int        guideGroupCount = 0;
     // ---- Global ----
     int   lang = 0;            // config UI language : 0 = English, 1 = French (toggle in the config header)
 };
 
 UiConfig& ui_config();         // the singleton
+
+// ---- P3 : guide ZONES = the rectangle each group forms from its rules (H rules -> top/bottom, V rules ->
+// left/right ; a missing axis spans the whole screen). Permissions (allow[ZPERM_*]) say which box may sit on
+// a zone -- a box is pushed OUT of any zone that forbids its type. ----
+int  guide_zones(float sw, float sh, float* x, float* y, float* w, float* h, int* group, int cap);   // -> count
+void guide_push_out(int perm, float sw, float sh, float& ex, float& ey, float ew, float eh);          // clamp a box out of forbidden zones
 
 // persistence : skinTheme / fontFace / per-box position+scale are saved to disk and restored.
 void load_ui_config();         // called once at startup

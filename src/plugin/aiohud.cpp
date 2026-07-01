@@ -328,6 +328,7 @@ void aio_plugin_render6()
             }
         }
     }
+
 }
 
 // RE instrumentation. Reversed: b = decoded inbound packet (u16@+0 = id|size, u16@+2 = sync).
@@ -447,6 +448,14 @@ unsigned int aio_plugin_key(u32 key, u32 b, u32 c) {
     if (g_key_probe && pressed) { static int n = 0; if (n < 400) { ++n;
         debug::log("KEY sc=0x%X vk=0x%X fr=0x%X nc=%d ch=%d", dik, vk, (unsigned)(UINT_PTR)frHkl, nc, (nc != 0) ? (int)wbuf[0] : 0); } }
 
+    // DIK_RETURN key-UP guard : Enter's key-DOWN commits + blurs the field the SAME frame, so by the time
+    // its key-UP arrives wants_keys() is false and the stray release would reach the game (opening chat).
+    // If we consumed the DOWN while typing, consume the matching UP too, regardless of the (now-cleared) focus.
+    static bool s_ateReturn = false;
+    if (dik == 0x1C) {
+        if (pressed && g_hud.config().wants_keys()) s_ateReturn = true;
+        else if (!pressed && s_ateReturn)         { s_ateReturn = false; return 1u; }
+    }
     if (!g_hud.config().wants_keys()) return 0u;            // not typing -> never block the game
     // Insert toggles the Windower console -> NEVER swallow it, even while typing (extended DIK 0xD2, or the
     // numpad-0 scan 0x52 when NumLock is off so it produced no character).
@@ -483,6 +492,17 @@ void aio_plugin_command(const char* cmd)
     char buf[256]; int i = 0;
     for (; cmd[i] && i < 255; i++) { char c = cmd[i]; buf[i] = (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c; }
     buf[i] = 0;
+
+    // //aio sim [N] -> append N (0-5) FAKE members to the LIVE party, so the box grows and the alliances
+    // react to the main-party size for testing. //aio sim 0 (or sim off) -> back to the real size.
+    if (strstr(buf, "sim")) {
+        const char* p = strstr(buf, "sim") + 3; while (*p == ' ' || *p == '\t') ++p;
+        const int v = strstr(buf, "off") ? 0 : ((*p >= '0' && *p <= '5') ? (*p - '0') : 1);
+        aio::set_party_sim_extra(v);
+        char msg[96]; sprintf(msg, ">>> sim: +%d fake party member(s) <<<", v);
+        g_host.console().print(msg);
+        return;
+    }
 
     // //aio [party|alliance1|alliance2] demo [N] [off] -> fake roster for previewing the layout.
     //   party demo [N]  -> a party of N members (1-6, default 6) -> preview the adaptive height/mask

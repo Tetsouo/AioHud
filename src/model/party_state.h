@@ -82,5 +82,9 @@ void set_party_demo_count(int c);
 // (party then alliances) so the config preview demonstrates the selection highlight. Off in real play.
 bool demo_select();
 void set_demo_select(bool on);
+// TEST helper : append N fake members to the LIVE party (0..5) -> //aio sim N. Lets you watch the box
+// grow + the alliances react to the main-party size without needing real players. 0 = off (real size).
+int  party_sim_extra();
+void set_party_sim_extra(int n);
 
 } // namespace aio

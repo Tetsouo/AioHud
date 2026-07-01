@@ -28,6 +28,10 @@ public:
         rightX = pvRightX_; bottomY = pvBottomY_; return pvOn_;
     }
 
+    // EDIT LAYOUT : the "Rules" toggle. While ON the reference lines are drawn and the HUD hides its boxes
+    // (the HUD reads this each frame) so only the rules + the edit toolbar show. OFF -> normal box editing.
+    bool edit_lines_active() const { return editShowLines_; }
+
     // ---- keyboard (fed by the plugin's slot-14 hook ; only while a text field is focused) ----
     // A full single-line text field : insertion CURSOR (nameCur_) with left/right/home/end, insert +
     // backspace + forward-delete AT the cursor -- the same behaviour as any OS text input.
@@ -79,6 +83,18 @@ private:
     // live-preview anchor published each frame for the HUD (Configuration tab only)
     bool  pvOn_        = false;
     float pvRightX_    = 0.0f, pvBottomY_ = 0.0f;
+    // edit-layout : "Rules" toggle + the destructive-action confirmation modal
+    bool  editShowLines_ = false;   // draw reference lines AND hide the HUD boxes (only rules + toolbar show)
+    int   editConfirm_   = 0;       // 0 = none, 1 = Clear-lines pending, 2 = Default pending -> confirm dialog
+    // user-drawn ZONES : selection + inline rename (reuses the nameBuf_ text field) + rubber-band draw
+    int   groupSel_      = -1;      // selected zone (-1 = none)
+    int   editZoneName_  = -1;      // zone being renamed via the keyboard (-1 = none)
+    float rulesPanelX_   = -1.0f;   // draggable panel top-left (fraction of screen ; -1 = default top-right)
+    float rulesPanelY_   = -1.0f;
+    float guideScroll_   = 0.0f;    // zone-list scroll in the panel
+    float zoneDrawX_     = 0.0f;    // rubber-band : start corner (screen px) while zoneDrawing_ is set
+    float zoneDrawY_     = 0.0f;
+    bool  zoneDrawing_   = false;
 };
 
 } // namespace aio

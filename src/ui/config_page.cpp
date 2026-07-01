@@ -595,85 +595,292 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     //     floating toolbar. The party/alliance boxes handle their own drag/resize (see party.cpp). ---
     if (ui_config().editLayout) {
         g_fade = 1.0f;
+        // ZONES : while Rules is OFF (placing boxes) draw each zone FAINTLY so you see the keep-out / allowed
+        // areas -- a box is pushed out of any zone that forbids it (see guide_push_out). Rules ON draws them
+        // interactively further below.
+        if (!editShowLines_) {
+            static const u32 ZC[8] = { 0xFFFF6E6E,0xFFFF9E50,0xFFEFD24A,0xFF7ED86A,0xFF4AC8E0,0xFF6E8CFF,0xFFC090FF,0xFFFF8AD8 };
+            float zx[GUIDE_GROUPS_MAX], zy[GUIDE_GROUPS_MAX], zw[GUIDE_GROUPS_MAX], zh[GUIDE_GROUPS_MAX]; int zg[GUIDE_GROUPS_MAX];
+            const int nz = guide_zones(sw, sh, zx, zy, zw, zh, zg, GUIDE_GROUPS_MAX);
+            for (int i = 0; i < nz; ++i) {
+                const GuideGroup& g = ui_config().guideGroup[zg[i]];
+                const bool openZone = g.allow[ZPERM_PARTY] || g.allow[ZPERM_ALLIANCE] || g.allow[ZPERM_HUB];
+                const u32 col = ZC[zg[i] % 8];
+                flat(dev, zx[i], zy[i], zw[i], zh[i], (col & 0x00FFFFFF) | (openZone ? 0x14000000 : 0x24000000));   // faint fill (forbidden = a touch denser)
+                outline(dev, zx[i], zy[i], zw[i], zh[i], col);
+                char zl[28]; if (g.name[0]) sprintf(zl, "%s", g.name); else sprintf(zl, tr("Zone %d", "Zone %d"), zg[i] + 1);
+                fo->begin(dev); fo->draw_lc(dev, zx[i] + snap(6.0f), zy[i] + snap(10.0f), zl, snap(11.0f), col, C_STROKE, 1.2f);
+            }
+        }
         // REFERENCE LINES : the TOP of the game's native party window, which differs by member count.
         // SIX lines -- one per count (1..6 players) -- each dragged onto the native top for that size ; the
         // party box grows UP to the line matching its current member count. Drag a handle (saved on release).
+        // Drawn ONLY while the "Rules" toggle (editShowLines_) is ON -- and then the HUD boxes are hidden
+        // (hud.cpp) so nothing but these rules + the toolbar shows.
+        if (editShowLines_) {
+        bool refGrabbed = false;   // a party-ref handle is being grabbed this frame -> don't also start a zone rubber-band
+        UiConfig& C = ui_config();
+        // ZONES panel geometry (auto-sized) computed FIRST so EVERY draggable element under it (party-ref
+        // handles, zone handles) can ignore clicks that land on the panel -- else one click hits both.
+        const char* pTitle = tr("ZONES  (drag on screen to draw)", "ZONES  (dessiner à l'écran)");
+        const char* pHint  = tr("Drag on empty space to draw a zone.", "Glissez sur l'écran pour dessiner une zone.");
+        const float tbh = snap(28.0f), rowH = snap(22.0f), stride = rowH + snap(3.0f);
+        const bool  renaming = (editZoneName_ >= 0 && editZoneName_ < C.guideGroupCount);
+        const bool  zoneSel = (groupSel_ >= 0 && groupSel_ < C.guideGroupCount);
+        const float actionsH = renaming ? snap(44.0f) : (zoneSel ? snap(66.0f) : snap(26.0f));
+        const int   visRows = C.guideGroupCount < 12 ? C.guideGroupCount : 12;
+        const float listH = (C.guideGroupCount > 0) ? visRows * stride : 0.0f;
+        const float newBtnRow = snap(38.0f);
+        float pw = fo->measure(pTitle, snap(11.0f)) + snap(28.0f);
+        { const float hw2 = fo->measure(pHint, snap(11.0f)) + snap(24.0f); if (hw2 > pw) pw = hw2; }
+        if (pw < snap(200.0f)) pw = snap(200.0f); if (pw > snap(420.0f)) pw = snap(420.0f); pw = snap(pw);
+        const float ph = snap(tbh + newBtnRow + listH + snap(6.0f) + actionsH + snap(8.0f));
+        float pxp = (rulesPanelX_ >= 0.0f) ? snap(rulesPanelX_ * sw) : snap(sw - pw - 20.0f);
+        float pyp = (rulesPanelY_ >= 0.0f) ? snap(rulesPanelY_ * sh) : snap(80.0f);
+        if (pxp > sw - pw) pxp = snap(sw - pw); if (pxp < 0.0f) pxp = 0.0f;
+        if (pyp > sh - ph) pyp = snap(sh - ph); if (pyp < 0.0f) pyp = 0.0f;
+        const bool overPanel = inrect(mo, pxp, pyp, pw, ph);
+        (void)refGrabbed;   // party 1p..6p / L / R and alliance A1/A2 are now real ZONES (role), edited below
+
+        // ===== USER-DRAWN ZONES : drag on empty space to draw a rectangle (creates a zone). Move it by its
+        // body, resize it by its corners, name it, set which boxes may sit on it. A box is pushed OUT of any
+        // zone that forbids it (guide_push_out). Rectangular by construction. The panel is draggable. =====
         {
-            const u32   lcol[7] = { 0xD2FF6E6E, 0xD2FF9E50, 0xD2EFD24A, 0xD27ED86A, 0xD24AC8E0, 0xD26E8CFF, 0xE0FFFFFF };  // 1..6 red->blue, 0 = white
-            const char* llbl[7] = { "1p", "2p", "3p", "4p", "5p", "6p", "0" };   // index 6 = line 0 (the BOTTOM)
-            const float hw = snap(90.0f), hh = snap(24.0f), gap = snap(7.0f);
-            static int grabLine = -1;
-            if (!(mo && mo->down)) { if (grabLine >= 0) save_ui_config(); grabLine = -1; }   // released -> persist once
-            for (int i = 0; i < 7; ++i) {
-                const bool isBot = (i == 6);
-                float* val = isBot ? &ui_config().partyBottomY : &ui_config().partyRef[i];
-                const float def = isBot ? 0.95f : (0.90f - 0.0145f * (float)i);
-                const float lineY = snap((*val >= 0.0f ? *val : def) * sh);
-                const u32 c = lcol[i];
-                flat(dev, 0.0f, lineY - snap(3.0f), sw, snap(6.0f), (c & 0x00FFFFFF) | 0x1A000000);   // glow
-                flat(dev, 0.0f, lineY - snap(1.0f), sw, snap(2.0f), c);                                 // line
-                const float hx = snap(24.0f) + (float)i * (hw + gap), hy = lineY - hh * 0.5f;
-                const bool hov = inrect(mo, hx, hy, hw, hh);
-                if (mo && mo->down && grabLine < 0 && hov) grabLine = i;
-                if (grabLine == i && mo) { float ny = mo->y / sh; ny = ny < 0.0f ? 0.0f : (ny > 1.0f ? 1.0f : ny); *val = ny; }
-                drop_shadow(dev, hx, hy, hw, hh, snap(4.0f), 60);
-                const bool act = (grabLine == i || hov);
-                vg(dev, hx, hy, hw, hh, act ? ((c & 0x00FFFFFF) | 0xE8000000) : 0xF02A2230, 0xF0201820);
-                outline(dev, hx, hy, hw, hh, c);
-                fo->begin(dev); fo->draw_c(dev, hx + hw * 0.5f, lineY, llbl[i], snap(12.0f), (isBot && act) ? 0xFF202020 : 0xFFFFFFFF, C_STROKE, 1.0f);
+            const bool rClick = click && editConfirm_ == 0;
+            static const u32 GRP_COL[8] = { 0xFFFF6E6E,0xFFFF9E50,0xFFEFD24A,0xFF7ED86A,0xFF4AC8E0,0xFF6E8CFF,0xFFC090FF,0xFFFF8AD8 };
+
+            // inline RENAME : mirror the keyboard field into the zone's name each frame ; finish on OK/blur.
+            if (editZoneName_ >= 0 && editZoneName_ < C.guideGroupCount) {
+                strncpy(C.guideGroup[editZoneName_].name, nameBuf_, 18); C.guideGroup[editZoneName_].name[18] = 0;
+                if (kbCommit_ || !nameFocus_) { kbCommit_ = false; editZoneName_ = -1; nameFocus_ = false; save_ui_config(); }
+            }
+
+            // on-screen HOW-TO banner (top-centre) so the drag-to-draw gesture is discoverable without reading the panel.
+            {
+                const char* bn = tr("Drag on an empty area to draw a zone   -   move by its body, resize by its corners",
+                                    "Glissez sur une zone vide pour dessiner   -   déplacez par le corps, coins pour redimensionner");
+                const float bnw = fo->measure(bn, snap(13.0f)) + snap(30.0f), bnx = snap((sw - bnw) * 0.5f), bny = snap(sh * 0.12f), bnh = snap(30.0f);
+                drop_shadow(dev, bnx, bny, bnw, bnh, snap(4.0f), 50);
+                vg(dev, bnx, bny, bnw, bnh, 0xE0202B3C, 0xE0141C28);
+                flat(dev, bnx, bny, bnw, 1, 0x55FFFFFF); outline(dev, bnx, bny, bnw, bnh, C_BORDERHI);
+                fo->begin(dev); fo->draw_c(dev, sw * 0.5f, bny + bnh * 0.5f, bn, snap(13.0f), C_TEXT, C_STROKE, 1.0f);
+            }
+
+            // ---- draw + edit each ZONE rectangle on screen ----
+            const float HS = snap(9.0f);   // corner-handle half-size
+            static int grabZone = -1, grabMode = 0;   // grabMode : 0 move ; 1..4 = TL/TR/BL/BR corner resize
+            static float gzOffX = 0.0f, gzOffY = 0.0f;
+            if (!(mo && mo->down)) { if (grabZone >= 0) save_ui_config(); grabZone = -1; }
+            for (int i = 0; i < C.guideGroupCount; ++i) {
+                GuideGroup& z = C.guideGroup[i];
+                const float rx = snap(z.x * sw), ry = snap(z.y * sh), rw = snap(z.w * sw), rh = snap(z.h * sh);
+                const bool sel = (groupSel_ == i);
+                const u32  col = GRP_COL[i % 8];
+                const bool openZone = z.allow[0] || z.allow[1] || z.allow[2];
+                flat(dev, rx, ry, rw, rh, (col & 0x00FFFFFF) | (openZone ? 0x18000000 : 0x2C000000));
+                outline(dev, rx, ry, rw, rh, sel ? 0xFFFFE59E : col);
+                if (sel) outline(dev, rx + snap(1.0f), ry + snap(1.0f), rw - snap(2.0f), rh - snap(2.0f), (col & 0x00FFFFFF) | 0x88000000);
+                if (sel) {   // corner handles for the selected zone
+                    const float cxs[4] = { rx, rx + rw, rx, rx + rw }, cys[4] = { ry, ry, ry + rh, ry + rh };
+                    for (int cci = 0; cci < 4; ++cci) { vg(dev, cxs[cci] - HS, cys[cci] - HS, 2 * HS, 2 * HS, 0xFFFFE59E, 0xFFD9B24A); outline(dev, cxs[cci] - HS, cys[cci] - HS, 2 * HS, 2 * HS, C_STROKE); }
+                }
+                char zl[28]; if (z.name[0]) sprintf(zl, "%s", z.name); else sprintf(zl, tr("Zone %d", "Zone %d"), i + 1);
+                fo->begin(dev); fo->draw_lc(dev, rx + snap(6.0f), ry + snap(11.0f), zl, snap(11.0f), sel ? 0xFFFFFFFF : col, C_STROKE, 1.2f);
+            }
+            // start a grab on a FRESH press : selected zone's corner -> body of any zone -> else rubber-band draw.
+            static bool zPrevDown = false; const bool freshPress = mo && mo->down && !zPrevDown; zPrevDown = mo && mo->down;
+            if (freshPress && grabZone < 0 && !zoneDrawing_ && editConfirm_ == 0 && !overPanel && !refGrabbed) {
+                bool got = false;
+                if (groupSel_ >= 0 && groupSel_ < C.guideGroupCount) {
+                    GuideGroup& z = C.guideGroup[groupSel_];
+                    const float rx = z.x * sw, ry = z.y * sh, rw = z.w * sw, rh = z.h * sh;
+                    const float cxs[4] = { rx, rx + rw, rx, rx + rw }, cys[4] = { ry, ry, ry + rh, ry + rh };
+                    for (int cci = 0; cci < 4 && !got; ++cci) if (inrect(mo, cxs[cci] - HS, cys[cci] - HS, 2 * HS, 2 * HS)) { grabZone = groupSel_; grabMode = 1 + cci; got = true; }
+                }
+                if (!got) for (int i = C.guideGroupCount - 1; i >= 0 && !got; --i) {
+                    GuideGroup& z = C.guideGroup[i];
+                    if (inrect(mo, z.x * sw, z.y * sh, z.w * sw, z.h * sh)) { grabZone = i; grabMode = 0; groupSel_ = i; gzOffX = mo->x - z.x * sw; gzOffY = mo->y - z.y * sh; got = true; }
+                }
+                if (!got) { zoneDrawing_ = true; zoneDrawX_ = mo->x; zoneDrawY_ = mo->y; }
+            }
+            if (grabZone >= 0 && grabZone < C.guideGroupCount && mo) {   // apply an active move / corner resize
+                GuideGroup& z = C.guideGroup[grabZone];
+                if (grabMode == 0) { z.x = clampf((mo->x - gzOffX) / sw, 0.0f, 1.0f - z.w); z.y = clampf((mo->y - gzOffY) / sh, 0.0f, 1.0f - z.h); }
+                else {
+                    float x0 = z.x, y0 = z.y, x1 = z.x + z.w, y1 = z.y + z.h;
+                    const float mx = clampf(mo->x / sw, 0.0f, 1.0f), my = clampf(mo->y / sh, 0.0f, 1.0f);
+                    if (grabMode == 1) { x0 = mx; y0 = my; } else if (grabMode == 2) { x1 = mx; y0 = my; } else if (grabMode == 3) { x0 = mx; y1 = my; } else { x1 = mx; y1 = my; }
+                    if (x1 < x0) { float t = x0; x0 = x1; x1 = t; grabMode = (grabMode == 1) ? 2 : (grabMode == 2) ? 1 : (grabMode == 3) ? 4 : 3; }
+                    if (y1 < y0) { float t = y0; y0 = y1; y1 = t; grabMode = (grabMode <= 2) ? grabMode + 2 : grabMode - 2; }
+                    z.x = x0; z.y = y0; z.w = (x1 - x0 < 0.01f) ? 0.01f : (x1 - x0); z.h = (y1 - y0 < 0.01f) ? 0.01f : (y1 - y0);
+                }
+            }
+            if (zoneDrawing_ && mo) {   // rubber-band : show the pending rect ; on release create the zone
+                const float x0 = zoneDrawX_ < mo->x ? zoneDrawX_ : mo->x, y0 = zoneDrawY_ < mo->y ? zoneDrawY_ : mo->y;
+                const float x1 = zoneDrawX_ > mo->x ? zoneDrawX_ : mo->x, y1 = zoneDrawY_ > mo->y ? zoneDrawY_ : mo->y;
+                if (mo->down) {
+                    flat(dev, x0, y0, x1 - x0, y1 - y0, 0x3340C0FF); outline(dev, x0, y0, x1 - x0, y1 - y0, 0xFFBFE0FF);
+                    char d[28]; sprintf(d, tr("New zone  %dx%d", "Zone  %dx%d"), (int)(x1 - x0), (int)(y1 - y0));
+                    fo->begin(dev); fo->draw_c(dev, (x0 + x1) * 0.5f, (y0 + y1) * 0.5f, d, snap(12.0f), 0xFFFFFFFF, C_STROKE, 1.4f);
+                }
+                else {
+                    zoneDrawing_ = false;
+                    if ((x1 - x0) > snap(16.0f) && (y1 - y0) > snap(16.0f) && C.guideGroupCount < GUIDE_GROUPS_MAX) {
+                        GuideGroup z; z.x = x0 / sw; z.y = y0 / sh; z.w = (x1 - x0) / sw; z.h = (y1 - y0) / sh;
+                        C.guideGroup[C.guideGroupCount] = z; groupSel_ = C.guideGroupCount++; save_ui_config();
+                    }
+                }
+            }
+
+            // ---- draggable PANEL : the zone LIST + rename / delete / permissions for the selected zone ----
+            drop_shadow(dev, pxp, pyp, pw, ph, snap(6.0f), 74);
+            vg(dev, pxp, pyp, pw, ph, 0xF01C2636, 0xF0121A26);
+            outline(dev, pxp, pyp, pw, ph, C_BORDERHI);
+            static float panDX = 0.0f, panDY = 0.0f; static int grabPan = 0;
+            const bool tbHov = inrect(mo, pxp, pyp, pw, tbh);
+            if (mo && mo->down && !grabPan && tbHov && editConfirm_ == 0 && grabZone < 0 && !zoneDrawing_) { grabPan = 1; panDX = mo->x - pxp; panDY = mo->y - pyp; }
+            if (!(mo && mo->down)) grabPan = 0;
+            if (grabPan && mo) {
+                rulesPanelX_ = (mo->x - panDX) / sw; rulesPanelY_ = (mo->y - panDY) / sh;
+                pxp = snap(rulesPanelX_ * sw); pyp = snap(rulesPanelY_ * sh);
+                if (pxp > sw - pw) pxp = snap(sw - pw); if (pxp < 0.0f) pxp = 0.0f;
+                if (pyp > sh - ph) pyp = snap(sh - ph); if (pyp < 0.0f) pyp = 0.0f;
+            }
+            vg(dev, pxp, pyp, pw, tbh, (tbHov || grabPan) ? 0xF02C3A50 : 0xF0243044, 0xF01A2434);
+            flat(dev, pxp, pyp, pw, 1, 0x55FFFFFF);
+            fo->begin(dev); fo->draw_lc(dev, pxp + snap(12.0f), pyp + tbh * 0.5f, pTitle, snap(11.0f), C_GOLD, C_STROKE, 1.0f);
+
+            const float px0 = pxp + snap(10.0f), pxw = pw - snap(20.0f);
+            // + Zone (plain) | + Party (6 party-size zones, role 1..6) | + Ally (2 alliance zones, role 7/8).
+            const float nbY = pyp + tbh + snap(6.0f), nbH = snap(24.0f), nbT = (pxw - snap(12.0f)) / 3.0f;
+            const float Lx = (C.partyRefX[0] >= 0.0f ? C.partyRefX[0] : 0.42f), Rx = (C.partyRefX[1] >= 0.0f ? C.partyRefX[1] : 0.56f);
+            const float x0f = Lx < Rx ? Lx : Rx, wf = Lx < Rx ? (Rx - Lx) : (Lx - Rx);
+            if (push_btn(dev, fo, mo, rClick, 933, px0, nbY, nbT, nbH, tr("+ Zone", "+ Zone"), 0) && C.guideGroupCount < GUIDE_GROUPS_MAX) {
+                GuideGroup z; z.x = 0.42f; z.y = 0.42f; z.w = 0.16f; z.h = 0.14f; C.guideGroup[C.guideGroupCount] = z; groupSel_ = C.guideGroupCount++; save_ui_config();
+            }
+            if (push_btn(dev, fo, mo, rClick, 935, px0 + nbT + snap(6.0f), nbY, nbT, nbH, tr("+ Party", "+ Party"), 0)) {
+                const float By = (C.partyBottomY >= 0.0f ? C.partyBottomY : 0.95f);
+                bool made = false;
+                for (int i = 0; i < 6 && C.guideGroupCount < GUIDE_GROUPS_MAX; ++i) {   // create any MISSING count 1p..6p
+                    bool has = false; for (int g = 0; g < C.guideGroupCount; ++g) if (C.guideGroup[g].role == i + 1) has = true;
+                    if (has) continue;
+                    // the TOP is specific per count ; use the stored line if it's a valid top (above the bottom),
+                    // else rebuild it -- interpolate from the neighbours (3p<->5p for 4p), or fall back to spacing.
+                    float top = C.partyRef[i];
+                    if (!(top >= 0.0f && top < By - 0.03f)) {
+                        // rebuild : interpolate from the neighbour COUNT zones (role i and i+2, i.e. counts i and i+2)
+                        // -- their CURRENT tops -- falling back to partyRef, then to default spacing.
+                        float lo = -1.0f, hi = -1.0f;
+                        for (int g = 0; g < C.guideGroupCount; ++g) {
+                            if (C.guideGroup[g].role == i)          lo = C.guideGroup[g].y;
+                            else if (C.guideGroup[g].role == i + 2) hi = C.guideGroup[g].y;
+                        }
+                        if (lo < 0.0f && i > 0 && C.partyRef[i - 1] >= 0.0f && C.partyRef[i - 1] < By) lo = C.partyRef[i - 1];
+                        if (hi < 0.0f && i < 5 && C.partyRef[i + 1] >= 0.0f && C.partyRef[i + 1] < By) hi = C.partyRef[i + 1];
+                        if (lo >= 0.0f && hi >= 0.0f) top = (lo + hi) * 0.5f;
+                        else if (lo >= 0.0f)          top = lo - 0.015f;
+                        else if (hi >= 0.0f)          top = hi + 0.015f;
+                        else                          top = 0.90f - 0.0145f * (float)i;
+                    }
+                    if (top >= By) top = By - 0.05f; if (top < 0.0f) top = 0.0f;
+                    GuideGroup z; z.x = x0f; z.y = top; z.w = wf; z.h = By - top; z.role = i + 1; z.allow[ZPERM_PARTY] = true;
+                    sprintf(z.name, tr("Party %dp", "Groupe %dp"), i + 1);
+                    C.guideGroup[C.guideGroupCount++] = z; made = true;
+                }
+                if (made) { groupSel_ = C.guideGroupCount - 1; save_ui_config(); }
+            }
+            if (push_btn(dev, fo, mo, rClick, 936, px0 + 2 * nbT + snap(12.0f), nbY, nbT, nbH, tr("+ Ally", "+ Ally"), 0)) {
+                const float adef[4] = { 0.34f, 0.42f, 0.48f, 0.56f };   // A1 top/bottom, A2 top/bottom (defaults)
+                bool made = false;
+                for (int a = 0; a < 2 && C.guideGroupCount < GUIDE_GROUPS_MAX; ++a) {   // role 7 = Alliance 1, role 8 = Alliance 2
+                    const int rl = 7 + a;
+                    bool has = false; for (int g = 0; g < C.guideGroupCount; ++g) if (C.guideGroup[g].role == rl) has = true;
+                    if (has) continue;
+                    float top = (C.allyRefY[a * 2] >= 0.0f ? C.allyRefY[a * 2] : adef[a * 2]);
+                    float bot = (C.allyRefY[a * 2 + 1] >= 0.0f ? C.allyRefY[a * 2 + 1] : adef[a * 2 + 1]);
+                    if (bot < top) { const float t = top; top = bot; bot = t; }
+                    if (bot - top < 0.03f) bot = top + 0.03f;
+                    GuideGroup z; z.x = x0f; z.y = top; z.w = wf; z.h = bot - top; z.role = rl; z.allow[ZPERM_ALLIANCE] = true;
+                    sprintf(z.name, tr("Alliance %d", "Alliance %d"), a + 1);
+                    C.guideGroup[C.guideGroupCount++] = z; made = true;
+                }
+                if (made) { groupSel_ = C.guideGroupCount - 1; save_ui_config(); }
+            }
+            const float listTop = pyp + tbh + newBtnRow, listBot = pyp + ph - actionsH, visH = listBot - listTop;
+            const float total = C.guideGroupCount * stride, maxScroll = (total > visH) ? (total - visH) : 0.0f;
+            const bool  sbVisible = maxScroll > 0.0f;
+            const float listRight = px0 + pxw - (sbVisible ? snap(10.0f) : 0.0f);
+            if (overPanel && ui_config().wheel != 0) { guideScroll_ -= (float)ui_config().wheel * stride * 3.0f; ui_config().wheel = 0; }
+            if (guideScroll_ < 0.0f) guideScroll_ = 0.0f; if (guideScroll_ > maxScroll) guideScroll_ = maxScroll;
+            float ly = listTop - guideScroll_;
+            for (int i = 0; i < C.guideGroupCount; ++i, ly += stride) {
+                if (ly < listTop || ly + rowH > listBot) continue;
+                GuideGroup& z = C.guideGroup[i]; const bool sel = (groupSel_ == i);
+                const float rw2 = listRight - px0; const bool hov = inrect(mo, px0, ly, rw2, rowH);
+                vg(dev, px0, ly, rw2, rowH, sel ? 0xFF2C5AA0 : (hov ? 0xF02A3548 : 0xF01E2838), sel ? 0xFF20447E : 0xF0161E2C);
+                outline(dev, px0, ly, rw2, rowH, sel ? C_ACCENTHI : C_BORDER);
+                flat(dev, px0 + snap(4.0f), ly + rowH * 0.5f - snap(5.0f), snap(6.0f), snap(10.0f), GRP_COL[i % 8]);
+                char zl[28]; if (z.name[0]) sprintf(zl, "%s", z.name); else sprintf(zl, tr("Zone %d", "Zone %d"), i + 1);
+                fo->begin(dev); fo->draw_lc(dev, px0 + snap(16.0f), ly + rowH * 0.5f, zl, snap(11.0f), sel ? 0xFFFFFFFF : C_TEXT, C_STROKE, 1.0f);
+                if (hov && rClick) groupSel_ = i;
+            }
+            if (sbVisible) {
+                const float sbw = snap(6.0f), sbx = px0 + pxw - sbw;
+                float thumbH = visH * visH / total; if (thumbH < snap(24.0f)) thumbH = snap(24.0f);
+                const float thumbY = listTop + ((maxScroll > 0.0f) ? guideScroll_ / maxScroll : 0.0f) * (visH - thumbH);
+                flat(dev, sbx, listTop, sbw, visH, 0x50101720);
+                static int grabSB = 0; static float sbOff = 0.0f;
+                const bool thHov = inrect(mo, sbx - snap(2.0f), thumbY, sbw + snap(4.0f), thumbH);
+                if (mo && mo->down && !grabSB && thHov && editConfirm_ == 0) { grabSB = 1; sbOff = mo->y - thumbY; }
+                if (!(mo && mo->down)) grabSB = 0;
+                if (grabSB && mo) { float t = (visH - thumbH > 0.0f) ? (mo->y - sbOff - listTop) / (visH - thumbH) : 0.0f; t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t); guideScroll_ = t * maxScroll; }
+                vg(dev, sbx, thumbY, sbw, thumbH, (thHov || grabSB) ? 0xFF5A8FE0 : 0xFF3A506E, (thHov || grabSB) ? 0xFF3A6FC0 : 0xFF283A52);
+                outline(dev, sbx, thumbY, sbw, thumbH, 0x80FFFFFF);
+            }
+
+            float ay = listBot + snap(8.0f);
+            if (renaming) {   // real inline TEXT FIELD (caret + Left/Right/Home/End/Delete via the key hook) + OK button -- no Enter needed
+                const float fH = snap(30.0f), okW = snap(58.0f), fGap = snap(8.0f), fW = pxw - okW - fGap;
+                rpanel(dev, px0, ay, fW, fH, snap(6.0f), 0xE6080C14, 0xE605080F, C_ACCENT, snap(1.5f));
+                const float txY = ay + fH * 0.5f, txX = px0 + snap(10.0f);
+                fo->begin(dev);
+                if (nameLen_ > 0) fo->draw_lc(dev, txX, txY, nameBuf_, snap(13.0f), C_TEXT, C_STROKE, 1.0f);
+                else              fo->draw_lc(dev, txX, txY, tr("Zone name...", "Nom de la zone..."), snap(12.0f), C_MUTE, C_STROKE, 1.0f);
+                if (sinf(f.t * 5.0f) > 0.0f) {   // blinking caret AT the cursor index
+                    int cn = nameCur_ < 0 ? 0 : (nameCur_ > nameLen_ ? nameLen_ : nameCur_);
+                    char pre[32]; memcpy(pre, nameBuf_, cn); pre[cn] = 0;
+                    const float cxx = txX + (cn > 0 ? fo->measure(pre, snap(13.0f)) : 0.0f) + snap(1.0f);
+                    flat(dev, cxx, ay + snap(7.0f), snap(2.0f), fH - snap(14.0f), C_ACCENTHI);
+                }
+                if (push_btn(dev, fo, mo, rClick, 934, px0 + fW + fGap, ay, okW, fH, tr("OK", "OK"), 0)) { editZoneName_ = -1; nameFocus_ = false; save_ui_config(); }
+            } else if (groupSel_ >= 0 && groupSel_ < C.guideGroupCount) {   // selected ZONE : Rename / Delete + permissions
+                GuideGroup& z = C.guideGroup[groupSel_];
+                const float halfg = (pxw - snap(8.0f)) * 0.5f;
+                if (push_btn(dev, fo, mo, rClick, 931, px0, ay, halfg, snap(24.0f), tr("Rename", "Renom."), 0)) {
+                    editZoneName_ = groupSel_; nameFocus_ = true;
+                    strncpy(nameBuf_, z.name, sizeof(nameBuf_) - 1); nameBuf_[sizeof(nameBuf_) - 1] = 0; nameLen_ = (int)strlen(nameBuf_); nameCur_ = nameLen_;
+                }
+                if (push_btn(dev, fo, mo, rClick, 932, px0 + halfg + snap(8.0f), ay, halfg, snap(24.0f), tr("Delete", "Suppr."), 1)) {
+                    for (int k = groupSel_; k < C.guideGroupCount - 1; ++k) C.guideGroup[k] = C.guideGroup[k + 1];
+                    --C.guideGroupCount; groupSel_ = -1; editZoneName_ = -1; nameFocus_ = false; save_ui_config();
+                }
+                ay += snap(30.0f);
+                const char* pl[ZPERM_COUNT] = { tr("Party", "Groupe"), tr("Alliance", "Alliance"), tr("Hub", "Hub") };
+                const float cwp = (pxw - snap(12.0f)) / 3.0f;
+                for (int k = 0; k < ZPERM_COUNT && groupSel_ >= 0 && groupSel_ < C.guideGroupCount; ++k) {
+                    const float cxp = px0 + k * (cwp + snap(6.0f)); const bool on = z.allow[k];
+                    const bool hov = inrect(mo, cxp, ay, cwp, snap(24.0f));
+                    vg(dev, cxp, ay, cwp, snap(24.0f), on ? 0xFF2E7A44 : (hov ? 0xF02A3548 : 0xF01E2838), on ? 0xFF1F5730 : 0xF0161E2C);
+                    outline(dev, cxp, ay, cwp, snap(24.0f), on ? 0xFF5ADC8A : C_BORDER);
+                    fo->begin(dev); fo->draw_c(dev, cxp + cwp * 0.5f, ay + snap(12.0f), pl[k], snap(10.0f), on ? 0xFFFFFFFF : C_MUTE, C_STROKE, 1.0f);
+                    if (hov && rClick) { z.allow[k] = !z.allow[k]; save_ui_config(); }
+                }
+            } else {
+                fo->begin(dev); fo->draw_lc(dev, px0, ay + snap(12.0f), pHint, snap(11.0f), C_MUTE, C_STROKE, 1.0f);
             }
         }
-        // VERTICAL reference markers : the LEFT [0] and RIGHT [1] edges of the native party window. Drag
-        // each handle horizontally onto the native side ; full-height line, saved on release.
-        {
-            const u32   vcol[2] = { 0xD24FE0C0, 0xD2FF8AD8 };   // left = teal, right = pink
-            const char* vlbl[2] = { "L", "R" };
-            const float defX[2] = { 0.42f, 0.56f };
-            const float vhw = snap(26.0f), vhh = snap(30.0f);
-            static int grabVert = -1;
-            if (!(mo && mo->down)) { if (grabVert >= 0) save_ui_config(); grabVert = -1; }   // released -> persist once
-            for (int i = 0; i < 2; ++i) {
-                const float lineX = snap((ui_config().partyRefX[i] >= 0.0f ? ui_config().partyRefX[i] : defX[i]) * sw);
-                const u32 c = vcol[i];
-                flat(dev, lineX - snap(3.0f), 0.0f, snap(6.0f), sh, (c & 0x00FFFFFF) | 0x1A000000);   // glow
-                flat(dev, lineX - snap(1.0f), 0.0f, snap(2.0f), sh, c);                                 // line
-                const float hx = lineX - vhw * 0.5f, hy = snap(120.0f) + (float)i * (vhh + snap(10.0f));
-                const bool hov = inrect(mo, hx, hy, vhw, vhh);
-                if (mo && mo->down && grabVert < 0 && hov) grabVert = i;
-                if (grabVert == i && mo) { float nx = mo->x / sw; nx = nx < 0.0f ? 0.0f : (nx > 1.0f ? 1.0f : nx); ui_config().partyRefX[i] = nx; }
-                drop_shadow(dev, hx, hy, vhw, vhh, snap(4.0f), 60);
-                const bool act = (grabVert == i || hov);
-                vg(dev, hx, hy, vhw, vhh, act ? ((c & 0x00FFFFFF) | 0xE8000000) : 0xF02A2230, 0xF0201820);
-                outline(dev, hx, hy, vhw, vhh, c);
-                fo->begin(dev); fo->draw_c(dev, lineX, hy + vhh * 0.5f, vlbl[i], snap(12.0f), 0xFFFFFFFF, C_STROKE, 1.0f);
-            }
-        }
-        // FOUR FIXED markers for the native ALLIANCE windows (their size does NOT change with member count) :
-        // alliance 1 top/bottom, alliance 2 top/bottom. Drag each onto the native alliance edge.
-        {
-            const u32   acol[4] = { 0xD2C090FF, 0xD2A060F0, 0xD2FFB060, 0xD2FF8A30 };   // A1 (TOP) purple, A2 (BOTTOM, near party) orange
-            const char* albl[4] = { "A1t", "A1b", "A2t", "A2b" };   // A1 = upper alliance, A2 = lower (just above the party)
-            const float adef[4] = { 0.34f, 0.42f, 0.48f, 0.56f };   // A1 on top, A2 below it
-            const float ahw = snap(64.0f), ahh = snap(24.0f), agap = snap(7.0f);
-            static int grabAlly = -1;
-            if (!(mo && mo->down)) { if (grabAlly >= 0) save_ui_config(); grabAlly = -1; }   // released -> persist once
-            for (int i = 0; i < 4; ++i) {
-                const float lineY = snap((ui_config().allyRefY[i] >= 0.0f ? ui_config().allyRefY[i] : adef[i]) * sh);
-                const u32 c = acol[i];
-                flat(dev, 0.0f, lineY - snap(3.0f), sw, snap(6.0f), (c & 0x00FFFFFF) | 0x1A000000);   // glow
-                flat(dev, 0.0f, lineY - snap(1.0f), sw, snap(2.0f), c);                                 // line
-                const float hx = snap(24.0f) + (float)i * (ahw + agap), hy = lineY - ahh * 0.5f;
-                const bool hov = inrect(mo, hx, hy, ahw, ahh);
-                if (mo && mo->down && grabAlly < 0 && hov) grabAlly = i;
-                if (grabAlly == i && mo) { float ny = mo->y / sh; ny = ny < 0.0f ? 0.0f : (ny > 1.0f ? 1.0f : ny); ui_config().allyRefY[i] = ny; }
-                drop_shadow(dev, hx, hy, ahw, ahh, snap(4.0f), 60);
-                const bool act = (grabAlly == i || hov);
-                vg(dev, hx, hy, ahw, ahh, act ? ((c & 0x00FFFFFF) | 0xE8000000) : 0xF02A2230, 0xF0201820);
-                outline(dev, hx, hy, ahw, ahh, c);
-                fo->begin(dev); fo->draw_c(dev, hx + ahw * 0.5f, lineY, albl[i], snap(11.0f), 0xFFFFFFFF, C_STROKE, 1.0f);
-            }
-        }
-        const float bw = snap(760.0f), bh = snap(46.0f), bx = snap((sw - bw) * 0.5f), by = snap(22.0f);
+        }   // end if (editShowLines_)
+        const float bw = snap(820.0f), bh = snap(46.0f), bx = snap((sw - bw) * 0.5f), by = snap(22.0f);
         const float pop = ease(900, 1.0f, 16.0f);                                   // subtle slide-in
         const float byA = by - (1.0f - pop) * snap(10.0f);
         shadow_down(dev, bx - snap(4.0f), byA + bh, bw + snap(8.0f), snap(10.0f), 0x55000000);
@@ -682,11 +889,27 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         outline(dev, bx, byA, bw, bh, C_BORDERHI);
         fo->begin(dev);
         fo->draw_lc(dev, bx + snap(16.0f), byA + bh * 0.5f, tr("EDIT LAYOUT  |  drag,  wheel = size", "ÉDITION  |  glisser,  molette = taille"), snap(14.0f), C_TEXT, C_STROKE, 1.0f);
+        const bool tbClick = click && editConfirm_ == 0;   // while the confirm modal is up the toolbar is inert
         const float bh2 = snap(30.0f), dby = byA + (bh - bh2) * 0.5f;
-        const float db = snap(80.0f), dbx = bx + bw - db - snap(10.0f);             // Done (far right)
-        const float rb = snap(90.0f), rbx = dbx - rb - snap(8.0f);                  // Default (left of Done)
-        const float sb = snap(120.0f), sbx = rbx - sb - snap(8.0f);                 // Set Ref (left of Default)
-        // Clear line : remove the reference line -> no mask, the party box is just its natural footprint.
+        const float db = snap(80.0f),  dbx = bx + bw - db - snap(10.0f);            // Done (far right)
+        const float rb = snap(90.0f),  rbx = dbx - rb - snap(8.0f);                 // Default
+        const float sb = snap(120.0f), sbx = rbx - sb - snap(8.0f);                 // Clear lines
+        const float lb = snap(104.0f), lbx = sbx - lb - snap(8.0f);                 // Rules on/off toggle
+        // RULES toggle : show / hide the reference lines. While ON the HUD boxes are hidden (hud.cpp) so only
+        // the rules + this toolbar show -- align each line onto the game's native window, then toggle OFF to
+        // go back to dragging/resizing the boxes.
+        {
+            const bool hov = inrect(mo, lbx, dby, lb, bh2);
+            const float t = ease(904, (editShowLines_ || hov) ? 1.0f : 0.0f);
+            halo(dev, lbx, dby, lb, bh2, C_ACCENT, t * 0.8f);
+            vg(dev, lbx, dby, lb, bh2, lerpc(0xFF2A3548, 0xFF3A82E0, t), lerpc(0xFF1D2738, 0xFF2A61B6, t));
+            outline(dev, lbx, dby, lb, bh2, lerpc(C_BORDERHI, C_ACCENTHI, t));
+            fo->begin(dev); fo->draw_c(dev, lbx + lb * 0.5f, dby + bh2 * 0.5f,
+                                       editShowLines_ ? tr("Rules: ON", "Règles: ON") : tr("Rules: OFF", "Règles: OFF"),
+                                       snap(13.0f), C_TEXT, C_STROKE, 1.0f);
+            if (hov && tbClick) editShowLines_ = !editShowLines_;
+        }
+        // Clear lines : wipe every reference line back to default -> asks to confirm first.
         bool refSet = ui_config().partyBottomY >= 0.0f || ui_config().partyRefX[0] >= 0.0f || ui_config().partyRefX[1] >= 0.0f;
         for (int i = 0; i < 6; ++i) if (ui_config().partyRef[i] >= 0.0f) refSet = true;
         for (int i = 0; i < 4; ++i) if (ui_config().allyRefY[i] >= 0.0f) refSet = true;
@@ -697,10 +920,38 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             vg(dev, sbx, dby, sb, bh2, lerpc(0xFF2A3548, 0xFF3A82E0, t), lerpc(0xFF1D2738, 0xFF2A61B6, t));
             outline(dev, sbx, dby, sb, bh2, lerpc(C_BORDERHI, C_ACCENTHI, t));
             fo->begin(dev); fo->draw_c(dev, sbx + sb * 0.5f, dby + bh2 * 0.5f, tr("Clear lines", "Effacer lignes"), snap(13.0f), refSet ? C_TEXT : C_MUTE, C_STROKE, 1.0f);
-            if (shv && click) { for (int i = 0; i < 6; ++i) ui_config().partyRef[i] = -1.0f; for (int i = 0; i < 4; ++i) ui_config().allyRefY[i] = -1.0f; ui_config().partyBottomY = -1.0f; ui_config().partyRefX[0] = ui_config().partyRefX[1] = -1.0f; save_ui_config(); }
+            if (shv && tbClick) editConfirm_ = 1;   // -> confirmation modal
         }
-        if (push_btn(dev, fo, mo, click, 902, rbx, dby, rb, bh2, tr("Default", "Défaut"), 1)) reset_boxes();
-        if (push_btn(dev, fo, mo, click, 903, dbx, dby, db, bh2, tr("Done", "Terminé"), 0)) { ui_config().editLayout = false; save_ui_config(); }
+        if (push_btn(dev, fo, mo, tbClick, 902, rbx, dby, rb, bh2, tr("Default", "Défaut"), 1)) editConfirm_ = 2;   // -> confirm
+        if (push_btn(dev, fo, mo, tbClick, 903, dbx, dby, db, bh2, tr("Done", "Terminé"), 0)) { ui_config().editLayout = false; editShowLines_ = false; editZoneName_ = -1; nameFocus_ = false; groupSel_ = -1; save_ui_config(); }
+
+        // CONFIRMATION dialog for the destructive actions (Clear lines / Default), drawn on top and capturing input.
+        if (editConfirm_ != 0) {
+            flat(dev, 0.0f, 0.0f, sw, sh, 0x99000000);                              // dim the screen behind the dialog
+            const float mw = snap(440.0f), mh = snap(170.0f), mx = snap((sw - mw) * 0.5f), my = snap((sh - mh) * 0.5f);
+            shadow_down(dev, mx - snap(4.0f), my + mh, mw + snap(8.0f), snap(12.0f), 0x66000000);
+            vg(dev, mx, my, mw, mh, 0xF0202B3C, 0xF0141C28);
+            flat(dev, mx, my, mw, 1, 0x55FFFFFF);                                    // top sheen
+            outline(dev, mx, my, mw, mh, C_BORDERHI);
+            fo->begin(dev); fo->draw_c(dev, mx + mw * 0.5f, my + snap(34.0f), tr("Please confirm", "Confirmation"), snap(13.0f), C_GOLD, C_STROKE, 1.2f);
+            const char* msg = (editConfirm_ == 1) ? tr("Clear all reference lines?", "Effacer toutes les lignes de repère ?")
+                                                  : tr("Reset all boxes to default?", "Réinitialiser toutes les boîtes ?");
+            fo->begin(dev); fo->draw_c(dev, mx + mw * 0.5f, my + snap(74.0f), msg, snap(15.0f), C_TEXT, C_STROKE, 1.0f);
+            const float pbw = snap(160.0f), pbh = snap(34.0f), pby = my + mh - pbh - snap(20.0f);
+            const float clx = mx + snap(30.0f), crx = mx + mw - pbw - snap(30.0f);
+            if (push_btn(dev, fo, mo, click, 910, clx, pby, pbw, pbh, tr("Cancel", "Annuler"), 0)) editConfirm_ = 0;
+            if (push_btn(dev, fo, mo, click, 911, crx, pby, pbw, pbh, tr("Confirm", "Confirmer"), 1)) {
+                if (editConfirm_ == 1) {   // clear every reference line
+                    for (int i = 0; i < 6; ++i) ui_config().partyRef[i] = -1.0f;
+                    for (int i = 0; i < 4; ++i) ui_config().allyRefY[i] = -1.0f;
+                    ui_config().partyBottomY = -1.0f; ui_config().partyRefX[0] = ui_config().partyRefX[1] = -1.0f;
+                    save_ui_config();
+                } else if (editConfirm_ == 2) {   // reset every box position + size
+                    reset_boxes();
+                }
+                editConfirm_ = 0;
+            }
+        }
         // (no custom cursor : the game/OS already shows one -> avoid a double pointer)
         return;
     }

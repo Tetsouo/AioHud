@@ -41,7 +41,7 @@ bool read_target(TargetInfo& out);
 // the in-game action menu : returns true while the highlighted entry is a spell / job ability /
 // weapon skill, with type (1=spell, 2=job ability, 3=weapon skill) and the action id. Identifies the
 // menu by its static inline name at def+0x4E (zero-tap, no cursor move). Drives the info box.
-bool read_action_menu(int& type, unsigned& id);
+bool read_action_menu(int& type, unsigned& id, unsigned& cursor, bool& examValid);
 
 // remaining recast (seconds, 0 = ready) for a job-ability recast_id, read from the client's 32-slot
 // recast table (g+0x22C timers / g+0x230 ids) -- the menu's exact "Next". recast_id from abilities_gen.h.
