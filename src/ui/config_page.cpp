@@ -147,18 +147,25 @@ static void halo(u32 dev, float x, float y, float w, float h, u32 col, float t) 
     soft_blob(dev, cx, cy, hw + snap(12.0f), hh + snap(12.0f), rgb | ((u32)(58.0f * t) << 24));   // mid bloom
     soft_blob(dev, cx, cy, hw + snap(5.0f),  hh + snap(5.0f),  rgb | ((u32)(72.0f * t) << 24));   // bright core
 }
-// RECTANGULAR accent glow BEHIND a rectangular element (draw before it) : additive concentric rects that
-// peek out around the shape -> a shape-matched glow for the square buttons (not a round blob).
+// accent glow BEHIND a (rounded) rectangular element (draw before it) : two SMOOTH feathered bands that
+// hug the rounded silhouette -> a clean luminous halo that pulses without visible banding / coarse steps.
 static void halo_rect(u32 dev, float x, float y, float w, float h, u32 col, float t) {
     if (t <= 0.01f) return;
     t = clampf(t, 0.0f, 1.0f) * g_fade;
     const u32 rgb = col & 0x00FFFFFF;
+    const float r = snap(6.0f);
     cs_add(dev);
-    const float g1 = snap(9.0f), g2 = snap(5.0f), g3 = snap(2.0f);
-    u32 c1 = rgb | ((u32)(30.0f * t) << 24), c2 = rgb | ((u32)(46.0f * t) << 24), c3 = rgb | ((u32)(64.0f * t) << 24);
-    grad_quad(dev, x - g1, y - g1, w + 2 * g1, h + 2 * g1, c1, c1, c1, c1);   // wide soft base
-    grad_quad(dev, x - g2, y - g2, w + 2 * g2, h + 2 * g2, c2, c2, c2, c2);   // mid
-    grad_quad(dev, x - g3, y - g3, w + 2 * g3, h + 2 * g3, c3, c3, c3, c3);   // tight bright edge
+    rrect_glow(dev, x, y, w, h, r, rgb | ((u32)(38.0f * t) << 24), snap(10.0f));   // wide soft aura
+    rrect_glow(dev, x, y, w, h, r, rgb | ((u32)(64.0f * t) << 24), snap(3.5f));    // tight bright edge
+}
+// ROUND version of the accent glow (slider knob) : two feathered rings -> a clean circular halo.
+static void halo_round(u32 dev, float cx, float cy, float r, u32 col, float t) {
+    if (t <= 0.01f) return;
+    t = clampf(t, 0.0f, 1.0f) * g_fade;
+    const u32 rgb = col & 0x00FFFFFF;
+    cs_add(dev);
+    disc_glow(dev, cx, cy, r, rgb | ((u32)(44.0f * t) << 24), snap(11.0f));   // wide soft aura
+    disc_glow(dev, cx, cy, r, rgb | ((u32)(70.0f * t) << 24), snap(4.0f));    // tight bright edge
 }
 // a moving glass "shine" streak that sweeps across an element while hovered (additive, clipped to the
 // rect by clamping the band). amt = hover strength (0..1) ; tsec = wrapping seconds for the motion.
@@ -226,20 +233,11 @@ static void qfan(u32 dev, float cx, float cy, float r, float a0, float a1, u32 c
     }
 }
 static const float PI_ = 3.14159265f;
+// rounded fill -> the ANTI-ALIASED primitive (feathered corners, uniform at any size). Kept as a thin
+// wrapper so every existing call site (panels, tabs, sliders, row highlights) gets crisp corners for free.
 static void rrect_fill(u32 dev, float x, float y, float w, float h, float r, u32 top, u32 bot) {
-    if (w <= 0 || h <= 0) return;
-    if (r > w * 0.5f) r = w * 0.5f; if (r > h * 0.5f) r = h * 0.5f;
-    if (r < 1.0f) { vg(dev, x, y, w, h, top, bot); return; }
-    const u32 cT = lerpc(top, bot, r / h), cB = lerpc(top, bot, (h - r) / h);
-    vg(dev, x + r,     y,         w - 2 * r, r,         top, cT);   // top band
-    vg(dev, x + r,     y + h - r, w - 2 * r, r,         cB,  bot);  // bottom band
-    vg(dev, x,         y + r,     r,         h - 2 * r, cT,  cB);   // left band
-    vg(dev, x + w - r, y + r,     r,         h - 2 * r, cT,  cB);   // right band
-    vg(dev, x + r,     y + r,     w - 2 * r, h - 2 * r, cT,  cB);   // center
-    qfan(dev, x + r,     y + r,     r, PI_,        1.5f * PI_, top);   // TL
-    qfan(dev, x + w - r, y + r,     r, 1.5f * PI_, 2.0f * PI_, top);   // TR
-    qfan(dev, x + r,     y + h - r, r, 0.5f * PI_, PI_,        bot);   // BL
-    qfan(dev, x + w - r, y + h - r, r, 0.0f,       0.5f * PI_, bot);   // BR
+    cs(dev);
+    rrect(dev, x, y, w, h, r, fa(top), fa(bot));   // fa() : honour the panel's global fade-in alpha
 }
 // round the TOP corners only (tabs : the bottom melts into the body).
 static void rrect_top(u32 dev, float x, float y, float w, float h, float r, u32 top, u32 bot) {
@@ -282,7 +280,7 @@ static bool arrow_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int u
     const bool hov = inrect(mo, x, y, s, s);
     const float t = ease(uid, hov ? 1.0f : 0.0f);
     halo_rect(dev, x, y, s, s, C_ACCENT, t * 0.7f);
-    rpanel(dev, x, y, s, s, 0.0f, lerpc(C_CTL_T, 0x884E8FE0, t), lerpc(C_CTL_B, 0x6E2E63B4, t), lerpc(C_CTL_BR, C_ACCENTHI, t), snap(1.5f));   // RECTANGULAR stepper
+    rpanel(dev, x, y, s, s, snap(5.0f), lerpc(C_CTL_T, 0x884E8FE0, t), lerpc(C_CTL_B, 0x6E2E63B4, t), lerpc(C_CTL_BR, C_ACCENTHI, t), snap(1.5f));   // rounded stepper (AA corners)
     const int dir = (glyph[0] == '<') ? -1 : +1;
     chevron(dev, x + s * 0.5f, y + s * 0.5f, s * (0.62f + 0.06f * t), dir, lerpc(C_ARROW, C_GOLDHI, t));
     return hov && click;
@@ -374,7 +372,7 @@ static bool row_slider(u32 dev, Font* fo, const MouseState* mo, int id,
     const float kt = ease(40 + id, (hot || act) ? 1.0f : 0.0f);
     const float kr = knobR * (1.0f + 0.35f * kt);
     const float kx = trkX + fillW;
-    halo(dev, kx - kr, cy - kr, 2 * kr, 2 * kr, C_ACCENT, 0.4f + kt);
+    halo_round(dev, kx, cy, kr, C_ACCENT, 0.4f + kt);   // clean circular halo around the knob
     cs(dev);
     disc(dev, kx, cy, kr + snap(1.5f), fa(C_BORDERHI));                        // rim
     disc(dev, kx, cy, kr, fa(lerpc(0xFFCFE0F5, 0xFFFFFFFF, kt)));              // body
@@ -394,7 +392,7 @@ static bool toggle_chip(u32 dev, Font* fo, const MouseState* mo, bool click, int
     const u32 onT = 0xFF2E8C49, onB = 0xFF206030, offT = 0xFF552530, offB = 0xFF3A1820;
     u32 t = lerpc(offT, onT, st), b = lerpc(offB, onB, st);
     t = lerpc(t, lerpc(0xFF6E2E38, 0xFF3FA85A, st), ht * 0.6f);       // brighten on hover
-    rpanel(dev, x, y, w, h, 0.0f, t, b, lerpc(C_BORDER, C_BORDERHI, ht), snap(1.5f));   // RECTANGULAR (crisp corners, no rounded aliasing)
+    rpanel(dev, x, y, w, h, snap(6.0f), t, b, lerpc(C_BORDER, C_BORDERHI, ht), snap(1.5f));   // rounded chip (AA corners)
     // a little round state dot, left of the label : green when on, dim red when off
     const float dr = snap(4.0f), dx = x + snap(11.0f), dy = y + h * 0.5f;
     cs(dev); disc(dev, dx, dy, dr, fa(lerpc(0xFF7E3A42, 0xFF8CF2A8, st)));
@@ -415,7 +413,7 @@ static bool push_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int ui
     const float bx = x + pin, by = y + pin, bw = w - 2 * pin, bh = h - 2 * pin;
     drop_shadow(dev, bx, by, bw, bh, snap(4.0f), press ? 36 : 64);
     halo_rect(dev, bx, by, bw, bh, tone ? 0xFFE06868 : C_ACCENT, t * 0.8f);
-    rpanel(dev, bx, by, bw, bh, 0.0f, lerpc(idleT, hovT, t), lerpc(idleB, hovB, t), lerpc(C_BORDERHI, tone ? 0xFFE57078 : C_ACCENTHI, t), snap(1.5f));   // RECTANGULAR
+    rpanel(dev, bx, by, bw, bh, snap(6.0f), lerpc(idleT, hovT, t), lerpc(idleB, hovB, t), lerpc(C_BORDERHI, tone ? 0xFFE57078 : C_ACCENTHI, t), snap(1.5f));   // rounded (AA corners)
     vg(dev, bx + snap(2.0f), by + snap(2.0f), bw - snap(4.0f), bh * 0.42f, 0x33FFFFFF, 0x05FFFFFF);   // flat top sheen
     shine(dev, bx + snap(2.0f), by + snap(2.0f), bw - snap(4.0f), bh - snap(4.0f), t, g_t);   // glass sweep on hover
     fo->begin(dev); fo->draw_c(dev, x + w * 0.5f, y + h * 0.5f, label, snap(13.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
@@ -428,7 +426,7 @@ static bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int 
     const float h = snap(32.0f);
     const bool hov = inrect(mo, x, y, w, h);
     const float t = ease(uid, hov ? 1.0f : 0.0f);
-    rpanel(dev, x, y, w, h, 0.0f, lerpc(0x66182234, 0x88243A5C, t), lerpc(0x66101826, 0x88172C4E, t), lerpc(C_BORDERHI, C_ACCENT, t), snap(1.2f));
+    rpanel(dev, x, y, w, h, snap(5.0f), lerpc(0x66182234, 0x88243A5C, t), lerpc(0x66101826, 0x88172C4E, t), lerpc(C_BORDERHI, C_ACCENT, t), snap(1.2f));
     const float gx = x + snap(15.0f), gy = y + h * 0.5f, s = snap(4.0f);
     if (open) fill_tri(dev, gx - s, gy - s * 0.55f, gx + s, gy - s * 0.55f, gx, gy + s * 0.85f, fa(C_ACCENTHI));   // down triangle
     else      fill_tri(dev, gx - s * 0.55f, gy - s, gx - s * 0.55f, gy + s, gx + s * 0.85f, gy, fa(C_ACCENTHI));   // right triangle

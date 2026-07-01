@@ -565,6 +565,27 @@ static void gl_rrect(u32 dev, float x, float y, float w, float h, float r, u32 c
     gl_qfan(dev, x + w - r, y + h - r, r, 0.0f,        0.5f * PI, c);
 }
 
+// clip the 4 square corners of a rect into a rounded CAPSULE : fill each corner-minus-quarter-disc region
+// with `dark` (draw AFTER the liquid + glass, in the untextured colour state) so the tube reads as having
+// genuinely ROUND ends. Matches the dark rounded tube drawn behind -> seamless capsule.
+static void round_corners_dark(u32 dev, float x, float y, float w, float h, float r, u32 dark) {
+    const float PI = 3.14159265f; const int N = 6;
+    if (r > w * 0.5f) r = w * 0.5f; if (r > h * 0.5f) r = h * 0.5f; if (r < 1.0f) return;
+    const float vx[4] = { x,   x + w, x + w, x     };   // the real box corner
+    const float vy[4] = { y,   y,     y + h, y + h };
+    const float cx[4] = { x + r, x + w - r, x + w - r, x + r     };   // arc centre (inset)
+    const float cy[4] = { y + r, y + r,     y + h - r, y + h - r };
+    const float a0[4] = { PI, 1.5f * PI, 0.0f, 0.5f * PI };
+    for (int k = 0; k < 4; ++k) {
+        float px = cx[k] + r * cosf(a0[k]), py = cy[k] + r * sinf(a0[k]);
+        for (int i = 1; i <= N; ++i) {
+            float a = a0[k] + 0.5f * PI * (float)i / N, nx = cx[k] + r * cosf(a), ny = cy[k] + r * sinf(a);
+            fill_tri(dev, vx[k], vy[k], px, py, nx, ny, dark);
+            px = nx; py = ny;
+        }
+    }
+}
+
 // ---- shared provider : the HUD hands its LiquidBars here so party/help can borrow the real assets ----
 static LiquidBars* g_vialProvider = nullptr;
 void        set_vial_provider(LiquidBars* p) { g_vialProvider = p; }
@@ -602,6 +623,11 @@ void LiquidBars::draw_vial_scaled(u32 dev, float t, float x, float y, float w, f
             gl_rrect(dev, x - g, y - g, w + 2 * g, h + 2 * g, (h + 2 * g) * 0.32f, gcol);   // SAME rounded-rect glow as the Bars style
         }
     }
+
+    // dark ROUNDED tube behind the liquid (colour state still set from the glow block above) : gives the
+    // fiole genuinely round ends -- the empty part reads as an empty capsule, the liquid corners are masked
+    // back to this shape after the glass (round_corners_dark below).
+    rrect(dev, x, y, w, h, h * 0.5f, 0xFF141A2E, 0xFF0A0E1C);
 
     // --- full textured state (same block as LiquidBars::draw, so it survives the game's leftovers) ---
     dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
@@ -654,6 +680,14 @@ void LiquidBars::draw_vial_scaled(u32 dev, float t, float x, float y, float w, f
         u32 men = 0x40000000u | (scale_rgb(pal[1], 1.3f) & 0x00FFFFFF);
         surface_glow(dev, bx + fwi, by, bh, men);
     }
+
+    // ROUND ENDS : mask the liquid's square corners back to the dark rounded tube (same shape/colour as the
+    // backing) -> the fiole reads as a capsule with clean round ends over any background.
+    dSetVS(dev, FVF_XYZRHW_DIFFUSE); dSetTex(dev, 0, 0);
+    dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA); dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
+    round_corners_dark(dev, bx, by, bw, bh, bh * 0.5f, 0xFF0C1020);
 }
 
 } // namespace aio

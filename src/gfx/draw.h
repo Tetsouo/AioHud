@@ -48,4 +48,23 @@ void disc(u32 dev, float cx, float cy, float r, u32 col);
 // a filled TRIANGLE (3 corners), one solid colour -> selection arrow / chevrons.
 void fill_tri(u32 dev, float x0, float y0, float x1, float y1, float x2, float y2, u32 col);
 
+// an ANTI-ALIASED rounded rectangle : vertical-gradient fill (cTop..cBot) with a feathered outer rim
+// (alpha 0 at edge+`feather`), so the four rounded corners are CRISP at any size/radius/tint -- no texture.
+// Same recipe as disc() (solid core + feathered ring). Corners are uniform because every corner shares the
+// SAME arc segment count + feather width. `feather` in px (0 = hard edge). Radius clamps to min(w,h)/2.
+void rrect(u32 dev, float x, float y, float w, float h, float r, u32 cTop, u32 cBot, float feather = 1.2f);
+
+// AA rounded rect with a border : draws a `bt`-px border ring in `border`, then the inner fill on top.
+void rrect_bordered(u32 dev, float x, float y, float w, float h, float r,
+                    u32 cTop, u32 cBot, u32 border, float bt, float feather = 1.2f);
+
+// a SMOOTH glow that hugs a rounded-rect silhouette : one feathered band per edge/corner from the path
+// (peak = `col` alpha) fading LINEARLY to 0 at path+`glowW`. No interior fill, no concentric bands. Draw
+// under ADDITIVE blend (SRCALPHA/ONE) for a clean luminous halo behind a button. Uniform corners.
+void rrect_glow(u32 dev, float x, float y, float w, float h, float r, u32 col, float glowW);
+
+// a SMOOTH round glow : a feathered ring from radius r (peak = `col` alpha) fading to 0 at r+`glowW`.
+// Draw under ADDITIVE blend for a clean circular halo (e.g. behind a slider knob). No banding.
+void disc_glow(u32 dev, float cx, float cy, float r, u32 col, float glowW);
+
 } // namespace aio

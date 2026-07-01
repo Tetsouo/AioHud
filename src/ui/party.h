@@ -94,13 +94,16 @@ private:
     float castSz()   const { return nameSz_  * 1.0f; }
     float badgeW()   const { return ui_config().jobBadge[tcfg()] == 0 ? 0.0f : (badgeSz_ * 1.9f * ui_config().text[TE_BADGE].size + 8.0f); }   // 0 = off -> column collapses ; grows with the badge text size
     float badgeH()   const { int m = ui_config().jobBadge[tcfg()]; float s = ui_config().text[TE_BADGE].size; return m == 0 ? 0.0f : (m == 1 ? badgeSz_ * s + 4.0f : (badgeSz_ + subSz()) * s + 4.0f); }   // grows with the badge text size
-    // ~4-digit value : grows with the LARGEST of the HP/MP/TP value text sizes so the box makes room instead
-    // of the number overflowing the gauge, and stays width-scalable per box.
+    // base cell fits ~4 digits at 100% WITH slack, so a bigger value text first uses that slack ; the gauge
+    // only widens once the number at its size would actually exceed the cell (not immediately above 100%).
     float gaugeW()   const {
         float vm = ui_config().text[TE_HP].size;
         if (ui_config().text[TE_MP].size > vm) vm = ui_config().text[TE_MP].size;
         if (ui_config().text[TE_TP].size > vm) vm = ui_config().text[TE_TP].size;
-        return (barSz_ * 2.6f * vm + 6.0f) * ui_config().barWidth[tcfg()];
+        float cell = barSz_ * 2.6f;                 // base cell (4 digits + slack)
+        float need = barSz_ * 2.25f * vm;           // 4-digit width at the value size
+        if (need > cell) cell = need;               // grow ONLY past the slack
+        return (cell + 6.0f) * ui_config().barWidth[tcfg()];
     }
     // round styles (Sphere/Ring/Crystal = 4/5/6) use a SQUARE cell so the disc is big enough to hold the
     // value -> the row grows to fit. Vial/Bars/Segments/Minimal/Text keep the flat height.

@@ -189,17 +189,7 @@ static void qfan(u32 dev, float cx, float cy, float r, float a0, float a1, u32 c
     }
 }
 static void rrnd(u32 dev, float x, float y, float w, float h, float r, u32 c) {   // rounded on all 4 corners
-    if (r > w * 0.5f) r = w * 0.5f; if (r > h * 0.5f) r = h * 0.5f;
-    if (r < 1.0f) { grad_quad(dev, x, y, w, h, c, c, c, c); return; }
-    grad_quad(dev, x + r, y,         w - 2 * r, r,         c, c, c, c);   // top band
-    grad_quad(dev, x + r, y + h - r, w - 2 * r, r,         c, c, c, c);   // bottom band
-    grad_quad(dev, x,     y + r,     r,         h - 2 * r, c, c, c, c);   // left band
-    grad_quad(dev, x + w - r, y + r, r,         h - 2 * r, c, c, c, c);   // right band
-    grad_quad(dev, x + r, y + r,     w - 2 * r, h - 2 * r, c, c, c, c);   // centre
-    qfan(dev, x + r,     y + r,     r, GPI,         1.5f * GPI, c);   // TL
-    qfan(dev, x + w - r, y + r,     r, 1.5f * GPI,  2.0f * GPI, c);   // TR
-    qfan(dev, x + r,     y + h - r, r, 0.5f * GPI,  GPI,        c);   // BL
-    qfan(dev, x + w - r, y + h - r, r, 0.0f,        0.5f * GPI, c);   // BR
+    rrect(dev, x, y, w, h, r, c, c);   // ANTI-ALIASED (feathered corners) -> clean rims on tracks / cells / bars
 }
 static void rrnd_l(u32 dev, float x, float y, float w, float h, float r, u32 c) {   // rounded LEFT only (flat right = level)
     if (r > h * 0.5f) r = h * 0.5f; if (r > w * 0.5f) r = w * 0.5f;
@@ -472,29 +462,28 @@ void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32
         }
     }
     const float cyc = gy + gh * 0.5f;
-    float r = gh * 0.24f;                                 // gentle corner radius
+    float r = gh * 0.5f;                                  // full capsule -> genuinely ROUND ends
 
     gauge_aura_soft(dev, gx, gy, gw, gh, col, t, pulse, danger);   // adapted glow : soft radial, no box frame
 
-    // track : OPAQUE rounded rim + recessed bg (clean corners) + subtle inner shading
+    // track : OPAQUE rounded rim + recessed bg (clean AA corners) + subtle inner shading
     rrnd(dev, gx, gy, gw, gh, r, 0xFF243150);                          // rim
     rrnd(dev, gx + 1, gy + 1, gw - 2, gh - 2, r - 1.0f, 0xFF0A0E1C);   // dark recessed bg
-    vgrad(dev, gx + r, gy + 2, gw - 2 * r, gh - 3, 0xFF0F1525, 0xFF05080F);   // vertical depth in the middle
+    if (gw > 2.0f * r) vgrad(dev, gx + r, gy + 2, gw - 2 * r, gh - 3, 0xFF0F1525, 0xFF05080F);   // vertical depth in the middle
 
-    // liquid fill : rounded on BOTH ends (a capsule that grows) -> the right matches the rounded track
-    // when full, and shows a clean rounded cap at the level when partial. All OPAQUE -> clean corners.
+    // liquid fill : a rounded CAPSULE that grows -> the right matches the rounded track when full, and shows
+    // a clean rounded cap at the level when partial. All OPAQUE + AA (rrect) -> clean round ends.
     const float innerW = gw - 2.0f, fillW = innerW * pct / 100.0f, fh = gh - 2.0f;
     if (fillW >= 1.0f) {
         float b = 1.0f + 0.34f * pulse * sinf(t * 9.4f);
         u32 c = scl(col, b > 1.6f ? 1.6f : (b < 0.5f ? 0.5f : b));
-        const float fx = gx + 1, fy = gy + 1;                          // RECTANGULAR liquid fill (straight edges) inside the rounded track
-        vgrad(dev, fx, fy,             fillW, fh * 0.5f, lt(c, 0.22f), c);          // top half : lighter to base
-        vgrad(dev, fx, fy + fh * 0.5f, fillW, fh * 0.5f, c, scl(c, 0.6f));          // bottom half : base to darker
-        vgrad(dev, fx, fy,             fillW, fh * 0.46f, 0x66FFFFFF, 0x00FFFFFF);  // glass gloss on top
+        const float fx = gx + 1, fy = gy + 1, fr = r - 1.0f;
+        rrect(dev, fx, fy, fillW, fh, fr, lt(c, 0.22f), scl(c, 0.6f));                     // rounded body : light top -> dark bottom
+        if (fillW > 2.0f * fr) vgrad(dev, fx + fr, fy, fillW - 2.0f * fr, fh * 0.46f, 0x66FFFFFF, 0x00FFFFFF);   // gloss, inset to stay inside the round ends
         if (danger > 0.0f) {                                          // red wash so the fill visibly blinks
             float dl = 0.5f + 0.5f * sinf(t * 7.5f);
             u32 dw = 0x00FF1E1E | ((u32)(dl * danger * 0.55f * 255) << 24);
-            grad_quad(dev, fx, fy, fillW, fh, dw, dw, dw, dw);
+            rrect(dev, fx, fy, fillW, fh, fr, dw, dw);                                     // rounded red wash
         }
         if (fillW < innerW - 0.5f) level_line_v(dev, fx + fillW, fy, fh, col);   // fiole-style level line at the fill edge
     }
@@ -1138,12 +1127,13 @@ void Party::draw(const Frame& f) {
     const bool drawBorder = ui_config().border[tier_];
     if (f.skin && f.skin->ready()) {                            // FFXI native window skin (9-slice) : bg always, frame optional
         draw_window(dev, *f.skin, px, boxOy, w, boxH, 0xFFFFFFFF, S, false, drawBorder);
-    } else {                                                    // fallback : the built-in navy chrome
+    } else {                                                    // fallback : the built-in navy chrome (AA rounded)
+        const float R = snap(6.0f);
         if (drawBorder)
-            grad_quad(dev, px - 1, boxOy - 1, w + 2, boxH + 2, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF);  // outer glow edge (the border)
-        vgrad(dev, px, boxOy, w, boxH, 0xFF232E54, 0xFF080B1A);     // deeper opaque main fill (background)
-        vgrad(dev, px, boxOy, w, 3 * S, 0x4DBFD8FF, 0x00BFD8FF);    // top sheen
-        vgrad(dev, px, boxOy + boxH - 4 * S, w, 4 * S, 0x00000000, 0x40000000);   // bottom vignette
+            rrect(dev, px - 1, boxOy - 1, w + 2, boxH + 2, R + 1.0f, 0x6699BBFF, 0x6699BBFF);   // outer glow edge (the border)
+        rrect(dev, px, boxOy, w, boxH, R, 0xFF232E54, 0xFF080B1A);          // deeper opaque main fill (background)
+        vgrad(dev, px + R, boxOy, w - 2 * R, 3 * S, 0x4DBFD8FF, 0x00BFD8FF);            // top sheen (inset to stay in the rounded corners)
+        vgrad(dev, px + R, boxOy + boxH - 4 * S, w - 2 * R, 4 * S, 0x00000000, 0x40000000);   // bottom vignette
     }
 
     // (the wide divider band between the two alliance boxes was removed -- they now stack flush.)
@@ -1152,6 +1142,8 @@ void Party::draw(const Frame& f) {
     for (int i = 0; i < n; ++i) {
         const Row& r = rows[i];
         const float ry = oy + pad + i * rowpit;
+        setup_color_state(dev);   // reset : the PREVIOUS row's gauge (esp. the textured Fiole) leaves the device
+                                  // in a textured/additive state -> without this the badge renders additively (bright glow)
         // FULL row background, alternating shades (Excel cells). DISABLED for now (kept for later) --
         // toggle kRowCells to re-enable. It was hiding the FFXI window-skin background.
         static const bool kRowCells = false;
@@ -1163,11 +1155,7 @@ void Party::draw(const Frame& f) {
         const float bcx = ibx + bw * 0.5f, bcy = iby + bh * 0.5f, pbw = bw, pbh = bh;
         const float pbx = snap(bcx - pbw * 0.5f), pby = snap(bcy - pbh * 0.5f);
         const u32 rb = (r.role & 0x00FFFFFF) | 0xD0000000;
-        vgrad(dev, pbx, pby, pbw, pbh, 0xF0161D33, 0xF00A0E1C);
-        grad_quad(dev, pbx,           pby,           pbw,  1.0f, rb, rb, rb, rb);   // top
-        grad_quad(dev, pbx,           pby + pbh - 1, pbw,  1.0f, rb, rb, rb, rb);   // bottom
-        grad_quad(dev, pbx,           pby,           1.0f, pbh,  rb, rb, rb, rb);   // left
-        grad_quad(dev, pbx + pbw - 1, pby,           1.0f, pbh,  rb, rb, rb, rb);   // right
+        rrect_bordered(dev, pbx, pby, pbw, pbh, snap(3.0f), 0xF0161D33, 0xF00A0E1C, rb, 1.0f);   // AA rounded badge : border + inner gradient
         }
 
         const float gy = ry + (mh - gh) * 0.5f;   // gauges centred on the MAIN BAND
