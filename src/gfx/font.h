@@ -54,7 +54,7 @@ public:
     void  on_device_lost();
     void  dispose();
 private:
-    static const int MAXF = 8;
+    static const int MAXF = 48;   // enough for cycling many faces x weights (a full pool falls back to f_[0])
     Font  f_[MAXF];
     char  face_[MAXF][64];
     int   wt_[MAXF];

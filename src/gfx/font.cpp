@@ -163,7 +163,30 @@ void FontManager::set_default(const char* face, int weight) {
     if (face && face[0]) lstrcpynA(defFace_, face, sizeof(defFace_));
     if (weight > 0) defWeight_ = weight;
 }
+// BUNDLED fonts : register every .ttf/.otf in assets\fonts as PRIVATE process fonts (AddFontResourceEx,
+// no system install / no admin needed). CreateFont then finds them by family name -> ship Roboto etc. with
+// the plugin and they work on any PC. Safe if the folder is missing (just registers nothing).
+static void register_bundled_fonts_once() {
+    static bool done = false; if (done) return; done = true;
+    const wchar_t* dir = L"D:\\Windower Tetsouo\\plugins\\_aiohud_re\\assets\\fonts\\";
+    wchar_t pat[600]; wsprintfW(pat, L"%s*.*", dir);
+    WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW(pat, &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        int L = lstrlenW(fd.cFileName);
+        if (L > 4) {
+            const wchar_t* ext = fd.cFileName + L - 4;
+            if (!lstrcmpiW(ext, L".ttf") || !lstrcmpiW(ext, L".otf") || !lstrcmpiW(ext, L".ttc")) {
+                wchar_t path[600]; wsprintfW(path, L"%s%s", dir, fd.cFileName);
+                AddFontResourceExW(path, FR_PRIVATE, 0);
+            }
+        }
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+}
+
 Font* FontManager::get(const char* face, int weight) {
+    register_bundled_fonts_once();
     const char* fc = (face && face[0]) ? face : defFace_;
     int w = weight > 0 ? weight : defWeight_;
     for (int i = 0; i < n_; ++i) if (wt_[i] == w && lstrcmpA(face_[i], fc) == 0) return &f_[i];
