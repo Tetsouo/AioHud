@@ -681,7 +681,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         const float tbh = snap(28.0f), rowH = snap(22.0f), stride = rowH + snap(3.0f);
         const bool  renaming = (editZoneName_ >= 0 && editZoneName_ < C.guideGroupCount);
         const bool  zoneSel = (groupSel_ >= 0 && groupSel_ < C.guideGroupCount);
-        const float actionsH = renaming ? snap(44.0f) : (zoneSel ? snap(66.0f) : snap(26.0f));
+        const float actionsH = renaming ? snap(44.0f) : (zoneSel ? snap(104.0f) : snap(26.0f));   // zone : Rename/Delete + permissions header + chips + keep-out note
         const int   visRows = C.guideGroupCount < 12 ? C.guideGroupCount : 12;
         const float listH = (C.guideGroupCount > 0) ? visRows * stride : 0.0f;
         const float newBtnRow = snap(38.0f);
@@ -868,17 +868,47 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             const float listRight = px0 + pxw - (sbVisible ? snap(10.0f) : 0.0f);
             if (overPanel && ui_config().wheel != 0) { guideScroll_ -= (float)ui_config().wheel * stride * 3.0f; ui_config().wheel = 0; }
             if (guideScroll_ < 0.0f) guideScroll_ = 0.0f; if (guideScroll_ > maxScroll) guideScroll_ = maxScroll;
+            static int dragRow = -1; static float dragStartY = 0.0f, dragOff = 0.0f; static bool dragMoved = false;
+            const float rw2 = listRight - px0;
             float ly = listTop - guideScroll_;
             for (int i = 0; i < C.guideGroupCount; ++i, ly += stride) {
                 if (ly < listTop || ly + rowH > listBot) continue;
+                if (dragRow == i && dragMoved) { vg(dev, px0, ly, rw2, rowH, 0xF0121A26, 0xF00C121C); outline(dev, px0, ly, rw2, rowH, C_BORDER); continue; }   // gap where the dragged row was
                 GuideGroup& z = C.guideGroup[i]; const bool sel = (groupSel_ == i);
-                const float rw2 = listRight - px0; const bool hov = inrect(mo, px0, ly, rw2, rowH);
+                const bool hov = inrect(mo, px0, ly, rw2, rowH);
                 vg(dev, px0, ly, rw2, rowH, sel ? 0xFF2C5AA0 : (hov ? 0xF02A3548 : 0xF01E2838), sel ? 0xFF20447E : 0xF0161E2C);
                 outline(dev, px0, ly, rw2, rowH, sel ? C_ACCENTHI : C_BORDER);
                 flat(dev, px0 + snap(4.0f), ly + rowH * 0.5f - snap(5.0f), snap(6.0f), snap(10.0f), GRP_COL[i % 8]);
                 char zl[28]; if (z.name[0]) sprintf(zl, "%s", z.name); else sprintf(zl, tr("Zone %d", "Zone %d"), i + 1);
                 fo->begin(dev); fo->draw_lc(dev, px0 + snap(16.0f), ly + rowH * 0.5f, zl, snap(11.0f), sel ? 0xFFFFFFFF : C_TEXT, C_STROKE, 1.0f);
-                if (hov && rClick) groupSel_ = i;
+                if (hov && rClick && dragRow < 0 && editConfirm_ == 0) { dragRow = i; dragStartY = mo->y; dragOff = mo->y - ly; dragMoved = false; groupSel_ = i; }   // press : select ; a drag then reorders
+            }
+            // DRAG-TO-REORDER : the picked row follows the mouse, a gold line shows the drop slot, release moves it.
+            if (dragRow >= 0 && mo) {
+                if (mo->down) {
+                    if (fabsf(mo->y - dragStartY) > 4.0f) dragMoved = true;
+                    if (dragMoved && dragRow < C.guideGroupCount) {
+                        int tgt = (int)((mo->y - (listTop - guideScroll_)) / stride); if (tgt < 0) tgt = 0; if (tgt >= C.guideGroupCount) tgt = C.guideGroupCount - 1;
+                        flat(dev, px0, listTop - guideScroll_ + tgt * stride - snap(1.0f), rw2, snap(2.0f), C_ACCENTHI);   // drop indicator
+                        float fy = mo->y - dragOff; if (fy < listTop) fy = listTop; if (fy + rowH > listBot) fy = listBot - rowH;   // floating row (clamped to the list)
+                        GuideGroup& z = C.guideGroup[dragRow];
+                        vg(dev, px0, fy, rw2, rowH, 0xFF3A6FC0, 0xFF244A88); outline(dev, px0, fy, rw2, rowH, C_ACCENTHI);
+                        flat(dev, px0 + snap(4.0f), fy + rowH * 0.5f - snap(5.0f), snap(6.0f), snap(10.0f), GRP_COL[dragRow % 8]);
+                        char zl[28]; if (z.name[0]) sprintf(zl, "%s", z.name); else sprintf(zl, tr("Zone %d", "Zone %d"), dragRow + 1);
+                        fo->begin(dev); fo->draw_lc(dev, px0 + snap(16.0f), fy + rowH * 0.5f, zl, snap(11.0f), 0xFFFFFFFF, C_STROKE, 1.0f);
+                    }
+                } else {
+                    if (dragMoved && dragRow < C.guideGroupCount) {
+                        int tgt = (int)((mo->y - (listTop - guideScroll_)) / stride); if (tgt < 0) tgt = 0; if (tgt >= C.guideGroupCount) tgt = C.guideGroupCount - 1;
+                        if (tgt != dragRow) {
+                            GuideGroup tmp = C.guideGroup[dragRow];
+                            if (tgt > dragRow) for (int k = dragRow; k < tgt; ++k) C.guideGroup[k] = C.guideGroup[k + 1];
+                            else               for (int k = dragRow; k > tgt; --k) C.guideGroup[k] = C.guideGroup[k - 1];
+                            C.guideGroup[tgt] = tmp; groupSel_ = tgt; save_ui_config();
+                        }
+                    }
+                    dragRow = -1; dragMoved = false;
+                }
             }
             if (sbVisible) {
                 const float sbw = snap(6.0f), sbx = px0 + pxw - sbw;
@@ -921,16 +951,24 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                     --C.guideGroupCount; groupSel_ = -1; editZoneName_ = -1; nameFocus_ = false; save_ui_config();
                 }
                 ay += snap(30.0f);
+                // header : make the chips unambiguous -> ON (green) = that box MAY sit over this zone.
+                fo->begin(dev);
+                fo->draw_lc(dev, px0, ay + snap(7.0f), tr("Boxes allowed to overlap this zone :", "Cadres autorisés à passer dessus :"), snap(10.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.0f);
+                ay += snap(19.0f);
                 const char* pl[ZPERM_COUNT] = { tr("Party", "Groupe"), tr("Alliance", "Alliance"), tr("Hub", "Hub") };
                 const float cwp = (pxw - snap(12.0f)) / 3.0f;
                 for (int k = 0; k < ZPERM_COUNT && groupSel_ >= 0 && groupSel_ < C.guideGroupCount; ++k) {
                     const float cxp = px0 + k * (cwp + snap(6.0f)); const bool on = z.allow[k];
                     const bool hov = inrect(mo, cxp, ay, cwp, snap(24.0f));
-                    vg(dev, cxp, ay, cwp, snap(24.0f), on ? 0xFF2E7A44 : (hov ? 0xF02A3548 : 0xF01E2838), on ? 0xFF1F5730 : 0xF0161E2C);
-                    outline(dev, cxp, ay, cwp, snap(24.0f), on ? 0xFF5ADC8A : C_BORDER);
-                    fo->begin(dev); fo->draw_c(dev, cxp + cwp * 0.5f, ay + snap(12.0f), pl[k], snap(10.0f), on ? 0xFFFFFFFF : C_MUTE, C_STROKE, 1.0f);
+                    vg(dev, cxp, ay, cwp, snap(24.0f), on ? 0xFF2E7A44 : (hov ? 0xF04A2530 : 0xF0301A22), on ? 0xFF1F5730 : 0xF0221016);   // ON = green (allowed), OFF = faint red (blocked)
+                    outline(dev, cxp, ay, cwp, snap(24.0f), on ? 0xFF5ADC8A : 0xFF8A4450);
+                    fo->begin(dev); fo->draw_c(dev, cxp + cwp * 0.5f, ay + snap(12.0f), pl[k], snap(10.0f), on ? 0xFFFFFFFF : 0xFFC98A90, C_STROKE, 1.0f);
                     if (hov && rClick) { z.allow[k] = !z.allow[k]; save_ui_config(); }
                 }
+                ay += snap(28.0f);
+                const bool anyAllow = z.allow[0] || z.allow[1] || z.allow[2];
+                fo->begin(dev);
+                fo->draw_lc(dev, px0, ay + snap(6.0f), anyAllow ? tr("Others are pushed out.", "Les autres sont repoussés.") : tr("Keep-out : every box is pushed out.", "Zone interdite : tout cadre est repoussé."), snap(10.0f), anyAllow ? C_MUTE : 0xFFE79098, C_STROKE, 1.0f);
             } else {
                 fo->begin(dev); fo->draw_lc(dev, px0, ay + snap(12.0f), pHint, snap(11.0f), C_MUTE, C_STROKE, 1.0f);
             }
