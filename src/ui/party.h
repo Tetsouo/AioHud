@@ -73,6 +73,8 @@ private:
     bool icon_tried_ = false;                 // attempted to load icon_tex_ (don't retry the file every frame)
     u32 buff_tex_ = 0;                        // status-icon atlas (buffs drawn to the left of each party row)
     bool buff_tried_ = false;                 // attempted to load buff_tex_ (don't retry the file every frame)
+    u32 jobicon_tex_ = 0;                     // job-emblem atlas (white masks, tinted per role ; job badge "Icons" mode)
+    bool jobicon_tried_ = false;              // attempted to load jobicon_tex_
 
     static const int MAXM = 6;
     int count_ = 6;
@@ -92,8 +94,9 @@ private:
     // derived geometry (base px, pre-scale) -- box & badge adapt to their content:
     float subSz()    const { return badgeSz_ * 0.76f; }
     float castSz()   const { return nameSz_  * 1.0f; }
-    float badgeW()   const { return ui_config().jobBadge[tcfg()] == 0 ? 0.0f : (badgeSz_ * 1.9f * ui_config().text[TE_BADGE].size + 8.0f); }   // 0 = off -> column collapses ; grows with the badge text size
-    float badgeH()   const { int m = ui_config().jobBadge[tcfg()]; float s = ui_config().text[TE_BADGE].size; return m == 0 ? 0.0f : (m == 1 ? badgeSz_ * s + 4.0f : (badgeSz_ + subSz()) * s + 4.0f); }   // grows with the badge text size
+    float badgeW()   const { int m = ui_config().jobBadge[tcfg()]; float s = ui_config().text[TE_BADGE].size * badgeSc(); return m == 0 ? 0.0f : (m == 3 ? badgeSz_ * 2.1f * s + 6.0f : badgeSz_ * 1.9f * s + 8.0f); }   // 0 = off -> column collapses ; 3 = square icon ; grows with the badge text size * per-box Badge Size
+    float badgeH()   const { int m = ui_config().jobBadge[tcfg()]; float s = ui_config().text[TE_BADGE].size * badgeSc(); return m == 0 ? 0.0f : (m == 3 ? badgeSz_ * 2.1f * s + 6.0f : (m == 1 ? badgeSz_ * s + 4.0f : (badgeSz_ + subSz()) * s + 4.0f)); }   // 3 = square icon
+    float badgeSc()  const { float b = ui_config().badgeScale[tcfg()]; return b < 0.5f ? 0.5f : (b > 2.0f ? 2.0f : b); }   // per-box Badge Size % (0.50 .. 2.00)
     // base cell fits ~4 digits at 100% WITH slack, so a bigger value text first uses that slack ; the gauge
     // only widens once the number at its size would actually exceed the cell (not immediately above 100%).
     float gaugeW()   const {
@@ -123,12 +126,19 @@ private:
     // a FLOOR for the main band so they never touch ; when the distance is OFF only the pips need room ->
     // the floor drops and the row can be more compact.
     float marksColH() const { return distOn() ? (8.0f + badgeSz_ * 1.20f * ui_config().text[TE_DIST].size) : 8.0f; }
+    // BUFF strip (party only, left of the row) : the icon size is driven by the Buff Size % (0.40..2.00) off a
+    // stable base -> pushing it bigger GROWS the row height so the icons fit. The height ALWAYS reserves TWO
+    // rows so the party size stays constant whatever Max Buffs is (Max Buffs only caps the count shown). Base px.
+    float buffIconBase() const { float bf = ui_config().buffScale; if (bf < 0.40f) bf = 0.40f; if (bf > 2.0f) bf = 2.0f; return barSz_ * bf; }
+    int   buffRows()     const { return 2; }   // always 2 -> stable party height regardless of Max Buffs
+    float buffBandH()    const { return (float)buffRows() * buffIconBase() + (float)(buffRows() - 1) * 1.0f; }
     // MAIN BAND : height of the primary line where badge / name / gauges / distance / marks all centre
     // together (tallest of them). The cast/spell line sits BELOW this band.
     float mainBandH() const {
         float m = badgeH(); float v = gaugeH(); if (v > m) m = v;
         float n = nameSz_ * ui_config().text[TE_NAME].size + 2.0f; if (n > m) m = n;   // name grows with its text size
         float k = marksColH();   if (k > m) m = k;
+        if (tier_ == 0) { float b = buffBandH() + buffIconBase() * 0.6f; if (b > m) m = b; }   // party buffs GROW the row (+ margin so two-row buffs stay clear of the next player)
         return m;
     }
     // STABLE band height : mainBandH computed with the FLAT gauge height (ignores the round-style square-cell

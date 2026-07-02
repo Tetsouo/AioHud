@@ -273,16 +273,17 @@ static float badge(u32 dev, Font* fo, float x, float cy, const char* text, u32 a
     return w;
 }
 
-// a small square [<] / [>] stepper button with eased hover. uid = its animation slot.
+// a small square [<] / [>] stepper button. NO hover animation (per request) : the hover state is an
+// INSTANT tint only -- no eased spring, no halo glow, no glass sweep, no chevron pulse. uid kept for API
+// compatibility with the callers (unused now).
 static bool arrow_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
                       float x, float y, float s, const char* glyph) {
-    (void)fo;
+    (void)fo; (void)uid;
     const bool hov = inrect(mo, x, y, s, s);
-    const float t = ease(uid, hov ? 1.0f : 0.0f);
-    halo_rect(dev, x, y, s, s, C_ACCENT, t * 0.7f);
+    const float t = hov ? 1.0f : 0.0f;   // instant state (no ease -> no animation)
     rpanel(dev, x, y, s, s, snap(5.0f), lerpc(C_CTL_T, 0x884E8FE0, t), lerpc(C_CTL_B, 0x6E2E63B4, t), lerpc(C_CTL_BR, C_ACCENTHI, t), snap(1.5f));   // rounded stepper (AA corners)
     const int dir = (glyph[0] == '<') ? -1 : +1;
-    chevron(dev, x + s * 0.5f, y + s * 0.5f, s * (0.62f + 0.06f * t), dir, lerpc(C_ARROW, C_GOLDHI, t));
+    chevron(dev, x + s * 0.5f, y + s * 0.5f, s * 0.62f, dir, lerpc(C_ARROW, C_GOLDHI, t));   // fixed size (no pulse)
     return hov && click;
 }
 
@@ -392,7 +393,10 @@ static bool toggle_chip(u32 dev, Font* fo, const MouseState* mo, bool click, int
     const u32 onT = 0xFF2E8C49, onB = 0xFF206030, offT = 0xFF552530, offB = 0xFF3A1820;
     u32 t = lerpc(offT, onT, st), b = lerpc(offB, onB, st);
     t = lerpc(t, lerpc(0xFF6E2E38, 0xFF3FA85A, st), ht * 0.6f);       // brighten on hover
-    rpanel(dev, x, y, w, h, snap(6.0f), t, b, lerpc(C_BORDER, C_BORDERHI, ht), snap(1.5f));   // rounded chip (AA corners)
+    const u32 brOn = 0xFF6FE49A, brOff = 0xFFD86A72;                  // hover border reflects the STATE (green on / red off) like the halo
+    const u32 brHov = lerpc(brOff, brOn, st);
+    rpanel(dev, x, y, w, h, snap(6.0f), t, b, lerpc(C_BORDER, brHov, ht), snap(1.5f));   // rounded chip (AA corners) : border tints to the state colour on hover
+    shine(dev, x + snap(2.0f), y + snap(2.0f), w - snap(4.0f), h - snap(4.0f), ht, g_t);   // glass sweep on hover (same as the push buttons) ; the dot's cs() resets the blend after
     // a little round state dot, left of the label : green when on, dim red when off
     const float dr = snap(4.0f), dx = x + snap(11.0f), dy = y + h * 0.5f;
     cs(dev); disc(dev, dx, dy, dr, fa(lerpc(0xFF7E3A42, 0xFF8CF2A8, st)));
@@ -427,6 +431,8 @@ static bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int 
     const bool hov = inrect(mo, x, y, w, h);
     const float t = ease(uid, hov ? 1.0f : 0.0f);
     rpanel(dev, x, y, w, h, snap(5.0f), lerpc(0x66182234, 0x88243A5C, t), lerpc(0x66101826, 0x88172C4E, t), lerpc(C_BORDERHI, C_ACCENT, t), snap(1.2f));
+    shine(dev, x + snap(2.0f), y + snap(2.0f), w - snap(4.0f), h - snap(4.0f), t, g_t);   // glass sweep on hover (same as the push buttons)
+    cs(dev);                                                                              // reset the blend (shine leaves additive) before the caret triangle
     const float gx = x + snap(15.0f), gy = y + h * 0.5f, s = snap(4.0f);
     if (open) fill_tri(dev, gx - s, gy - s * 0.55f, gx + s, gy - s * 0.55f, gx, gy + s * 0.85f, fa(C_ACCENTHI));   // down triangle
     else      fill_tri(dev, gx - s * 0.55f, gy - s, gx - s * 0.55f, gy + s, gx + s * 0.85f, gy, fa(C_ACCENTHI));   // right triangle
@@ -493,8 +499,8 @@ static const HelpItem HELP_PA[] = {
     {2, "*MP* is blue. *TP* fills as it builds and lights up at 1000, which means a weapon skill is ready.",
         "Les *MP* sont bleus. Les *TP* se remplissent et s'illuminent à 1000, ce qui veut dire qu'une weapon skill est prête."},
     {13, "the TP gauge, live, glowing past 1000", "la jauge de TP en direct, brillant au-delà de 1000"},
-    {2, "*Buff icons* for your own *Party*, up to 20 in a row on the left. The game never sends *Alliance* buffs, so alliance members show none.",
-        "Des *icônes de buffs* pour ta propre *Party*, jusqu'à 20 en ligne à gauche. Le jeu n'envoie jamais les buffs d'*Alliance*, donc les membres d'alliance n'en ont pas."},
+    {2, "*Buff icons* for your own *Party*, on the left (up to 32, wrapping to two rows of 16). The game never sends *Alliance* buffs, so alliance members show none.",
+        "Des *icônes de buffs* pour ta propre *Party*, à gauche (jusqu'à 32, sur deux lignes de 16). Le jeu n'envoie jamais les buffs d'*Alliance*, donc les membres d'alliance n'en ont pas."},
 
     {0, "Leader and Quartermaster dots", "Pastilles Party Leader, Alliance Leader et Quartermaster"},
     {1, "Three little dots sit at the top of the left column, each in its own fixed slot so they never shuffle around. A slot stays empty when the member does not hold that role, and the dots fade in and out as roles change.",
@@ -1331,7 +1337,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         ROW_NEXT(46.0f)
         // Buff Size -> only the Party box shows buffs (the game doesn't send alliance buffs)
         if (T == 0) { ROW_BAND(52.0f)
-            const float lo = 0.40f, hi = 1.00f;
+            const float lo = 0.40f, hi = 2.00f;   // >100% makes buffs bigger AND grows the player row to fit
             char bzbuf[16]; sprintf(bzbuf, "%d%%", (int)(ui_config().buffScale * 100.0f + 0.5f));
             float v01 = (ui_config().buffScale - lo) / (hi - lo);
             if (row_slider(dev, fo, mo, 2, coX, ry + yo, ctrlW, tr("Buff Size", "Taille des buffs"), bzbuf, &v01)) {
@@ -1340,6 +1346,26 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                 ui_config().buffScale = v < lo ? lo : (v > hi ? hi : v);
             }
             ROW_NEXT(52.0f)
+            // Max Buffs : how many status icons per member. > 16 wraps to TWO rows (16 + 16), centred.
+            { ROW_BAND(40.0f)
+                static const int BM[] = { 16, 20, 24, 32 };
+                int idx = 0; for (int k = 0; k < 4; ++k) if (BM[k] == ui_config().buffMax) { idx = k; break; }
+                char bmv[28]; sprintf(bmv, "%d", BM[idx]);   // caps the count ; the party always reserves 2 buff rows
+                if (int d = row_selector(dev, fo, mo, click, 38, coX, ry + yo, ctrlW, tr("Max Buffs", "Buffs max"), bmv)) {
+                    idx = wrap(idx + d, 4); ui_config().buffMax = BM[idx]; save_ui_config(); }
+                ROW_NEXT(40.0f)
+            }
+            // Cursor Size : the selection hand (target arrow) size
+            { ROW_BAND(52.0f)
+                const float lo = 0.50f, hi = 2.00f;
+                char czbuf[16]; sprintf(czbuf, "%d%%", (int)(ui_config().cursorScale * 100.0f + 0.5f));
+                float v01 = (ui_config().cursorScale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+                if (row_slider(dev, fo, mo, 3, coX, ry + yo, ctrlW, tr("Cursor Size", "Taille du curseur"), czbuf, &v01)) {
+                    float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                    ui_config().cursorScale = v < lo ? lo : (v > hi ? hi : v);
+                }
+                ROW_NEXT(52.0f)
+            }
         }
         // Bar Height -> HP/MP/TP gauge height (the taller rows give the room ; rows grow past the badge)
         { ROW_BAND(46.0f)
@@ -1383,14 +1409,27 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             if (toggle_chip(dev, fo, mo, click, 92, bx0 + bbw + bgap, bty, bbw, bbh, ui_config().animTP ? tr("TP on", "TP oui") : tr("TP off", "TP non"), ui_config().animTP)) { ui_config().animTP = !ui_config().animTP; save_ui_config(); }
         }
         ROW_NEXT(52.0f)
-        // Job Badge : Off / Main job only / Main + Sub
+        // Job Badge : Off / Main job only / Main + Sub / Icon (job emblem tinted by role)
         { ROW_BAND(52.0f)
-            int m = ui_config().jobBadge[T]; if (m < 0 || m > 2) m = 2;
-            const char* jb[3] = { tr("Off", "Aucun"), tr("Main job", "Job principal"), tr("Main + Sub", "Principal + Sub") };
-            if (int d = row_selector(dev, fo, mo, click, 35, coX, ry + yo, ctrlW, tr("Job Badge", "Badge de job"), jb[m])) {
-                ui_config().jobBadge[T] = wrap(m + d, 3); save_ui_config(); }
+            int m = ui_config().jobBadge[T]; if (m < 0 || m > 3) m = 2;
+            const char* jb[4] = { tr("Off", "Aucun"), tr("Main job", "Job principal"), tr("Main + Sub", "Principal + Sub"), tr("Icons", "Icônes") };
+            if (int d = row_selector(dev, fo, mo, click, 33, coX, ry + yo, ctrlW, tr("Job Badge", "Badge de job"), jb[m])) {   // uid base 33 -> slots {33,34} ; Gauge Style uses {36,37} (each selector consumes uid+0/uid+1 -> never overlap)
+                ui_config().jobBadge[T] = wrap(m + d, 4); save_ui_config(); }
         }
         ROW_NEXT(52.0f)
+        // Badge Size -> job-badge box scale for THIS box (the row + box auto-fit around it). Hidden when the badge is Off.
+        if (ui_config().jobBadge[T] != 0) {
+          { ROW_BAND(46.0f)
+            const float lo = 0.50f, hi = 2.00f;
+            char gb[16]; sprintf(gb, "%d%%", (int)(ui_config().badgeScale[T] * 100.0f + 0.5f));
+            float v01 = (ui_config().badgeScale[T] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            if (row_slider(dev, fo, mo, 7, coX, ry + yo, ctrlW, tr("Badge Size", "Taille du badge"), gb, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().badgeScale[T] = v < lo ? lo : (v > hi ? hi : v);
+            }
+          }
+          ROW_NEXT(46.0f)
+        }
         // Casts : show the casting-spell line for THIS box
         { ROW_BAND(52.0f)
             const float rowH = snap(40.0f), ty = ry + yo;

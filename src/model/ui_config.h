@@ -50,9 +50,12 @@ struct UiConfig {
     int   skinTheme = 0;       // window-skin theme index (the Hud applies it -> all boxes)
     int   fontFace  = 0;       // 0 = layout default ; >0 = override every party/alliance text face
     float buffScale = 0.92f;   // buff-icon size as a FRACTION of the member row height (0.40 .. 1.00, capped at the row)
+    int   buffMax   = 20;      // max buff icons shown per member (config choice) ; > 16 wraps to TWO rows of 16
+    float cursorScale = 1.0f;  // selection-cursor (hand) size multiplier (0.50 .. 2.00)
     // ---- PER-BOX settings : index 0 = party, 1 = alliance 1, 2 = alliance 2 (independent) ----
     float barHeight[3] = { 1.0f, 1.0f, 1.0f };   // HP/MP/TP gauge HEIGHT scale, per box
     float barWidth[3]  = { 1.0f, 1.0f, 1.0f };   // HP/MP/TP gauge WIDTH scale, per box
+    float badgeScale[3] = { 1.0f, 1.0f, 1.0f };  // job-badge box SIZE scale, per box (0.50 .. 2.00)
     int   gaugeStyle[3] = { 0, 0, 0 };           // gauge look, per box (0 Vial, 1 Bars, 2 Segments, 3 Minimal, 4 Sphere, 5 Ring, 6 Crystal, 7 Text)
     int   jobBadge[3]  = { 2, 2, 2 };            // job badge, per box (0 = off, 1 = main only, 2 = main + sub)
     bool  cast[3]      = { true, true, true };   // show the casting-spell line, per box

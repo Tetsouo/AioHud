@@ -34,8 +34,11 @@ static void save_config_to(const char* path) {
     fprintf(f, "skinTheme=%d\n", c.skinTheme);
     fprintf(f, "fontFace=%d\n", c.fontFace);
     fprintf(f, "buffScale=%.4f\n", c.buffScale);
+    fprintf(f, "buffMax=%d\n", c.buffMax);
+    fprintf(f, "cursorScale=%.4f\n", c.cursorScale);
     fprintf(f, "barHeight=%.4f,%.4f,%.4f\n", c.barHeight[0], c.barHeight[1], c.barHeight[2]);
     fprintf(f, "barWidth=%.4f,%.4f,%.4f\n", c.barWidth[0], c.barWidth[1], c.barWidth[2]);
+    fprintf(f, "badgeScale=%.4f,%.4f,%.4f\n", c.badgeScale[0], c.badgeScale[1], c.badgeScale[2]);
     fprintf(f, "gaugeStyle=%d,%d,%d\n", c.gaugeStyle[0], c.gaugeStyle[1], c.gaugeStyle[2]);
     fprintf(f, "jobBadge=%d,%d,%d\n", c.jobBadge[0], c.jobBadge[1], c.jobBadge[2]);
     fprintf(f, "cast=%d,%d,%d\n", c.cast[0] ? 1 : 0, c.cast[1] ? 1 : 0, c.cast[2] ? 1 : 0);
@@ -71,10 +74,13 @@ static bool load_config_from(const char* path) {
         if      (sscanf(line, "skinTheme=%d", &v) == 1) c.skinTheme = v;
         else if (sscanf(line, "fontFace=%d", &v) == 1)  c.fontFace = v;
         else if (sscanf(line, "buffScale=%f", &fv) == 1) c.buffScale = fv;
+        else if (sscanf(line, "buffMax=%d", &v) == 1)    c.buffMax = v;
+        else if (sscanf(line, "cursorScale=%f", &fv) == 1) c.cursorScale = fv;
         else if (sscanf(line, "barHeight=%f,%f,%f", &fv, &f1, &f2) == 3) { c.barHeight[0] = fv; c.barHeight[1] = f1; c.barHeight[2] = f2; }
         else if (sscanf(line, "barHeight=%f", &fv) == 1) { c.barHeight[0] = c.barHeight[1] = c.barHeight[2] = fv; }   // old single value -> all boxes
         else if (sscanf(line, "barWidth=%f,%f,%f", &fv, &f1, &f2) == 3) { c.barWidth[0] = fv; c.barWidth[1] = f1; c.barWidth[2] = f2; }
         else if (sscanf(line, "barWidth=%f", &fv) == 1) { c.barWidth[0] = c.barWidth[1] = c.barWidth[2] = fv; }
+        else if (sscanf(line, "badgeScale=%f,%f,%f", &fv, &f1, &f2) == 3) { c.badgeScale[0] = fv; c.badgeScale[1] = f1; c.badgeScale[2] = f2; }
         else if (sscanf(line, "gaugeStyle=%d,%d,%d", &v, &v1, &v2) == 3) { c.gaugeStyle[0] = v; c.gaugeStyle[1] = v1; c.gaugeStyle[2] = v2; }
         else if (sscanf(line, "gaugeStyle=%d", &v) == 1) { c.gaugeStyle[0] = c.gaugeStyle[1] = c.gaugeStyle[2] = v; }
         else if (sscanf(line, "jobBadge=%d,%d,%d", &v, &v1, &v2) == 3) { c.jobBadge[0] = v; c.jobBadge[1] = v1; c.jobBadge[2] = v2; }
@@ -233,6 +239,8 @@ static UiConfig g_snap; static bool g_snapValid = false;
 static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.skinTheme != b.skinTheme || a.fontFace != b.fontFace) return false;
     if (a.buffScale != b.buffScale) return false;
+    if (a.buffMax != b.buffMax) return false;
+    if (a.cursorScale != b.cursorScale) return false;
     for (int i = 0; i < 6; ++i) if (a.partyRef[i] != b.partyRef[i]) return false;
     if (a.partyBottomY != b.partyBottomY) return false;
     if (a.partyRefX[0] != b.partyRefX[0] || a.partyRefX[1] != b.partyRefX[1]) return false;
@@ -246,7 +254,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
         for (int k = 0; k < ZPERM_COUNT; ++k) if (a.guideGroup[i].allow[k] != b.guideGroup[i].allow[k]) return false;
     }
     for (int k = 0; k < 3; ++k) {
-        if (a.barHeight[k] != b.barHeight[k] || a.barWidth[k] != b.barWidth[k]) return false;
+        if (a.barHeight[k] != b.barHeight[k] || a.barWidth[k] != b.barWidth[k] || a.badgeScale[k] != b.badgeScale[k]) return false;
         if (a.gaugeStyle[k] != b.gaugeStyle[k] || a.jobBadge[k] != b.jobBadge[k] || a.cast[k] != b.cast[k]) return false;
     }
     if (a.dist[0] != b.dist[0] || a.dist[1] != b.dist[1] || a.dist[2] != b.dist[2]) return false;
@@ -336,8 +344,8 @@ void guide_push_out(int perm, float sw, float sh, float& ex, float& ey, float ew
 
 void reset_ui_config() {   // general Default : everything
     UiConfig& c = ui_config();
-    c.skinTheme = 0; c.fontFace = 0; c.buffScale = 0.92f;
-    for (int k = 0; k < 3; ++k) { c.barHeight[k] = 1.0f; c.barWidth[k] = 1.0f; c.gaugeStyle[k] = 0; c.jobBadge[k] = 2; c.cast[k] = true; }
+    c.skinTheme = 0; c.fontFace = 0; c.buffScale = 0.92f; c.buffMax = 20; c.cursorScale = 1.0f;
+    for (int k = 0; k < 3; ++k) { c.barHeight[k] = 1.0f; c.barWidth[k] = 1.0f; c.badgeScale[k] = 1.0f; c.gaugeStyle[k] = 0; c.jobBadge[k] = 2; c.cast[k] = true; }
     c.dist[0] = c.dist[1] = c.dist[2] = true;
     c.border[0] = c.border[1] = c.border[2] = c.borderCost = true;   // all borders back on
     c.animHP = c.animTP = true;

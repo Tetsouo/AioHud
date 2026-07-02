@@ -42,6 +42,7 @@ const char* job_abbr(int id) { return (id >= 0 && id <= 23) ? JOBS[id] : ""; }
 
 static bool streq(const char* a, const char* b) { while (*a && *a == *b) { ++a; ++b; } return *a == *b; }
 static int  job_id(const char* a) { if (!a || !a[0]) return 0; for (int i = 1; i <= 23; ++i) if (streq(JOBS[i], a)) return i; return 0; }
+int job_id_from_abbr(const char* a) { return job_id(a); }   // public wrapper for the job-icon atlas lookup
 
 // Trust -> job table, ported from XivParty (jobs.lua jobs.trusts). The party member array
 // holds NO job for trusts, so we resolve it by internal name (matches the in-game name field,

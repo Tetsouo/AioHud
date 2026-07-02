@@ -300,7 +300,8 @@ static void level_line(u32 dev, float cx, float cy, float yFill, u32 col, float 
 static void level_line_v(u32 dev, float xFill, float yT, float h, u32 col) {
     if (h < 1.0f) return;
     const u32 c = (scl(col, 1.3f) & 0x00FFFFFF) | 0x4A000000, c0 = c & 0x00FFFFFF;   // like the fiole's `men` (moderate alpha)
-    grad_quad(dev, xFill - 6.0f, yT, 6.0f, h, 0x00000000, 0x5A000000, 0x00000000, 0x5A000000);   // dark thickness band (7px-ish)
+    // (no dark contrast band : it read as a black "gap" in the fluid on the flat-tipped bars ; the flat
+    //  coloured tip already IS the level, so only the additive coloured glow + bright core mark it)
     dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);                                       // additive WIDE coloured glow (6px each side)
     grad_quad(dev, xFill - 6.0f, yT, 6.0f, h, c0, c, c0, c);   // glow rising to the surface
     grad_quad(dev, xFill,        yT, 6.0f, h, c, c0, c, c0);   // glow falling past it
@@ -318,9 +319,12 @@ static void gauge_sphere(u32 dev, float gx, float gy, float gw, float gh, float 
     disc(dev, cx, cy, r,        0xFF0A0E1C);            // anti-aliased dark glass bulb
     if (pct > 0.0f) {
         const float rr = r - 0.5f;                       // liquid hugs the glass (just inside the AA rim)
-        const float yFill = cy + rr - 2.0f * rr * (pct / 100.0f);   // FIXED surface level -> the fill LIMIT never moves
+        const bool  full = pct >= 99.5f;                 // at full : fill the WHOLE dome, no surface line
+        // push the surface a hair ABOVE the top when full so the segment covers the entire bulb (no flat
+        // chord / shoulder gaps at the top) ; otherwise the fixed surface level for the partial fill.
+        const float yFill = full ? (cy - rr - 1.0f) : (cy + rr - 2.0f * rr * (pct / 100.0f));
         liquid_segment(dev, cx, cy, rr, yFill, col);     // smooth AA circular segment (no stepped edge)
-        level_line(dev, cx, cy, yFill, col, rr, 0);   // level line hugging the sphere (circle)
+        if (!full) level_line(dev, cx, cy, yFill, col, rr, 0);   // level line hugging the sphere (circle)
     }
     { u32 hi = 0x66FFFFFF; soft_blob(dev, cx - r * 0.34f, cy - r * 0.42f, r * 0.5f, r * 0.42f, hi); }  // top-left gloss
 }
@@ -431,8 +435,9 @@ static void gauge_minimal(u32 dev, float gx, float gy, float gw, float gh, float
     rrnd(dev, gx, y, gw, bh, r, 0xFF10182B);                       // track
     float fw = gw * (pct / 100.0f);
     if (fw > 1.0f) {
-        rrnd(dev, gx, y, fw, bh, r, col);
-        if (fw < gw - 1.0f) level_line_v(dev, gx + fw, y, bh, col);   // fiole-style level line
+        const bool full = fw >= gw - 1.0f;
+        if (full) rrnd(dev, gx, y, fw, bh, r, col);                   // full : rounded both ends (matches track)
+        else { rrect_left(dev, gx, y, fw, bh, r, col, col); level_line_v(dev, gx + fw, y, bh, col); }   // partial : flat tip for the level line
     }
 }
 
@@ -471,21 +476,23 @@ void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32
     rrnd(dev, gx + 1, gy + 1, gw - 2, gh - 2, r - 1.0f, 0xFF0A0E1C);   // dark recessed bg
     if (gw > 2.0f * r) vgrad(dev, gx + r, gy + 2, gw - 2 * r, gh - 3, 0xFF0F1525, 0xFF05080F);   // vertical depth in the middle
 
-    // liquid fill : a rounded CAPSULE that grows -> the right matches the rounded track when full, and shows
-    // a clean rounded cap at the level when partial. All OPAQUE + AA (rrect) -> clean round ends.
-    const float innerW = gw - 2.0f, fillW = innerW * pct / 100.0f, fh = gh - 2.0f;
+    // liquid fill : a rounded CAPSULE that grows, drawn EDGE-TO-EDGE (full height, over the rim) so the rim's
+    // 1px border never shows as a dark line across the top/bottom of the FLUID -- it stays only on the empty part.
+    const float innerW = gw, fillW = innerW * pct / 100.0f, fh = gh;
     if (fillW >= 1.0f) {
         float b = 1.0f + 0.34f * pulse * sinf(t * 9.4f);
         u32 c = scl(col, b > 1.6f ? 1.6f : (b < 0.5f ? 0.5f : b));
-        const float fx = gx + 1, fy = gy + 1, fr = r - 1.0f;
-        rrect(dev, fx, fy, fillW, fh, fr, lt(c, 0.22f), scl(c, 0.6f));                     // rounded body : light top -> dark bottom
-        if (fillW > 2.0f * fr) vgrad(dev, fx + fr, fy, fillW - 2.0f * fr, fh * 0.46f, 0x66FFFFFF, 0x00FFFFFF);   // gloss, inset to stay inside the round ends
+        const float fx = gx, fy = gy, fr = r;
+        const bool  full = fillW >= innerW - 0.5f;   // full : both ends rounded (matches the track) ; partial : FLAT right for the level line
+        if (full) rrect     (dev, fx, fy, fillW, fh, fr, lt(c, 0.22f), scl(c, 0.6f));      // rounded both ends
+        else      rrect_left(dev, fx, fy, fillW, fh, fr, lt(c, 0.22f), scl(c, 0.6f));      // rounded LEFT, flat right (the level)
+        if (fillW > 2.0f * fr) vgrad(dev, fx + fr, fy, fillW - 2.0f * fr, fh * 0.46f, 0x66FFFFFF, 0x00FFFFFF);   // gloss, inset to stay inside the round end
         if (danger > 0.0f) {                                          // red wash so the fill visibly blinks
             float dl = 0.5f + 0.5f * sinf(t * 7.5f);
             u32 dw = 0x00FF1E1E | ((u32)(dl * danger * 0.55f * 255) << 24);
-            rrect(dev, fx, fy, fillW, fh, fr, dw, dw);                                     // rounded red wash
+            if (full) rrect(dev, fx, fy, fillW, fh, fr, dw, dw); else rrect_left(dev, fx, fy, fillW, fh, fr, dw, dw);   // wash matches the shape
         }
-        if (fillW < innerW - 0.5f) level_line_v(dev, fx + fillW, fy, fh, col);   // fiole-style level line at the fill edge
+        if (!full) level_line_v(dev, fx + fillW, fy, fh, col);   // fiole-style level line at the FLAT tip
     }
 }
 
@@ -765,15 +772,43 @@ void Party::measure(float& w, float& h) const {
 }
 
 static const char* ICON_PATH = "D:\\Windower Tetsouo\\plugins\\_aiohud_re\\assets\\hand_cursor.raw";
+// job-emblem atlas (white masks, tinted per role) : 8 cols x 3 rows of 64px cells, in JOBS[1..22] order
+// (WAR = cell 0 ... RUN = cell 21). Built by the python step from ffxi_job_icons\*.png.
+static const char* JOBICON_PATH = "D:\\Windower Tetsouo\\plugins\\_aiohud_re\\assets\\job_icons.raw";
+static const int JI_W = 512, JI_H = 192, JI_CELL = 64, JI_COLS = 8;
+
+// draw one job emblem (white mask) at (x,y,sz) tinted by `tint` (role colour), from the atlas cell.
+// Leaves the device in textured state -> the caller's next gauge/party_gauge resets it.
+static void draw_job_icon(u32 dev, u32 tex, float x, float y, float sz, int cell, u32 tint) {
+    if (!tex || cell < 0) return;
+    dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
+    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1); dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA); dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    dSetTex(dev, 0, tex);
+    dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+    dSetTSS(dev, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MIPFILTER, D3DTEXF_LINEAR);
+    dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
+    const float au = (float)JI_CELL / (float)JI_W, av = (float)JI_CELL / (float)JI_H;
+    // crop the transparent margin baked into each cell (measured : >= 6px empty on every side of every job
+    // in JOBS[1..22]) so the emblem fills the badge instead of floating with air around it. 6/64 per side is
+    // the SAFE max -- more would clip the widest emblems (WAR/PLD/… have only ~6-7px side margin).
+    const float cr = 6.0f / (float)JI_CELL;                      // fractional crop per side
+    const float cu = au * cr, cv = av * cr;
+    const float u0 = (float)(cell % JI_COLS) * au + cu, u1 = (float)(cell % JI_COLS) * au + au - cu;
+    const float v0 = (float)(cell / JI_COLS) * av + cv, v1 = (float)(cell / JI_COLS) * av + av - cv;
+    tquad(dev, x, y, sz, sz, u0, u1, v0, v1, tint, tint);
+    dSetTex(dev, 0, 0);
+}
 
 void Party::ensure(u32 dev) {
     if (!valid_ptr(dev)) return;
     if (!dot_tex_) dot_tex_ = make_dot(dev);
     if (!icon_tex_ && !icon_tried_) { icon_tex_ = load_raw_texture(dev, ICON_PATH, 128, 128); icon_tried_ = true; }
     if (!buff_tex_ && !buff_tried_) { buff_tex_ = load_raw_texture(dev, BUFF_ATLAS_PATH, BATLAS_W, BATLAS_H); buff_tried_ = true; }
+    if (!jobicon_tex_ && !jobicon_tried_) { jobicon_tex_ = load_raw_texture(dev, JOBICON_PATH, JI_W, JI_H); jobicon_tried_ = true; }
 }
-void Party::on_device_lost() { dot_tex_ = 0; icon_tex_ = 0; icon_tried_ = false; buff_tex_ = 0; buff_tried_ = false; }   // forget (dead device), reload next ensure
-void Party::dispose() { release_texture(dot_tex_); dot_tex_ = 0; release_texture(icon_tex_); icon_tex_ = 0; icon_tried_ = false; release_texture(buff_tex_); buff_tex_ = 0; buff_tried_ = false; }
+void Party::on_device_lost() { dot_tex_ = 0; icon_tex_ = 0; icon_tried_ = false; buff_tex_ = 0; buff_tried_ = false; jobicon_tex_ = 0; jobicon_tried_ = false; }   // forget (dead device), reload next ensure
+void Party::dispose() { release_texture(dot_tex_); dot_tex_ = 0; release_texture(icon_tex_); icon_tex_ = 0; icon_tried_ = false; release_texture(buff_tex_); buff_tex_ = 0; buff_tried_ = false; release_texture(jobicon_tex_); jobicon_tex_ = 0; jobicon_tried_ = false; }
 
 // find the persisted animation slot for a member (or claim a free/stale one).
 Party::RowAnim* Party::anim_for(unsigned id) {
@@ -788,7 +823,7 @@ Party::RowAnim* Party::anim_for(unsigned id) {
 // 20), right-to-left from just left of the selection cursor. Atlas id -> cell (id%32, id/32).
 // A static helper (it iterates the file-local Row) -> keeps draw() focused. buffTex 0 = no-op.
 static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
-                              float px, float oy, float pad, float rowpit, float rowh, float S, float sizeH) {
+                              float px, float oy, float pad, float rowpit, float rowh, float S, float iconH) {
     if (!buffTex) return;
     dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
     dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
@@ -800,27 +835,41 @@ static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
     dSetTSS(dev, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MIPFILTER, D3DTEXF_NONE);
     dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
     const float bgap = snap(1.0f * S);                  // gap between icons
-    const float bmar = snap(rowh * 1.34f);              // start the strip just LEFT of the cursor (cursor = mh*1.30 ; here `rowh` is the main band mh)
+    float csz = ui_config().cursorScale; if (csz < 0.5f) csz = 0.5f; if (csz > 2.0f) csz = 2.0f;
+    const float curW = rowh * 1.30f * csz;              // cursor icon width (matches the cursor draw)
+    const float bmar = snap(curW * 0.55f + 6.0f * S);   // just LEFT of the VISIBLE cursor, + a small breathing gap
     const float au = (float)BCELL / (float)BATLAS_W;    // one cell, in UV space
     const float av = (float)BCELL / (float)BATLAS_H;
-    const int   BMAX = 20;                              // cap : at most 20 icons per member
-    float bf = ui_config().buffScale; if (bf < 0.40f) bf = 0.40f; if (bf > 1.0f) bf = 1.0f;   // fraction of the STABLE band height
-    const float bs = snap(sizeH * bf);                  // size follows the STABLE band -> stays put across gauge styles ; centred in the actual row
+    int bmaxCfg = ui_config().buffMax; if (bmaxCfg < 1) bmaxCfg = 1; if (bmaxCfg > 32) bmaxCfg = 32;   // config choice
+    const int   PERROW = 16;                            // at most 16 per row -> a 2nd row wraps 16+16
+    // ALWAYS a two-row layout : fixed icon size + first row in the TOP slot + the row already reserves two
+    // rows (party.h buffBandH) -> the party size and buff position never change with Max Buffs (which only
+    // caps the count). The second row simply stays empty when there are <= 16 buffs.
+    const bool  twoMode = true;
+    const float vgap  = snap(1.0f * S);
+    const float bs    = iconH;                          // constant icon size (row grows to fit)
+    const float totalH = twoMode ? (2.0f * bs + vgap) : bs;
+    const int   rowsN = twoMode ? 2 : 1;
     for (int i = 0; i < n; ++i) {
         const Row& r = rows[i];
         if (r.offzone || !r.buffs || r.nbuff <= 0) continue;
-        const float ry = oy + pad + i * rowpit;
-        const float y  = snap(ry + (rowh - bs) * 0.5f); // icon centred in the row
-        const float xr = px - bmar;                     // right edge of the strip (just left of the cursor)
-        const int   nb = r.nbuff < BMAX ? r.nbuff : BMAX;
-        for (int j = 0; j < nb; ++j) {
-            const float x = snap(xr - (float)(j + 1) * bs - (float)j * bgap);
-            if (x < 1.0f) break;                        // ran off the left of the screen -> stop
-            const int id = r.buffs[j];
-            if (id < 0 || id >= BCOLS * BATLAS_ROWS) continue;   // id outside the atlas -> skip
-            const float u0 = (float)(id % BCOLS) * au;
-            const float v0 = (float)(id / BCOLS) * av;
-            tquad(dev, x, y, bs, bs, u0, u0 + au, v0, v0 + av, 0xFFFFFFFF, 0xFFFFFFFF);
+        const int   nbAll = r.nbuff < bmaxCfg ? r.nbuff : bmaxCfg;
+        const float ry    = oy + pad + i * rowpit;
+        const float top   = snap(ry + (rowh - totalH) * 0.5f);   // the (reserved) block CENTRED vertically in the row
+        const float xr    = px - bmar;                  // right edge of the strip (just left of the cursor)
+        for (int rw = 0; rw < rowsN; ++rw) {
+            const int start = rw * PERROW;
+            int cnt = nbAll - start; if (cnt < 0) cnt = 0; if (cnt > PERROW) cnt = PERROW;
+            const float y = snap(top + (float)rw * (bs + vgap));
+            for (int j = 0; j < cnt; ++j) {
+                const float x = snap(xr - (float)(j + 1) * bs - (float)j * bgap);
+                if (x < 1.0f) break;                    // ran off the left of the screen -> stop
+                const int id = r.buffs[start + j];
+                if (id < 0 || id >= BCOLS * BATLAS_ROWS) continue;   // id outside the atlas -> skip
+                const float u0 = (float)(id % BCOLS) * au;
+                const float v0 = (float)(id / BCOLS) * av;
+                tquad(dev, x, y, bs, bs, u0, u0 + au, v0, v0 + av, 0xFFFFFFFF, 0xFFFFFFFF);
+            }
         }
     }
     dSetTex(dev, 0, 0);
@@ -1155,7 +1204,14 @@ void Party::draw(const Frame& f) {
         const float bcx = ibx + bw * 0.5f, bcy = iby + bh * 0.5f, pbw = bw, pbh = bh;
         const float pbx = snap(bcx - pbw * 0.5f), pby = snap(bcy - pbh * 0.5f);
         const u32 rb = (r.role & 0x00FFFFFF) | 0xD0000000;
-        rrect_bordered(dev, pbx, pby, pbw, pbh, snap(3.0f), 0xF0161D33, 0xF00A0E1C, rb, 1.0f);   // AA rounded badge : border + inner gradient
+        rrect_bordered(dev, pbx, pby, pbw, pbh, snap(3.0f), 0xF0161D33, 0xF00A0E1C, rb, 1.0f);   // framed box : dark bg + role-colour border (same for TEXT and ICON)
+        if (ui_config().jobBadge[tcfg()] == 3) {          // ICONS : the job emblem INSIDE that box, tinted by role
+            const int cell = job_id_from_abbr(r.job) - 1;   // WAR=0 .. RUN=21 ; -1 (unknown/SPC) = skip
+            const float bt2  = snap(1.0f);                  // just clear the 1px border ring (the emblem art already has its own transparent margin -> no extra pad)
+            const float isz  = (pbw < pbh ? pbw : pbh) - 2.0f * bt2;
+            const float ix   = snap(pbx + (pbw - isz) * 0.5f), iy = snap(pby + (pbh - isz) * 0.5f);   // CENTRED in the box (box may be non-square)
+            draw_job_icon(dev, jobicon_tex_, ix, iy, isz, cell, (r.role & 0x00FFFFFF) | 0xFF000000);
+        }
         }
 
         const float gy = ry + (mh - gh) * 0.5f;   // gauges centred on the MAIN BAND
@@ -1175,7 +1231,7 @@ void Party::draw(const Frame& f) {
     }
 
     // ---------- buffs : status icons LEFT of each party row (main box only -- alliance buffs aren't sent) ----------
-    if (tier_ == 0) draw_member_buffs(dev, buff_tex_, rows, n, px, oy, pad, rowpit, mh, S, snap(mainBandHStable() * S));   // buffs sized on the STABLE band (constant across gauge styles), centred in the actual row
+    if (tier_ == 0) draw_member_buffs(dev, buff_tex_, rows, n, px, oy, pad, rowpit, mh, S, snap(buffIconBase() * S));   // icon size driven by Buff Size % (the row was grown to fit) ; centred in the row
 
     // ---------- leader / QM markers : round dots, animated pop-in/out (scale + fade) ----------
     if (dot_tex_) {
@@ -1197,7 +1253,10 @@ void Party::draw(const Frame& f) {
         const float x0     = markCx - slotsW * 0.5f;          // left (alliance) column x
         for (int i = 0; i < n; ++i) {
             const RowAnim* a = ra[i]; if (!a) continue;
-            const float ry = oy + pad + i * rowpit, cy = ry + snap(2.0f * S) + sz * 0.5f;   // pips at the TOP of the row
+            const float ry = oy + pad + i * rowpit;
+            const float markBlockH = snap(marksColH() * S);                     // the pips+distance UNIT height
+            const float markTop = ry + (mh - markBlockH) * 0.5f;               // centre that unit in the band (so it stays balanced when buffs grow the row)
+            const float cy = markTop + snap(2.0f * S) + sz * 0.5f;             // pips at the TOP of the unit
             for (int k = 0; k < 3; ++k) {                     // k: 0=alliance, 1=party, 2=QM
                 const float amt = a->dot[k]; if (amt <= 0.02f) continue;
                 const float s2 = sz * amt;                    // pop scale 0..1
@@ -1220,10 +1279,12 @@ void Party::draw(const Frame& f) {
         dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
         dSetTSS(dev, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MIPFILTER, D3DTEXF_LINEAR);
         dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
-        const float ih = mh * 1.30f, iw = ih;                 // square icon, ~1.3 main-band tall (points at the name line)
+        float csz = ui_config().cursorScale; if (csz < 0.5f) csz = 0.5f; if (csz > 2.0f) csz = 2.0f;   // Cursor Size %
+        const float tierBoost = (tier_ == 0) ? 1.0f : 1.45f;   // alliance rows are more condensed (smaller mh) -> boost so the cursor stays readable
+        const float ih = mh * 1.30f * csz * tierBoost, iw = ih; // square icon, ~1.3 main-band tall * size (points at the name line)
         const float es  = 1.0f;                                 // cursor keeps a constant size on target change (no pop)
         const float bob = 1.5f * S * gPulse;                     // cursor bob on the SHARED rhythm (already delayed + phase-reset)
-        const float cx  = px - 0.0f * S - iw * 0.5f + bob;      // icon CENTRE x (finger points at the box) + bob
+        const float cx  = px - iw * 0.5f + iw * 0.14f + bob;   // +0.14 iw : the hand art has a transparent right margin ; nudge the FINGER right up to the box edge
         // the cursor points at the SUB-target when one is in use, otherwise the main target
         const bool  onSub = (subA_ > 0.02f);
         const float cy  = (onSub ? subY_ : selY_) + mh * 0.5f;            // icon CENTRE y -> on the main band (name line)
@@ -1274,12 +1335,14 @@ void Party::draw(const Frame& f) {
             const u32 dcol = r.dist >= kCastRange ? 0xFFE76C6C :              // red  : out of cast range
                              r.dist >= kCastSafe  ? 0xFFE7C95A :              // yellow : marginal (still casts)
                                                     0xFF8FC6FF;               // blue : comfortably in range
+            const float markBlockH = snap(marksColH() * S);                   // match the pips : distance sits at the BOTTOM of the centred marks unit
+            const float markTop = ry + (mh - markBlockH) * 0.5f;
             fDist->begin(dev);
-            fDist->draw_cc(dev, cx + mw * 0.5f, ry + mh - dsz * 0.62f, db, dsz, te_col(TE_DIST, dcol), bSTK, dOWf);
+            fDist->draw_cc(dev, cx + mw * 0.5f, markTop + markBlockH - dsz * 0.62f, db, dsz, te_col(TE_DIST, dcol), bSTK, dOWf);
         }
 
-        const int badgeMode = ui_config().jobBadge[tcfg()];    // 0 = off, 1 = main only, 2 = main + sub
-        if (!offz && badgeMode != 0 && fBadge->ready()) {   // out of zone : no job badge text
+        const int badgeMode = ui_config().jobBadge[tcfg()];    // 0 = off, 1 = main only, 2 = main + sub, 3 = icon (drawn earlier)
+        if (!offz && badgeMode != 0 && badgeMode != 3 && fBadge->ready()) {   // out of zone / icon mode : no job badge TEXT
             fBadge->begin(dev);
             bool hasSub = badgeMode == 2 && r.sub && r.sub[0];   // mode 1 -> ignore the sub job
             const float mfrac = hasSub ? 0.34f : 0.52f;

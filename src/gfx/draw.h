@@ -58,6 +58,10 @@ void rrect(u32 dev, float x, float y, float w, float h, float r, u32 cTop, u32 c
 void rrect_bordered(u32 dev, float x, float y, float w, float h, float r,
                     u32 cTop, u32 cBot, u32 border, float bt, float feather = 1.2f);
 
+// AA rounded rect with only the LEFT corners rounded (right edge FLAT / vertical) -> a bar fill whose left
+// end is a capsule cap while its right end stays a clean vertical level (aligns with a level marker).
+void rrect_left(u32 dev, float x, float y, float w, float h, float r, u32 cTop, u32 cBot, float feather = 1.2f);
+
 // a SMOOTH glow that hugs a rounded-rect silhouette : one feathered band per edge/corner from the path
 // (peak = `col` alpha) fading LINEARLY to 0 at path+`glowW`. No interior fill, no concentric bands. Draw
 // under ADDITIVE blend (SRCALPHA/ONE) for a clean luminous halo behind a button. Uniform corners.

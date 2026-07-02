@@ -196,34 +196,26 @@ void rrect(u32 dev, float x, float y, float w, float h, float r, u32 cTop, u32 c
                 px = nx; py = ny;
             }
         }
-        // --- feathered outer rim : full-alpha on the path, alpha 0 at path+feather (crisp AA everywhere) ---
+        // --- feather ALL edges + corners CONSISTENTLY, so the silhouette extends by the same `feather`
+        // everywhere. (If only the corners feathered, the rounded ends would reach ~1px further than the
+        // straight centre -> the centre looks 1px short and the backdrop shows as a thin line there.) ---
         if (feather > 0.0f) {
             const float f = feather;
-            // top edge : full cTop on the path (y), alpha 0 at y-f
-            {
-                const u32 tA = cTop & 0x00FFFFFF;
-                VtxC T[4] = { { x + r, y - f, 0,1, tA }, { x + w - r, y - f, 0,1, tA },
-                              { x + r, y,     0,1, cTop }, { x + w - r, y,     0,1, cTop } };
-                dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, T, sizeof(VtxC));
-            }
-            // bottom edge : full cBot on the path (y+h), alpha 0 at y+h+f
-            {
-                const u32 bA = cBot & 0x00FFFFFF;
-                VtxC B[4] = { { x + r, y + h,     0,1, cBot }, { x + w - r, y + h,     0,1, cBot },
-                              { x + r, y + h + f, 0,1, bA },   { x + w - r, y + h + f, 0,1, bA } };
-                dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, B, sizeof(VtxC));
-            }
-            // left/right edges feather sideways with the vertical colour gradient preserved
-            {
-                const u32 c0 = CY(y + r), c1 = CY(y + h - r);
-                // left : x-f..x
-                VtxC L[4] = { { x - f, y + r, 0,1, c0 & 0x00FFFFFF }, { x, y + r, 0,1, c0 },
-                              { x - f, y + h - r, 0,1, c1 & 0x00FFFFFF }, { x, y + h - r, 0,1, c1 } };
-                dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, L, sizeof(VtxC));
-                VtxC R[4] = { { x + w, y + r, 0,1, c0 }, { x + w + f, y + r, 0,1, c0 & 0x00FFFFFF },
-                              { x + w, y + h - r, 0,1, c1 }, { x + w + f, y + h - r, 0,1, c1 & 0x00FFFFFF } };
-                dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, R, sizeof(VtxC));
-            }
+            { const u32 tA = cTop & 0x00FFFFFF;                                       // top edge : y -> y-f (alpha 0)
+              VtxC T[4] = { { x + r, y - f, 0,1, tA }, { x + w - r, y - f, 0,1, tA },
+                            { x + r, y,     0,1, cTop }, { x + w - r, y,     0,1, cTop } };
+              dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, T, sizeof(VtxC)); }
+            { const u32 bA = cBot & 0x00FFFFFF;                                       // bottom edge : y+h -> y+h+f
+              VtxC B[4] = { { x + r, y + h,     0,1, cBot }, { x + w - r, y + h,     0,1, cBot },
+                            { x + r, y + h + f, 0,1, bA },   { x + w - r, y + h + f, 0,1, bA } };
+              dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, B, sizeof(VtxC)); }
+            { const u32 c0 = CY(y + r), c1 = CY(y + h - r);                           // left + right edges
+              VtxC L[4] = { { x - f, y + r, 0,1, c0 & 0x00FFFFFF }, { x, y + r, 0,1, c0 },
+                            { x - f, y + h - r, 0,1, c1 & 0x00FFFFFF }, { x, y + h - r, 0,1, c1 } };
+              dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, L, sizeof(VtxC));
+              VtxC R[4] = { { x + w, y + r, 0,1, c0 }, { x + w + f, y + r, 0,1, c0 & 0x00FFFFFF },
+                            { x + w, y + h - r, 0,1, c1 }, { x + w + f, y + h - r, 0,1, c1 & 0x00FFFFFF } };
+              dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, R, sizeof(VtxC)); }
             // 4 corner arcs : radius r (full) -> r+f (alpha 0)
             for (int k = 0; k < 4; ++k) {
                 const float ccx = cs4[k].cx, ccy = cs4[k].cy, a0 = cs4[k].a0;
@@ -247,6 +239,65 @@ void rrect_bordered(u32 dev, float x, float y, float w, float h, float r,
     rrect(dev, x, y, w, h, r, border, border, feather);
     const float ir = (r - bt > 0.0f) ? r - bt : 0.0f;
     rrect(dev, x + bt, y + bt, w - 2 * bt, h - 2 * bt, ir, cTop, cBot, feather);
+}
+
+void rrect_left(u32 dev, float x, float y, float w, float h, float r, u32 cTop, u32 cBot, float feather)
+{
+    if (w <= 0.0f || h <= 0.0f) return;
+    x -= 0.5f; y -= 0.5f;
+    if (r > w) r = w;
+    if (r > h * 0.5f) r = h * 0.5f;
+    if (r < 0.0f) r = 0.0f;
+    #define CY(yy) lerp_argb(cTop, cBot, ((yy) - y) / h)
+    if (r < 0.75f) { vrect_raw(dev, x, y, w, h, cTop, cBot); }
+    else {
+        vrect_raw(dev, x + r, y,     w - r, h,         cTop,       cBot);          // body (flat right edge = the level)
+        vrect_raw(dev, x,     y + r, r,     h - 2 * r, CY(y + r),  CY(y + h - r)); // left band
+        const int Nc = 6;
+        const float cc[2][3] = { { x + r, y + r,     PI_ },          // TL : 180 -> 270
+                                 { x + r, y + h - r, 0.5f * PI_ } };  // BL :  90 -> 180
+        for (int k = 0; k < 2; ++k) {
+            const float ccx = cc[k][0], ccy = cc[k][1], a0 = cc[k][2];
+            const u32 cc0 = CY(ccy);
+            float px = ccx + r * cosf(a0), py = ccy + r * sinf(a0);
+            for (int i = 1; i <= Nc; ++i) {
+                const float a = a0 + (0.5f * PI_) * (float)i / (float)Nc;
+                const float nx = ccx + r * cosf(a), ny = ccy + r * sinf(a);
+                VtxC t[3] = { { ccx, ccy, 0, 1, cc0 }, { px, py, 0, 1, CY(py) }, { nx, ny, 0, 1, CY(ny) } };
+                dDrawUP(dev, D3DPT_TRIANGLEFAN, 1, t, sizeof(VtxC));
+                px = nx; py = ny;
+            }
+        }
+        if (feather > 0.0f) {
+            const float f = feather;
+            const u32 c0 = CY(y + r), c1 = CY(y + h - r);
+            VtxC L[4] = { { x, y + r, 0, 1, c0 }, { x, y + h - r, 0, 1, c1 },
+                          { x - f, y + r, 0, 1, c0 & 0x00FFFFFF }, { x - f, y + h - r, 0, 1, c1 & 0x00FFFFFF } };
+            dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, L, sizeof(VtxC));   // left edge feather
+            // top + bottom edge feathers (x+r..x+w ; the flat RIGHT edge stays crisp = the level tip) so the
+            // straight edges extend by the same `feather` as the rounded left cap (no 1px centre mismatch).
+            { const u32 tA = cTop & 0x00FFFFFF;
+              VtxC T[4] = { { x + r, y - f, 0,1, tA }, { x + w, y - f, 0,1, tA },
+                            { x + r, y,     0,1, cTop }, { x + w, y,     0,1, cTop } };
+              dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, T, sizeof(VtxC)); }
+            { const u32 bA = cBot & 0x00FFFFFF;
+              VtxC B[4] = { { x + r, y + h,     0,1, cBot }, { x + w, y + h,     0,1, cBot },
+                            { x + r, y + h + f, 0,1, bA },   { x + w, y + h + f, 0,1, bA } };
+              dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, B, sizeof(VtxC)); }
+            for (int k = 0; k < 2; ++k) {
+                const float ccx = cc[k][0], ccy = cc[k][1], a0 = cc[k][2];
+                VtxC ring[2 * (Nc + 1)];
+                for (int i = 0; i <= Nc; ++i) {
+                    const float a = a0 + (0.5f * PI_) * (float)i / (float)Nc, ca = cosf(a), sa = sinf(a);
+                    const u32 ci = CY(ccy + r * sa);
+                    ring[2 * i]     = { ccx + r * ca,        ccy + r * sa,        0, 1, ci };
+                    ring[2 * i + 1] = { ccx + (r + f) * ca,  ccy + (r + f) * sa,  0, 1, ci & 0x00FFFFFF };
+                }
+                dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * Nc, ring, sizeof(VtxC));
+            }
+        }
+    }
+    #undef CY
 }
 
 void rrect_glow(u32 dev, float x, float y, float w, float h, float r, u32 col, float glowW)
