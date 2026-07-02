@@ -1,15 +1,16 @@
 ---
 title: Redesign proposal — organise the interface clean
-summary: An opinionated plan to make AioHUD better without adding features — reorganise the config around Global vs Per-box, give the live HUD a real reading hierarchy, discipline the palette to "calm + alarms", cut what doesn't pull its weight, ship opinionated defaults, and migrate in safe phases. Companion to interface-map.md; decisions marked as "recommend" vs "your call".
+summary: An opinionated plan to make AioHUD better WITHOUT cutting any capability — the plugin targets thousands of users so every option stays. Reorganise the config around Global vs Per-box, give the live HUD a real reading hierarchy, discipline the palette to "calm + alarms", ship great defaults + preset profiles, and migrate in safe phases. Companion to interface-map.md; decisions marked as "recommend" vs "your call".
 source: proposal, 2026-07-02 — validate before mockup/code
 ---
 
 # Redesign proposal
 
 > Premise (from reading [interface-map.md](interface-map.md)): AioHUD doesn't lack features — it lacks
-> **hierarchy, discipline, and opinionated defaults**. "Better" here means *less, but better organised*,
-> not *more*. Nothing below removes a capability a power-user relies on; it demotes rarely-used depth
-> behind "Advanced" and makes the common path obvious and beautiful by default.
+> **hierarchy, discipline, and opinionated defaults**. **The plugin is for thousands of users, so every
+> capability stays** (all 8 gauges, all fonts, the full zones system, every toggle). "Better" here means
+> *the good setup is easy to reach and beautiful by default*, with the full depth still one step away —
+> **never removing a knob** a power-user relies on. Levers: clearer grouping, great defaults, presets.
 >
 > Legend: **[Rec]** = my recommendation, do it. **[You]** = your taste decides, I need a call.
 > **[Safe]** = no visual change / no data risk. **[Visual]** = needs your in-game eye to validate.
@@ -105,19 +106,24 @@ signal, not decoration.** Two palettes:
 
 ---
 
-## 4. Cut what doesn't pull its weight
+## 4. Keep ALL the depth — tame it, don't cut it
 
-More options ≠ better; each one is a decision the user must make and code we must maintain.
+> **Guiding decision (2026-07-02):** this plugin is meant for **thousands of users**, so **everyone must
+> find their fit**. We keep every capability — all 8 gauge styles, all fonts, the full zones system,
+> every toggle. The redesign serves newcomers through **great defaults, presets and clearer
+> organisation**, never by removing a knob a power-user relies on. "Better" = *easier to reach the good
+> setup*, with the full depth still one step away.
 
-- **Gauge styles: keep all 8.** *(Decided 2026-07-02 — user wants all of them.)* No cut. If anything
-  we make the **default** one great and let the 8 be the palette a user can switch to.
-- **Fonts: 20 → ~6 + System.** **[Rec]** Curate a short, good list (e.g. the shipped Roboto/Open Sans
-  + a couple of classics) instead of a 20-long stepper. Depth stays reachable via the typography
-  face field if needed.
-- **Zones: keep the system, make it optional.** **[Rec]** Don't remove zones — just make the **default
-  path** "drag a box, it auto-covers the native window" so a new user never has to touch the zone
-  editor, while zones stay available (Advanced) for precise native-window alignment. See the Zones
-  explainer below before deciding. *(Pending: does the user actually use zones? — see §Open decisions.)*
+- **Gauge styles: keep all 8.** No cut. We just make the **default** one excellent; the other 7 stay as
+  the palette a user switches to.
+- **Fonts: keep the full list.** No cut. **[Rec]** Only **order it best-first** and pick a strong
+  **default** so the common choice is at hand, while every face stays selectable.
+- **Zones: keep the system exactly as it is.** *(Decided — it is load-bearing: it guarantees our
+  party/alliance boxes always fully **occlude** the game's native party/alliance windows, covering the
+  gaps — e.g. the Cost/MP slot when it's empty, which otherwise leaks native fragments. See the Zones
+  explainer in [interface-map.md](interface-map.md#part-d--zones--rules-system).)* The redesign only
+  aims to make zones **clearer to discover and use**, not simpler-by-removal.
+- The lever for "not overwhelming" is therefore **defaults + presets + grouping** (§1, §5), not deletion.
 
 ---
 
@@ -143,25 +149,26 @@ Each phase is its own commit(s) on a savepoint tag, **built + validated in game 
 | **0** | Config relayout: Global / Per-box / Advanced groupings (§1). No field/behaviour change. | **[Safe]** build-only | pixels in-game unchanged; config just clearer |
 | **1** | Palette module + retint steady state; alarms untouched (§3). | **[Visual]** | your eye, over bright/dark zones |
 | **2** | HUD hierarchy: HP spine, quiet tier-3, motion only on alarms (§2). | **[Visual]** | in-game, real party |
-| **3** | Curate the **font** list; ship a curated default look + presets (§5). All 8 gauges kept. | **[Visual + data]** | see back-compat note |
-| **4** | Make drag+auto the default placement; keep zones as Advanced (§4). | **[Visual]** | placement still covers native window |
+| **3** | Curated **default look** + named **preset profiles** (§5). Nothing removed. | **[Visual + data]** | fresh install looks intentional |
+| **4** | Make **zones easier to discover/use** (clearer entry + explainer in the Help), system unchanged. | **[Visual]** | occlusion still guaranteed |
 
-**Back-compat note (Phase 3).** `fontFace` is stored as an **index** in `aio_config.txt` / profiles,
-so curating the font list renumbers it and an old config could load the wrong font. Mitigation: keep
-the old index→meaning mapping stable (removed fonts map to the nearest survivor on load, clamped), or
-bump a config `version` and migrate. (`gaugeStyle` is untouched — all 8 kept — so no risk there.)
-Must be handled or saved layouts break — flagging it now.
+**Back-compat note.** Nothing is renumbered — all 8 gauge styles and all fonts stay, so existing
+`aio_config.txt` / profile indices keep meaning. New defaults/presets are additive (new profile files),
+so no saved layout breaks. (If we ever *reorder* the font list for "best-first", keep the stored value
+keyed by **name**, not position, so old configs still resolve.)
 
 ---
 
 ## Open decisions for you
 1. ~~Gauge survivors~~ — **decided: keep all 8.**
-2. **Zones** — do you actually use the zone editor, or just drag boxes? Keep zones exactly as-is, or
-   make drag+auto the default and zones optional? (§4 + explainer)
-3. **Font shortlist** — which ~6? (§4)
-4. **HP dominance** — how hard do we push HP over MP/TP? (§2)
+2. ~~Zones~~ — **decided: keep the whole system as-is** (it guarantees native-window occlusion; broad
+   audience needs the flexibility). Redesign only makes it easier to discover/use.
+3. ~~Cut anything?~~ — **decided: cut nothing.** Thousands of users → keep every option; tame with
+   defaults/presets/grouping.
+4. **HP dominance** — how hard do we push HP over MP/TP in the reading hierarchy? (§2)
 5. **Default look + presets** — do you want me to propose "Clean / Dense / Minimal", or you name them? (§5)
-6. **Start at Phase 0** (safe config relayout) or jump straight to the palette/hierarchy visual work?
+6. **Start at Phase 0** (safe config relayout — pure organisation, no pixels change) or jump straight to
+   the palette/hierarchy visual work?
 
 Answer these and I'll turn §1–§3 into a concrete visual mockup (Artifact) to react to before any code.
 

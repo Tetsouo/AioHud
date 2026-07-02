@@ -340,8 +340,11 @@ Key linkages an outsider should keep in mind:
 - **Size changes re-anchor, they don't drift.** Because every box is bottom-right anchored, changing
   a size (slider or edit-wheel) keeps the placed corner fixed. A bulk load (startup / profile / reset)
   flags a "scale baseline reset" so it isn't mistaken for a live resize.
-- **Zones are the placement contract.** The Party box's grow-up top and the alliance anchors come
-  from zones (with legacy reference lines as fallback); keep-out zones repel boxes during drags.
+- **Zones are the occlusion contract.** Their real job is to **guarantee the AioHUD boxes always fully
+  hide the game's native party/alliance windows** (overshooting is fine) — including the gaps between
+  boxes, e.g. the empty Cost/MP slot, which would otherwise leak native fragments through. The Party
+  box's grow-up top and the alliance anchors come from zones (legacy reference lines as fallback);
+  keep-out zones repel boxes during drags. **Decision: keep this whole system** (broad audience).
 - **Profiles snapshot everything at once** — settings *and* layout *and* zones — so "load a profile"
   reconfigures the entire interface in one step.
 - **Preview = the real thing.** The config Live Preview is the shipping renderer in demo mode, so
@@ -351,7 +354,12 @@ Key linkages an outsider should keep in mind:
 
 ## PART H — Observations for the redesign
 
-Factual friction points surfaced while mapping (not yet design decisions — inputs for the reorg):
+**Design decision (2026-07-02):** AioHUD targets **thousands of users**, so **no capability is cut** —
+all 8 gauge styles, all fonts, the full zones system and every toggle stay. The friction points below
+are solved by **clearer grouping, great defaults and preset profiles**, never by removing options. See
+[redesign-proposal.md](redesign-proposal.md).
+
+Factual friction points surfaced while mapping:
 
 - **Scope is uneven and not obvious in the UI.** Some "Party / Alliance" controls are secretly
   **Party-only** (Buff Size, Max Buffs, Cursor Size) or **global** (Animation, Box Theme, Font,
@@ -363,11 +371,11 @@ Factual friction points surfaced while mapping (not yet design decisions — inp
   — fine, but the relationship should be obvious.
 - **One module, "more soon."** The MODULES sidebar has a single entry; the structure anticipates
   growth but currently adds a layer of nesting for one item.
-- **Zones are powerful but hidden** behind Edit → Rules → panel, and overlap conceptually with the
-  legacy reference lines and with `layout.json`'s native keep-out zones. Three placement mechanisms
-  (box drag, zones/roles, layout.json) is a lot to hold in one's head.
-- **Typography is deep** (9 elements × face/size/outline/bold/italic/caps/colour) — great power, but a
-  lot of clicks; a redesign could surface the common cases and tuck the rest.
+- **Zones are powerful but hard to discover** (behind Edit → Rules → panel), and their occlusion
+  purpose isn't explained in the UI. Keep the system; make it easier to find and understand (in-Help
+  explainer), not simpler-by-removal.
+- **Typography is deep** (9 elements × face/size/outline/bold/italic/caps/colour) — great power. Keep it
+  all; add a global "all text" quick control up front so the common case is one slider, the depth stays.
 
 ## See also
 - [Party / Alliance design brief](brief-party-alliance.md)
