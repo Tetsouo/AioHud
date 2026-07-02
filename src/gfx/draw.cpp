@@ -167,7 +167,8 @@ void rrect(u32 dev, float x, float y, float w, float h, float r, u32 cTop, u32 c
         vrect_raw(dev, x + r,     y,     w - 2 * r, h,         cTop,       cBot);          // centre column
         vrect_raw(dev, x,         y + r, r,         h - 2 * r, CY(y + r),  CY(y + h - r)); // left band
         vrect_raw(dev, x + w - r, y + r, r,         h - 2 * r, CY(y + r),  CY(y + h - r)); // right band
-        const int Nc = 6;                                       // arc segments per corner (uniform everywhere)
+        const int NcMax = 14;                                   // stack-array bound
+        int Nc = (int)(r * 0.9f); if (Nc < 6) Nc = 6; if (Nc > NcMax) Nc = NcMax;   // more segments on bigger radii -> rounder
         struct Corner { float cx, cy, a0; };
         const Corner cs4[4] = {
             { x + r,     y + r,     PI_        },   // TL : 180 -> 270
@@ -177,7 +178,7 @@ void rrect(u32 dev, float x, float y, float w, float h, float r, u32 cTop, u32 c
         };
         for (int k = 0; k < 4; ++k) {                            // ONE triangle-fan per corner (was Nc draws each)
             const float ccx = cs4[k].cx, ccy = cs4[k].cy, a0 = cs4[k].a0;
-            VtxC fan[Nc + 2];
+            VtxC fan[NcMax + 2];
             fan[0] = { ccx, ccy, 0, 1, CY(ccy) };                // fan centre
             for (int i = 0; i <= Nc; ++i) {
                 const float a = a0 + (0.5f * PI_) * (float)i / (float)Nc;
@@ -209,7 +210,7 @@ void rrect(u32 dev, float x, float y, float w, float h, float r, u32 cTop, u32 c
             // 4 corner arcs : radius r (full) -> r+f (alpha 0)
             for (int k = 0; k < 4; ++k) {
                 const float ccx = cs4[k].cx, ccy = cs4[k].cy, a0 = cs4[k].a0;
-                VtxC ring[2 * (Nc + 1)];
+                VtxC ring[2 * (NcMax + 1)];
                 for (int i = 0; i <= Nc; ++i) {
                     const float a = a0 + (0.5f * PI_) * (float)i / (float)Nc, ca = cosf(a), sa = sinf(a);
                     const u32 ci = CY(ccy + r * sa);
@@ -243,12 +244,13 @@ void rrect_left(u32 dev, float x, float y, float w, float h, float r, u32 cTop, 
     else {
         vrect_raw(dev, x + r, y,     w - r, h,         cTop,       cBot);          // body (flat right edge = the level)
         vrect_raw(dev, x,     y + r, r,     h - 2 * r, CY(y + r),  CY(y + h - r)); // left band
-        const int Nc = 6;
+        const int NcMax = 14;
+        int Nc = (int)(r * 0.9f); if (Nc < 6) Nc = 6; if (Nc > NcMax) Nc = NcMax;   // rounder on bigger radii
         const float cc[2][3] = { { x + r, y + r,     PI_ },          // TL : 180 -> 270
                                  { x + r, y + h - r, 0.5f * PI_ } };  // BL :  90 -> 180
         for (int k = 0; k < 2; ++k) {                            // ONE triangle-fan per (left) corner
             const float ccx = cc[k][0], ccy = cc[k][1], a0 = cc[k][2];
-            VtxC fan[Nc + 2];
+            VtxC fan[NcMax + 2];
             fan[0] = { ccx, ccy, 0, 1, CY(ccy) };                // fan centre
             for (int i = 0; i <= Nc; ++i) {
                 const float a = a0 + (0.5f * PI_) * (float)i / (float)Nc;
@@ -275,7 +277,7 @@ void rrect_left(u32 dev, float x, float y, float w, float h, float r, u32 cTop, 
               dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, B, sizeof(VtxC)); }
             for (int k = 0; k < 2; ++k) {
                 const float ccx = cc[k][0], ccy = cc[k][1], a0 = cc[k][2];
-                VtxC ring[2 * (Nc + 1)];
+                VtxC ring[2 * (NcMax + 1)];
                 for (int i = 0; i <= Nc; ++i) {
                     const float a = a0 + (0.5f * PI_) * (float)i / (float)Nc, ca = cosf(a), sa = sinf(a);
                     const u32 ci = CY(ccy + r * sa);
