@@ -181,6 +181,18 @@ void PartyState::load() {
 // `ent` = entity (position-object) array (g+0x24) ; (px,pz) = the player's horizontal position.
 // The member's entity index lives at member+0x20 ; ent[idx] is a position object with X @+0x04,
 // Z @+0x0C (Y @+0x08 = height, ignored). dist = horizontal distance to the player (yalms).
+// entity position : ent[idx] (the entity array from game_mem entity_array()) -> X @+0x04, Z @+0x0C.
+// Returns true + fills x/z when the index is in range and the entity object is readable. Shared by a
+// member's position (read_member) and the player's own (load_from_memory).
+static bool entity_xz(u32 ent, u32 idx, float& x, float& z) {
+    if (!ent || !idx || idx >= 0x900) return false;
+    u32 p = 0;
+    if (!safe_read(ent + idx * 4, &p) || !valid_ptr(p)) return false;
+    u32 a = 0, c = 0; safe_read(p + 0x04, &a); safe_read(p + 0x0C, &c);
+    x = *(float*)&a; z = *(float*)&c;
+    return true;
+}
+
 static bool read_member(u32 mb, PMember& pm, u32 ent, float px, float pz) {
     unsigned char b[0x7C];
     __try { memcpy(b, (const void*)mb, sizeof(b)); }
@@ -189,13 +201,9 @@ static bool read_member(u32 mb, PMember& pm, u32 ent, float px, float pz) {
     if (!id) return false;                                  // empty slot
     pm = PMember();
     u32 idx = *(const unsigned short*)(b + 0x20);           // entity index
-    if (ent && idx && idx < 0x900) {
-        u32 p = 0;
-        if (safe_read(ent + idx * 4, &p) && valid_ptr(p)) {
-            u32 a = 0, c = 0; safe_read(p + 0x04, &a); safe_read(p + 0x0C, &c);
-            float mx = *(float*)&a, mz = *(float*)&c;
-            if (mx != 0.0f || mz != 0.0f) { float dx = mx - px, dz = mz - pz; pm.dist = sqrtf(dx * dx + dz * dz); }
-        }
+    float mx = 0.0f, mz = 0.0f;
+    if (entity_xz(ent, idx, mx, mz) && (mx != 0.0f || mz != 0.0f)) {
+        float dx = mx - px, dz = mz - pz; pm.dist = sqrtf(dx * dx + dz * dz);
     }
     pm.id = id;
     int k = 0; for (; k < 18 && b[0x0A + k]; ++k) pm.name[k] = (char)b[0x0A + k];
@@ -227,9 +235,7 @@ void PartyState::load_from_memory() {
     // entity index -> ent[idx] -> X @+0x04, Z @+0x0C). Used to fill each member's distance (yalms).
     u32 ent = entity_array();                             // *(g+0x24) ; one source of truth (game_mem)
     float px = 0.0f, pz = 0.0f;
-    { u32 pidx = 0; safe_read(base + 0x20, &pidx); pidx &= 0xFFFF;
-      if (valid_ptr(ent) && pidx && pidx < 0x900) { u32 p = 0;
-        if (safe_read(ent + pidx * 4, &p) && valid_ptr(p)) { u32 a = 0, c = 0; safe_read(p + 0x04, &a); safe_read(p + 0x0C, &c); px = *(float*)&a; pz = *(float*)&c; } } }
+    { u32 pidx = 0; safe_read(base + 0x20, &pidx); pidx &= 0xFFFF; entity_xz(ent, pidx, px, pz); }
 
     // ACTIVE member count = allianceinfo+0x13 (party-1 count). The member-array slots are NOT
     // cleared when a trust is dismissed (their id/HP linger), so the id!=0 scan over-reports

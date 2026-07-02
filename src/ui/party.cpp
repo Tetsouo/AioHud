@@ -203,17 +203,8 @@ static void rrnd_l(u32 dev, float x, float y, float w, float h, float r, u32 c) 
 // ---- alternative gauge shapes (ui_config().gaugeStyle) : all sized to the player-row height ----
 
 // SHAPE-MATCHED GLOW : a coloured border that peeks out BEHIND the gauge (WS-ready = gauge colour,
-// critical-HP = red), pulsing. gauge_glow() returns the pulsing colour + border thickness ; each style
-// then draws its OWN shape (rect / disc / diamond) at size + g behind the gauge body.
-static bool gauge_glow(u32 col, float t, float pulse, float danger, u32& gcol, float& g) {
-    if (pulse <= 0.0f && danger <= 0.0f) return false;
-    float ph = 0.5f + 0.5f * sinf(t * 7.5f);
-    float amt = danger > 0.0f ? danger : pulse; if (amt > 1.0f) amt = 1.0f;
-    int a = (int)(amt * (0.45f + 0.50f * ph) * 255.0f); if (a > 255) a = 255;
-    gcol = (danger > 0.0f ? 0x00FF2A2A : (col & 0x00FFFFFF)) | ((u32)a << 24);
-    g = 2.2f + 1.3f * ph;                                // border thickness breathes
-    return true;
-}
+// critical-HP = red), pulsing. gauge_glow() (shared, in liquid_bars.cpp) returns the pulsing colour +
+// border thickness ; each style then draws its OWN shape (rect / disc / diamond) at size + g behind it.
 // RECT border (Bars / Segments / Minimal) : a rounded-rect peeking behind.
 static void gauge_aura_soft(u32 dev, float gx, float gy, float gw, float gh, u32 col, float t, float pulse, float danger) {
     u32 gcol; float g;

@@ -1,5 +1,6 @@
 // draw.cpp -- see draw.h.
 #include "draw.h"
+#include "color.h"   // lerp_argb (one implementation, shared)
 #include <math.h>
 
 namespace aio {
@@ -135,18 +136,8 @@ void disc(u32 dev, float cx, float cy, float r, u32 col)
 
 static const float PI_ = 3.14159265f;
 
-// per-channel ARGB lerp (used for the vertical gradient across the rounded rect).
-static inline u32 lerp_argb(u32 a, u32 b, float t)
-{
-    if (t < 0.0f) t = 0.0f; if (t > 1.0f) t = 1.0f;
-    int aa = (a >> 24) & 255, ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
-    int ba = (b >> 24) & 255, br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
-    int oa = aa + (int)((ba - aa) * t + 0.5f);
-    int orr = ar + (int)((br - ar) * t + 0.5f);
-    int og = ag + (int)((bg - ag) * t + 0.5f);
-    int ob = ab + (int)((bb - ab) * t + 0.5f);
-    return ((u32)oa << 24) | ((u32)orr << 16) | ((u32)og << 8) | (u32)ob;
-}
+// lerp_argb (per-channel ARGB interpolation, used for the vertical gradient across the rounded rect)
+// lives in color.h -> one implementation shared with the rest of the renderer.
 
 // a plain vertical-gradient rect (raw verts, half-pixel already applied by the caller).
 static void vrect_raw(u32 dev, float x, float y, float w, float h, u32 cT, u32 cB)

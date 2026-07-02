@@ -21,6 +21,18 @@ static const int CAP_W = 164, CAP_H = 280;
 static const char* CAP_FRONT = "D:\\Windower Tetsouo\\plugins\\_aiohud_re\\assets\\cap_front.bin";
 static const char* CAP_BACK  = "D:\\Windower Tetsouo\\plugins\\_aiohud_re\\assets\\cap_back.bin";
 
+// shape-matched gauge glow (declared in liquid_bars.h) : breathing colour + border thickness from the
+// WS-ready pulse / critical-HP danger. One implementation, used by the party rows and the vial gauge.
+bool gauge_glow(u32 col, float t, float pulse, float danger, u32& gcol, float& g) {
+    if (pulse <= 0.0f && danger <= 0.0f) return false;
+    float ph = 0.5f + 0.5f * sinf(t * 7.5f);
+    float amt = danger > 0.0f ? danger : pulse; if (amt > 1.0f) amt = 1.0f;
+    int a = (int)(amt * (0.45f + 0.50f * ph) * 255.0f); if (a > 255) a = 255;
+    gcol = (danger > 0.0f ? 0x00FF2A2A : (col & 0x00FFFFFF)) | ((u32)a << 24);
+    g = 2.2f + 1.3f * ph;                                    // border thickness breathes
+    return true;
+}
+
 // ============================ liquid body ==================================
 
 // a liquid bar filled to `fill` (0..1) from the left. The liquid occupies width
@@ -604,14 +616,9 @@ void LiquidBars::draw_vial_scaled(u32 dev, float t, float x, float y, float w, f
         dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
         dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
         dSetTSS(dev, 1, D3DTSS_COLOROP, D3DTOP_DISABLE);
-        if (pulse > 0.0f || danger > 0.0f) {                 // shape-matched border : a rounded-rect peeking behind the fiole
-            float ph = 0.5f + 0.5f * sinf(t * 7.5f);
-            float amt = danger > 0.0f ? danger : pulse; if (amt > 1.0f) amt = 1.0f;
-            int a = (int)(amt * (0.45f + 0.50f * ph) * 255.0f); if (a > 255) a = 255;
-            u32 gcol = (danger > 0.0f ? 0x00FF2A2A : (col & 0x00FFFFFF)) | ((u32)a << 24);
-            float g = 2.2f + 1.3f * ph;
+        u32 gcol; float g;
+        if (gauge_glow(col, t, pulse, danger, gcol, g))      // shape-matched border : a rounded-rect peeking behind the fiole
             rrect_glow(dev, x, y, w, h, h * 0.5f, gcol, g + 2.5f);   // capsule-shaped glow hugging the fluid form (matches the Bars style)
-        }
     }
 
     // rounded CLIP : limit the liquid + glass to a capsule (round ends, TRANSPARENT corners -- no dark fill),

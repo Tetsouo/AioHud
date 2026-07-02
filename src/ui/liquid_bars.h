@@ -56,4 +56,9 @@ private:
 void        set_vial_provider(LiquidBars* p);
 LiquidBars* vial_provider();
 
+// shape-matched gauge GLOW : from pulse (WS-ready) / danger (critical-HP) it returns the breathing
+// glow colour + border thickness (WS-ready = gauge colour, critical = red). false = nothing to draw.
+// Shared by the party rows (party.cpp gauge auras) and the vial gauge (draw_vial_scaled).
+bool gauge_glow(u32 col, float t, float pulse, float danger, u32& gcol, float& g);
+
 } // namespace aio
