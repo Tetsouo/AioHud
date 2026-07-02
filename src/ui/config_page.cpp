@@ -1299,7 +1299,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         if (ui_config().wheel != 0 && mo && mo->x >= bandX && mo->x <= bandX + bandW && mo->y >= cfgTop && mo->y <= cfgBot) {
             cfgScroll_ -= (float)ui_config().wheel * snap(64.0f);
             if (cfgScroll_ < 0.0f) cfgScroll_ = 0.0f;
-            // upper clamp is applied AFTER layout (against THIS frame's real extent) so the bottom is always reachable
+            if (cfgScroll_ > cfgMaxScroll_) cfgScroll_ = cfgMaxScroll_;   // clamp vs last frame's extent -> no overscroll jump at the bottom
         }
         ui_config().wheel = 0;
         ry -= cfgScroll_;                                              // shift every row up by the scroll
