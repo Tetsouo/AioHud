@@ -213,11 +213,8 @@ static bool read_member(u32 mb, PMember& pm, u32 ent, float px, float pz) {
 }
 
 void PartyState::load_from_memory() {
-    u32 lc = (u32)GetModuleHandleA("LuaCore.dll");
-    if (!lc) return;
-    u32 g = 0, pp = 0;
-    if (!safe_read(lc + 0x1C8400, &g) || !valid_ptr(g)) return;
-    if (!safe_read(g + 0x248, &pp)   || !valid_ptr(pp)) return;
+    u32 pp = party_ptr();                                 // pp = *(g+0x248) ; one source of truth (game_mem)
+    if (!pp) return;
 
     PlayerInfo me; if (!read_player(me)) return;          // not in game yet -> keep cache/packets
     u32 base = pp - 4, id0 = 0;                            // self-validate the anchor against the player id
@@ -228,7 +225,7 @@ void PartyState::load_from_memory() {
 
     // Entity position-object array (g+0x24) + the player's own horizontal position (member+0x20 =
     // entity index -> ent[idx] -> X @+0x04, Z @+0x0C). Used to fill each member's distance (yalms).
-    u32 ent = 0; safe_read(g + 0x24, &ent);
+    u32 ent = entity_array();                             // *(g+0x24) ; one source of truth (game_mem)
     float px = 0.0f, pz = 0.0f;
     { u32 pidx = 0; safe_read(base + 0x20, &pidx); pidx &= 0xFFFF;
       if (valid_ptr(ent) && pidx && pidx < 0x900) { u32 p = 0;

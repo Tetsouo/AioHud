@@ -8,6 +8,15 @@
 
 namespace aio {
 
+// --- game-memory anchors : the ONE source of truth for the pointer chains every reader hangs off.
+// Module bases are cached (fixed after load) ; the data root and its children are read each call (they
+// can be 0 while zoning). All return 0 -> the caller no-ops. Keeps the offsets in one place. ---
+u32 ffximain_base();   // GetModuleHandleA("FFXiMain.dll"), cached
+u32 luacore_base();    // GetModuleHandleA("LuaCore.dll"),  cached
+u32 data_root();       // g  = *(LuaCore + 0x1C8400) -- anchor for player / party / recast chains
+u32 party_ptr();       // pp = *(g + 0x248) (= &member[0] + 4) ; base = party_ptr() - 4
+u32 entity_array();    // *(g + 0x24) -- the entity position-object array (index -> ent[idx])
+
 // read the player's vitals as fractions (HP/MP in 0..1, TP in 0..1 of 3000).
 // returns false if the player structure isn't available yet (loading / not in game).
 bool read_player_vitals(float& hpFrac, float& mpFrac, float& tpFrac);

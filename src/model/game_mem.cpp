@@ -8,14 +8,20 @@ namespace aio {
 
 using windower::safe_read;
 
-// data root: G = *(LuaCore + 0x1C8400) ; player = *(G + 0x3C).
+// --- game-memory anchors : ONE source of truth for the pointer chains every reader hangs off.
+// Module bases are fixed after load (cached) ; the data root `g` is a heap ptr that can be 0 while
+// zoning (read each call). All return 0 -> the caller no-ops. Offsets live HERE, nowhere else. ---
+u32 ffximain_base() { static u32 b = 0; if (!b) b = (u32)GetModuleHandleA("FFXiMain.dll"); return b; }
+u32 luacore_base()  { static u32 b = 0; if (!b) b = (u32)GetModuleHandleA("LuaCore.dll");  return b; }
+u32 data_root()   { u32 lc = luacore_base(); u32 g = 0; return (lc && safe_read(lc + 0x1C8400, &g) && valid_ptr(g)) ? g : 0; }   // g = *(LuaCore+0x1C8400)
+u32 party_ptr()   { u32 g = data_root(); u32 pp = 0; return (g && safe_read(g + 0x248, &pp) && valid_ptr(pp)) ? pp : 0; }         // *(g+0x248) = &member[0]+4
+u32 entity_array(){ u32 g = data_root(); u32 e  = 0; return (g && safe_read(g + 0x24,  &e)  && valid_ptr(e))  ? e  : 0; }         // *(g+0x24) = entity array
+
+// player = *(g + 0x3C).
 static u32 player_struct() {
-    u32 lc = (u32)GetModuleHandleA("LuaCore.dll");
-    if (!lc) return 0;
-    u32 g = 0, pl = 0;
-    if (!safe_read(lc + 0x1C8400, &g) || !valid_ptr(g)) return 0;
-    if (!safe_read(g + 0x3C, &pl) || !valid_ptr(pl)) return 0;
-    return pl;
+    u32 g = data_root();
+    u32 pl = 0;
+    return (g && safe_read(g + 0x3C, &pl) && valid_ptr(pl)) ? pl : 0;
 }
 
 bool read_player_vitals(float& hpFrac, float& mpFrac, float& tpFrac) {
@@ -78,12 +84,10 @@ int read_player_buffs(unsigned short* out, int maxN) {
 // 1/2/3 leader ids. A member is that role iff its serverid matches.
 bool read_party_leaders(PartyLeaders& o) {
     o.alliance = o.p1 = o.p2 = o.p3 = 0;
-    u32 lc = (u32)GetModuleHandleA("LuaCore.dll");
-    if (!lc) return false;
-    u32 g = 0, pp = 0, ai = 0;
-    if (!safe_read(lc + 0x1C8400, &g) || !valid_ptr(g)) return false;
-    if (!safe_read(g + 0x248, &pp)   || !valid_ptr(pp)) return false;
-    if (!safe_read(pp, &ai)          || !valid_ptr(ai)) return false;   // allianceinfo_t
+    u32 pp = party_ptr();
+    if (!pp) return false;
+    u32 ai = 0;
+    if (!safe_read(pp, &ai) || !valid_ptr(ai)) return false;            // allianceinfo_t = *(g+0x248)
     safe_read(ai + 0x00, &o.alliance);
     safe_read(ai + 0x04, &o.p1);
     safe_read(ai + 0x08, &o.p2);
@@ -107,7 +111,7 @@ static const u32 NO_TARGET = 0x04000000;
 
 bool read_target(TargetInfo& o) {
     o.id = o.sid = 0;
-    u32 ffm = (u32)GetModuleHandleA("FFXiMain.dll");
+    u32 ffm = ffximain_base();
     if (!ffm) return false;
     u32 tp = 0; safe_read(ffm + TARGET_T_PTR_RVA, &tp);
     if (!valid_ptr(tp)) return true;                    // target system not ready
@@ -147,7 +151,7 @@ static void read_tag(u32 addr, char* out, int n) {
 
 bool read_action_menu(int& type, unsigned& id, unsigned& cursor, bool& examValid) {
     type = 0; id = 0; cursor = 0; examValid = false;
-    u32 ffm = (u32)GetModuleHandleA("FFXiMain.dll");
+    u32 ffm = ffximain_base();
     if (!ffm) return false;
     u32 mptr = 0; safe_read(ffm + MENU_PTR_RVA, &mptr);
     if (!valid_ptr(mptr)) return false;                   // no menu open
@@ -189,9 +193,7 @@ bool read_action_menu(int& type, unsigned& id, unsigned& cursor, bool& examValid
 // scan the 32 slots for an ACTIVE one (timer>0) whose id matches -> its remaining seconds (0 = ready).
 // recast_id comes from abilities_gen.h (caller side). This is the menu's exact "Next".
 unsigned ability_recast_sec(unsigned recast_id) {
-    u32 lc = (u32)GetModuleHandleA("LuaCore.dll");
-    if (!lc) return 0;
-    u32 g = 0; if (!safe_read(lc + 0x1C8400, &g) || !valid_ptr(g)) return 0;
+    u32 g = data_root(); if (!g) return 0;
     u32 idsP = 0, timersP = 0;
     safe_read(g + 0x230, &idsP); safe_read(g + 0x22C, &timersP);
     if (!valid_ptr(idsP) || !valid_ptr(timersP)) return 0;
@@ -212,9 +214,7 @@ unsigned ability_recast_sec(unsigned recast_id) {
 //   ability timers/ids at 0x22C/0x230.) recast_id comes from spells_gen.h (SpellRow::recast_id).
 unsigned spell_recast_sec(unsigned recast_id) {
     if (recast_id >= 0x400) return 0;                          // array is exactly 1024 entries
-    u32 lc = (u32)GetModuleHandleA("LuaCore.dll");
-    if (!lc) return 0;
-    u32 g = 0; if (!safe_read(lc + 0x1C8400, &g) || !valid_ptr(g)) return 0;
+    u32 g = data_root(); if (!g) return 0;
     u32 base = 0; if (!safe_read(g + 0x234, &base) || !valid_ptr(base)) return 0;
     u32 v = 0; if (!safe_read(base + recast_id * 2, &v)) return 0;   // 32-bit read, keep the low ushort
     v &= 0xFFFF;                                               // little-endian : this entry, ignore the next
@@ -246,14 +246,14 @@ void poll_game_state(GameState& gs) {
     else                                   { gs.menuType = 0; gs.menuAction = 0; gs.menuCursor = mc; gs.menuExamValid = false; }
     // RAW ability examine, read EVERY frame -> a change = the game examined a real ability, used to tell a
     // live Job-Ability/WS selection from a stale one (the Magic box uses menuExamValid instead ; see party.cpp).
-    { u32 ffm2 = (u32)GetModuleHandleA("FFXiMain.dll"); u32 ea = 0;
+    { u32 ffm2 = ffximain_base(); u32 ea = 0;
       if (ffm2) safe_read(ffm2 + EXAM_ABIL_RVA, &ea);
       gs.examAbilRaw = ea; }
 
     // party-window picker : the focused menu is "partywin" with a 1-based cursor index at +0x4C.
     // (Reversed via //aio pcur: +0x4C tracks the hovered member, +0x08 = its row object.)
     gs.partyMenuSel = 0;
-    u32 ffm = (u32)GetModuleHandleA("FFXiMain.dll");
+    u32 ffm = ffximain_base();
     if (ffm) {
         u32 mptr = 0; safe_read(ffm + MENU_PTR_RVA, &mptr);
         u32 def = 0; if (valid_ptr(mptr)) safe_read(mptr + 0x04, &def);

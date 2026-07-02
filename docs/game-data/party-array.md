@@ -15,6 +15,10 @@ field in-game (`model/party_state.cpp` `load_from_memory`).
 member[0]); `member[0] = pp - 4`; `member[i] = member[0] + i*0x7C`. Self-validate:
 `member[0].ServerId` must equal the player id (else don't trust it).
 
+> In code these chains go through the shared accessors in `model/game_mem.{h,cpp}` — **one source
+> of truth** for the offsets: `data_root()` = `g`, `party_ptr()` = `pp`, `entity_array()` = `*(g+0x24)`,
+> plus cached `luacore_base()` / `ffximain_base()`. Don't re-resolve `LuaCore+0x1C8400` inline.
+
 | member offset | field | notes |
 |---|---|---|
 | `+0x0A` | name (char[18], ASCII NUL-term) | |
