@@ -40,7 +40,7 @@ bg + **role-colour border** from `job_role_color`). Text modes draw the abbr (`j
 - **Atlas**: `assets/job_icons.raw` — 512×192 BGRA, 8×3 grid of 64px cells, **white masks** (RGB=255,
   keep alpha) so MODULATE tints them by the role colour. Cell = `job_id_from_abbr(job) - 1`, i.e. the
   `JOBS[1..22]` order (WAR=cell 0 … RUN=cell 21; SPC/unknown → skip).
-- **Regenerate** (source PNGs in `ffxi_job_icons/`, one white emblem per job): a Python+PIL step —
+- **Regenerate** (source PNGs in `assets/job_icons_src/`, one white emblem per job): a Python+PIL step —
   load each PNG RGBA, resize to 64, force RGB white / keep alpha, paste in `JOBS` order, write BGRA raw.
   (`JOBS` lives in `party_state.cpp`; `job_role_color` maps id → tank blue / healer green / support
   yellow / dd red / SPC purple.)

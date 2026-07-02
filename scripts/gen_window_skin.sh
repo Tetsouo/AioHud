@@ -6,13 +6,13 @@
 # HEIGHT/WIDTH/PIXELFORMAT bits), so PC tools reject them -> we patch dwFlags, then convert to a
 # straight-alpha BGRA blob with ImageMagick.  Output: assets/window/<theme>/{corner,hframe,vframe,bg}.raw
 #
-# Source layout: "Texture Menu/0/<theme>/menu {corner,hfr1|fr1,vfr1,newtex|newtext}.dds"
+# Source layout: "assets/window_src/0/<theme>/menu {corner,hfr1|fr1,vfr1,newtex|newtext}.dds"
 # (_Bis = the user's modified variants ; a couple of themes have typo'd filenames -> handled below).
 #
 # Run from anywhere (paths are absolute). Needs python + ImageMagick (magick) on PATH.
 set -u
 ROOT="D:/Windower Tetsouo/plugins/_aiohud_re"
-SRCBASE="$ROOT/Texture Menu/0"
+SRCBASE="$ROOT/assets/window_src/0"
 OUTBASE="$ROOT/assets/window"
 
 # patch the DDS flags to standard, then magick -> BGRA raw. $1=src dds  $2=out raw  $3=tmp dir

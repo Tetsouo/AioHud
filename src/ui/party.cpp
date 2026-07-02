@@ -773,7 +773,7 @@ void Party::measure(float& w, float& h) const {
 
 static const char* ICON_PATH = "D:\\Windower Tetsouo\\plugins\\_aiohud_re\\assets\\hand_cursor.raw";
 // job-emblem atlas (white masks, tinted per role) : 8 cols x 3 rows of 64px cells, in JOBS[1..22] order
-// (WAR = cell 0 ... RUN = cell 21). Built by the python step from ffxi_job_icons\*.png.
+// (WAR = cell 0 ... RUN = cell 21). Built by the python step from assets\job_icons_src\*.png.
 static const char* JOBICON_PATH = "D:\\Windower Tetsouo\\plugins\\_aiohud_re\\assets\\job_icons.raw";
 static const int JI_W = 512, JI_H = 192, JI_CELL = 64, JI_COLS = 8;
 
