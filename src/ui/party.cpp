@@ -1257,23 +1257,13 @@ void Party::draw(const Frame& f) {
         const float bob = 1.5f * S * gPulse;                     // cursor bob on the SHARED rhythm (already delayed + phase-reset)
         const float cx  = px - iw * 0.5f + iw * 0.14f + bob;   // +0.14 iw : the hand art has a transparent right margin ; nudge the FINGER right up to the box edge
         // the cursor points at the SUB-target when one is in use, otherwise the main target
-        const bool  onSub = (subA_ > 0.02f);
+        const bool  onSub  = (subA_ > 0.02f);
+        const bool  locked = (f.game && f.game->targetLocked && !onSub);   // <t> LOCKED -> red hand (+ red frame)
         const float cy  = (onSub ? subY_ : selY_) + mh * 0.5f;            // icon CENTRE y -> on the main band (name line)
-        const u32 hrgb  = onSub ? 0x002E9CFF : 0x00FFFFFF;                  // strong blue when pointing the sub, white for the main
+        const u32 hrgb  = onSub ? 0x002E9CFF : (locked ? 0x00FF4030 : 0x00FFFFFF);   // blue = sub, RED = locked main, white = normal
         const u32 tint  = ((u32)(0xFF * (onSub ? subA_ : selA_)) << 24) | hrgb;
         glow_quad(dev, snap(cx - iw * es * 0.5f), snap(cy - ih * es * 0.5f), iw * es, ih * es, tint);
         dSetTex(dev, 0, 0);
-        // LOCK-ON : a small RED chevron over the hand (an ADDED marker, masks nothing) while <t> is locked.
-        if (f.game && f.game->targetLocked && !onSub) {
-            setup_color_state(dev);
-            const u32 rc   = ((u32)(0xFF * selA_) << 24) | 0x00F23A3A;   // red, fades in/out with the cursor
-            const float ch = ih * 0.28f;                                 // chevron half-height
-            const float tipx = snap(cx - iw * 0.04f);                    // tip near the hand centre, points RIGHT (like the hand)
-            const float bx2  = snap(tipx - ch * 0.9f);                   // the two open ends (to the left)
-            const float th   = 2.4f * S * csz;                           // arm thickness (scales with Cursor Size)
-            seg_soft(dev, bx2, snap(cy - ch), tipx, snap(cy),     th, rc);   // top arm
-            seg_soft(dev, tipx, snap(cy),     bx2, snap(cy + ch), th, rc);   // bottom arm
-        }
     }
 
     // ---------- text : each element (name / bars / badge) has its OWN face+weight atlas ----
@@ -1430,13 +1420,14 @@ void Party::draw(const Frame& f) {
         const float ry = snap(selY_);
         const float a  = selA_;                                // steady opacity
 
-        // 1) base tinted gold fill (faint -> readable)
-        const u32 fillT = ((u32)(0x3C * a) << 24) | 0x00FFE08A;
-        const u32 fillB = ((u32)(0x16 * a) << 24) | 0x00FFC850;
+        // 1) base fill : faint GOLD normally, RED when the main target is LOCKED (<t> lock-on)
+        const bool locked = (f.game && f.game->targetLocked && subA_ <= 0.02f);
+        const u32 fillT = locked ? (((u32)(0x52 * a) << 24) | 0x00FF6A5A) : (((u32)(0x3C * a) << 24) | 0x00FFE08A);
+        const u32 fillB = locked ? (((u32)(0x24 * a) << 24) | 0x00D83028) : (((u32)(0x16 * a) << 24) | 0x00FFC850);
         vgrad(dev, sx, ry + selY0, sw, selH, fillT, fillB);
 
         // 2) MODERN shine : only when the CURSOR is on the main row (i.e. no sub-target active)
-        if (subA_ <= 0.02f) shine_sweep(dev, sx, ry + selY0, sw, selH, gSweep, 0x00FFFFFF, 0.65f * a);
+        if (subA_ <= 0.02f) shine_sweep(dev, sx, ry + selY0, sw, selH, gSweep, locked ? 0x00FFD5C8 : 0x00FFFFFF, 0.65f * a);
 
         // 3) curved rims : darken the far left/right edges -> the lens bulge (refraction pinch)
         const float rw = sw * 0.085f;                      // narrow rims so the bars stay clear
@@ -1516,6 +1507,10 @@ void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy
             // empty magic menu, and re-opening Trust on the same trust, both leave it frozen). The robust signal
             // is the menu's shared examine-DESCRIPTION object : it is empty (sentinel) for a ghost and populated
             // for a real spell/trust -- correct on OPEN and on RE-OPEN of the same item. (menuExamValid.)
+            // MAGIC : menuExamValid is now "the menu HAS ITEMS" (mptr+0x24 > 0, set in read_action_menu) --
+            // the robust live/ghost signal that works on OPEN. A real caster's magic menu has items (shows
+            // the first spell at once) ; a no-magic job's EMPTY magic menu has 0 items -> the stale EXAM_SPELL
+            // ghost stays hidden. No id/cursor heuristics needed.
             menuLive_ = f.game->menuExamValid;
         } else {
             // ABILITY / WS : the examine cache is reliable here (no shared-ghost problem) -- keep the simple
