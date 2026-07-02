@@ -55,10 +55,10 @@ static void save_config_to(const char* path) {
                 c.guideGroup[i].allow[0] ? 1 : 0, c.guideGroup[i].allow[1] ? 1 : 0, c.guideGroup[i].allow[2] ? 1 : 0, c.guideGroup[i].role, c.guideGroup[i].name);
     fprintf(f, "border=%d,%d,%d,%d\n", c.border[0] ? 1 : 0, c.border[1] ? 1 : 0, c.border[2] ? 1 : 0, c.borderCost ? 1 : 0);
     fprintf(f, "anim=%d,%d\n", c.animHP ? 1 : 0, c.animTP ? 1 : 0);
-    for (int i = 0; i < TE_COUNT; ++i) {
-        const TextStyle& ts = c.text[i];
+    for (int g = 0; g < 2; ++g) for (int i = 0; i < TE_COUNT; ++i) {
+        const TextStyle& ts = c.text[g][i];
         int fl = (ts.bold ? 1 : 0) | (ts.italic ? 2 : 0) | (ts.upper ? 4 : 0) | (ts.colorOn ? 8 : 0);
-        fprintf(f, "text%d=%d,%.4f,%.4f,%d,%08X\n", i, ts.face, ts.size, ts.outline, fl, ts.color);
+        fprintf(f, "text%c%d=%d,%.4f,%.4f,%d,%08X\n", g == 0 ? 'P' : 'A', i, ts.face, ts.size, ts.outline, fl, ts.color);
     }
     for (int i = 0; i < 3; ++i)
         fprintf(f, "box%d=%d,%.5f,%.5f,%.4f\n", i, c.box[i].posSet ? 1 : 0, c.box[i].x, c.box[i].y, c.box[i].scale);
@@ -123,10 +123,22 @@ static bool load_config_from(const char* path) {
             c.border[0] = (b0 != 0); c.border[1] = (b1 != 0); c.border[2] = (b2 != 0); c.borderCost = (bc != 0);
         }
         else if (sscanf(line, "anim=%d,%d", &b0, &b1) == 2) { c.animHP = (b0 != 0); c.animTP = (b1 != 0); }
-        else if (sscanf(line, "text%d=%d,%f,%f,%d,%x", &idx, &v, &fv, &f1, &v1, &uc) == 6 && idx >= 0 && idx < TE_COUNT) {
-            TextStyle& ts = c.text[idx];
+        else if (sscanf(line, "textP%d=%d,%f,%f,%d,%x", &idx, &v, &fv, &f1, &v1, &uc) == 6 && idx >= 0 && idx < TE_COUNT) {
+            TextStyle& ts = c.text[0][idx];
             ts.face = v; ts.size = fv; ts.outline = f1; ts.color = uc;
             ts.bold = (v1 & 1) != 0; ts.italic = (v1 & 2) != 0; ts.upper = (v1 & 4) != 0; ts.colorOn = (v1 & 8) != 0;
+        }
+        else if (sscanf(line, "textA%d=%d,%f,%f,%d,%x", &idx, &v, &fv, &f1, &v1, &uc) == 6 && idx >= 0 && idx < TE_COUNT) {
+            TextStyle& ts = c.text[1][idx];
+            ts.face = v; ts.size = fv; ts.outline = f1; ts.color = uc;
+            ts.bold = (v1 & 1) != 0; ts.italic = (v1 & 2) != 0; ts.upper = (v1 & 4) != 0; ts.colorOn = (v1 & 8) != 0;
+        }
+        else if (sscanf(line, "text%d=%d,%f,%f,%d,%x", &idx, &v, &fv, &f1, &v1, &uc) == 6 && idx >= 0 && idx < TE_COUNT) {
+            for (int g = 0; g < 2; ++g) {   // legacy (pre per-box typography) : apply to BOTH groups
+                TextStyle& ts = c.text[g][idx];
+                ts.face = v; ts.size = fv; ts.outline = f1; ts.color = uc;
+                ts.bold = (v1 & 1) != 0; ts.italic = (v1 & 2) != 0; ts.upper = (v1 & 4) != 0; ts.colorOn = (v1 & 8) != 0;
+            }
         }
         else if (sscanf(line, "box%d=%d,%f,%f,%f", &idx, &ps, &x, &y, &s) == 5 && idx >= 0 && idx < 3) {
             // sanitise : a corrupt position (out of the [0,1] screen fraction) must never brick the box
@@ -286,8 +298,8 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     }
     if (a.dist[0] != b.dist[0] || a.dist[1] != b.dist[1] || a.dist[2] != b.dist[2]) return false;
     if (a.borderCost != b.borderCost || a.animHP != b.animHP || a.animTP != b.animTP) return false;
-    for (int k = 0; k < TE_COUNT; ++k) {
-        const TextStyle& x = a.text[k], & y = b.text[k];
+    for (int g = 0; g < 2; ++g) for (int k = 0; k < TE_COUNT; ++k) {
+        const TextStyle& x = a.text[g][k], & y = b.text[g][k];
         if (x.face != y.face || x.size != y.size || x.outline != y.outline || x.color != y.color) return false;
         if (x.bold != y.bold || x.italic != y.italic || x.upper != y.upper || x.colorOn != y.colorOn) return false;
     }
@@ -376,7 +388,7 @@ void reset_ui_config() {   // general Default : everything
     c.dist[0] = c.dist[1] = c.dist[2] = true;
     c.border[0] = c.border[1] = c.border[2] = c.borderCost = true;   // all borders back on
     c.animHP = c.animTP = true;
-    for (int k = 0; k < TE_COUNT; ++k) c.text[k] = TextStyle();   // typography back to defaults
+    for (int g = 0; g < 2; ++g) for (int k = 0; k < TE_COUNT; ++k) c.text[g][k] = TextStyle();   // typography back to defaults
     reset_boxes();   // (also saves)
 }
 

@@ -46,7 +46,7 @@ const char* ui_text_elem_label(int e);   // "Name" / "HP" / ... / "Interface"
 
 struct UiConfig {
     // ---- Party / Alliance ----
-    TextStyle text[TE_COUNT];   // per-element typography (Name, HP, MP, TP, Cast, Badge, Distance, Interface)
+    TextStyle text[2][TE_COUNT];   // per-element typography, per config group : [0]=Party, [1]=Alliance (Interface font = [0][TE_UI])
     int   skinTheme = 0;       // window-skin theme index (the Hud applies it -> all boxes)
     int   fontFace  = 0;       // 0 = layout default ; >0 = override every party/alliance text face
     float buffScale = 0.92f;   // buff-icon size as a FRACTION of the member row height (0.40 .. 1.00, capped at the row)

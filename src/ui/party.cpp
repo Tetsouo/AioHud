@@ -758,7 +758,7 @@ static const float BOOST = 1.25f;   // party-wide size boost over the global UI 
 // No font here, so the name column is approximated from nameSz_.
 float Party::box_w_base() const {
     const float gauges  = 3.0f * gaugeW() + 2.0f * gaugeGap();   // HP/MP/TP
-    const float nameCol = nameSz_ * 5.0f * ui_config().text[TE_NAME].size + 12.0f;   // ~name (grows with its text size) + gap before the HP gauge
+    const float nameCol = nameSz_ * 5.0f * ui_config().text[tcfg()][TE_NAME].size + 12.0f;   // ~name (grows with its text size) + gap before the HP gauge
     return 2.0f * padB() + 18.0f + marksW() + badgeW() + nameCol + gauges;   // 18 = the 4+5+5+4 column gaps
 }
 
@@ -860,19 +860,20 @@ static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
 
 // ---- per-element typography (ui_config().text[TE_*]) : each text element resolves its own Font + size /
 // outline / colour / UPPERCASE from the global TextStyle, on top of the layout's base face/bold/size. ----
+static int g_txtGrp = 0;   // typography config group of the box being drawn : 0 = Party, 1 = Alliance (set at Party::draw start)
 static Font* te_font(FontManager* fm, int elem, const char* ovGlobal, const char* baseFace, bool baseBold) {
-    const TextStyle& t = ui_config().text[elem];
+    const TextStyle& t = ui_config().text[g_txtGrp][elem];
     const char* face = t.face > 0 ? ui_font_face(t.face) : (ovGlobal[0] ? ovGlobal : baseFace);
     // Bold toggle is the SOLE authority : OFF = regular 400, ON = bold 700. So the button state always
     // matches what's on screen (the layout's own bold no longer forces it on when the toggle is off).
     (void)baseBold;
     return fm->get(face, t.bold ? 700 : 400, t.italic);
 }
-static inline float te_sz(int e, float base)  { return base * ui_config().text[e].size; }
-static inline float te_ow(int e, float base)  { return base * ui_config().text[e].outline; }
-static inline u32   te_col(int e, u32 base)   { const TextStyle& t = ui_config().text[e]; return t.colorOn ? (t.color | 0xFF000000u) : base; }
+static inline float te_sz(int e, float base)  { return base * ui_config().text[g_txtGrp][e].size; }
+static inline float te_ow(int e, float base)  { return base * ui_config().text[g_txtGrp][e].outline; }
+static inline u32   te_col(int e, u32 base)   { const TextStyle& t = ui_config().text[g_txtGrp][e]; return t.colorOn ? (t.color | 0xFF000000u) : base; }
 static const char*  te_up(int e, const char* s, char* buf, int n) {
-    if (!ui_config().text[e].upper || !s) return s;
+    if (!ui_config().text[g_txtGrp][e].upper || !s) return s;
     int i = 0; for (; s[i] && i < n - 1; ++i) { char c = s[i]; buf[i] = (c >= 'a' && c <= 'z') ? (char)(c - 32) : c; } buf[i] = 0; return buf;
 }
 
@@ -881,6 +882,7 @@ void Party::draw(const Frame& f) {
     u32 dev = f.dev;
     if (!valid_ptr(dev)) return;
     ensure(dev);                                  // lazily create the bullet dot texture
+    g_txtGrp = tcfg();                             // this box's typography group (0 = Party, 1 = Alliance) for te_* below
 
     Row rows[6];
     static const GameState NOGAME;                // fallback if drawn without a snapshot (demo still works)
@@ -1330,7 +1332,7 @@ void Party::draw(const Frame& f) {
         // measured in the ACTUAL name font -> never touches the bar, no fixed char cap.
         char nm[28]; int nl = 0; for (; nl < 20 && r.name && r.name[nl]; ++nl) nm[nl] = r.name[nl];
         nm[nl] = 0;
-        if (ui_config().text[TE_NAME].upper) for (int k = 0; k < nl; ++k) { char c = nm[k]; if (c >= 'a' && c <= 'z') nm[k] = (char)(c - 32); }
+        if (ui_config().text[tcfg()][TE_NAME].upper) for (int k = 0; k < nl; ++k) { char c = nm[k]; if (c >= 'a' && c <= 'z') nm[k] = (char)(c - 32); }
         const float nmax = gx0 - nx - 6.0f * S;                  // 6px gap before the gauges
         const float nsz = te_sz(TE_NAME, nameSz_ * S * es);      // measure at the ZOOMED size so a zoomed long name never overflows onto HP
         if (nmax > 0 && fName->measure(nm, nsz) > nmax) {
@@ -1354,8 +1356,8 @@ void Party::draw(const Frame& f) {
             for (; cl < 6 && r.cast && r.cast[cl]; ++cl) cbuf[cl] = r.cast[cl];
             if (r.cast && r.cast[cl]) { while (cl > 0 && cbuf[cl - 1] == ' ') --cl; cbuf[cl] = '.'; cbuf[cl + 1] = '.'; cbuf[cl + 2] = '.'; cbuf[cl + 3] = 0; }
             else cbuf[cl] = 0;
-            if (ui_config().text[TE_CAST].upper) for (int k = 0; cbuf[k]; ++k) { char c = cbuf[k]; if (c >= 'a' && c <= 'z') cbuf[k] = (char)(c - 32); }
-            const u32 ccolF = ui_config().text[TE_CAST].colorOn ? (((u32)(0xFF * af) << 24) | (ui_config().text[TE_CAST].color & 0x00FFFFFF)) : ccol;
+            if (ui_config().text[tcfg()][TE_CAST].upper) for (int k = 0; cbuf[k]; ++k) { char c = cbuf[k]; if (c >= 'a' && c <= 'z') cbuf[k] = (char)(c - 32); }
+            const u32 ccolF = ui_config().text[tcfg()][TE_CAST].colorOn ? (((u32)(0xFF * af) << 24) | (ui_config().text[tcfg()][TE_CAST].color & 0x00FFFFFF)) : ccol;
             fCast->begin(dev);
             fCast->draw_lc(dev, nxt, ry + mh * 0.5f + snap((nameSz_ * 0.5f + castSz() * 0.5f + 3.0f) * S), cbuf, te_sz(TE_CAST, castSz() * S), ccolF, cstk, cOWf);   // cast just UNDER the name
         }
@@ -1552,8 +1554,8 @@ void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy
     // falling back to the passed name font. Reassigning the local params routes every draw + measure below.
     char nmbuf[40];
     if (f.fonts) { const char* ovc = ui_font_face(ui_config().fontFace); Font* fc = te_font(f.fonts, TE_COST, ovc, nameFont_.c_str(), nameBold_); fc->ensure(f.dev); if (fc->ready()) fName = fc; }
-    nOWf = nameStroke_ * S * ui_config().text[TE_COST].outline;
-    if (nm && ui_config().text[TE_COST].upper) { int i = 0; for (; nm[i] && i < 38; ++i) { char c = nm[i]; nmbuf[i] = (c >= 'a' && c <= 'z') ? (char)(c - 32) : c; } nmbuf[i] = 0; nm = nmbuf; }
+    nOWf = nameStroke_ * S * ui_config().text[tcfg()][TE_COST].outline;
+    if (nm && ui_config().text[tcfg()][TE_COST].upper) { int i = 0; for (; nm[i] && i < 38; ++i) { char c = nm[i]; nmbuf[i] = (c >= 'a' && c <= 'z') ? (char)(c - 32) : c; } nmbuf[i] = 0; nm = nmbuf; }
     // The FRAME shows (empty when no live content) whenever : a magic/ability menu is OPEN (so you get an
     // empty Cost/Next box even on a no-magic job's menu), OR we're in an alliance (a permanent slot between
     // the party and the alliance). Solo + no menu : only while an action (nm) is up.

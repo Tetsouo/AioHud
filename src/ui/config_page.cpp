@@ -637,7 +637,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     if (!profSynced_) { strncpy(activeProf_, active_profile_name(), sizeof(activeProf_) - 1); activeProf_[sizeof(activeProf_) - 1] = 0; profSynced_ = true; }   // reflect the startup auto-loaded profile
     u32 dev = f.dev;
     // the whole config interface is drawn in the Interface text-element face (default Verdana)
-    const TextStyle& tsUI = ui_config().text[TE_UI];
+    const TextStyle& tsUI = ui_config().text[0][TE_UI];   // the interface (menu) font lives in the Party group
     const char* uiFace = tsUI.face > 0 ? ui_font_face(tsUI.face) : "Verdana";
     Font* fo = (f.fonts ? f.fonts->get(uiFace, tsUI.bold ? 700 : 600, tsUI.italic) : f.font);
     if (fo) fo->ensure(dev);
@@ -1321,10 +1321,10 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         ROW_NEXT(52.0f)
         // Font -> the INTERFACE (config-menu) font ; also drives the HUD's default text face.
         { ROW_BAND(52.0f)
-          int gf = ui_config().text[TE_UI].face; if (gf < 0 || gf >= ui_font_count()) gf = 0;
+          int gf = ui_config().text[0][TE_UI].face; if (gf < 0 || gf >= ui_font_count()) gf = 0;
           if (int d = row_selector(dev, fo, mo, click, 30, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(gf))) {
               gf = wrap(gf + d, ui_font_count());
-              ui_config().text[TE_UI].face = gf;   // the config menu font (changes live)
+              ui_config().text[0][TE_UI].face = gf;   // the config menu font (changes live)
               ui_config().fontFace = gf;            // and the HUD default text face
               save_ui_config(); } }
         ROW_NEXT(52.0f)
@@ -1506,6 +1506,16 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             if (push_btn(dev, fo, mo, click, 61, defX, ty, bw, bh, tr("Default (all)", "Défaut (tout)"), 1)) reset_ui_config();
         }
         ROW_NEXT(56.0f)
+        { ROW_BAND(56.0f)   // typography box target : Party / Alliance (both alliances share one config)
+            const float rowH = snap(40.0f), ty = ry + yo;
+            fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Box", "Boîte"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const char* tl2[2] = { tr("Party", "Groupe"), tr("Alliance", "Alliance") };
+            const float bbw = snap(140.0f), bgap = snap(8.0f), bbh = snap(34.0f);
+            const float bx0 = coX + ctrlW - (2 * bbw + bgap), bty = ty + (rowH - bbh) * 0.5f;
+            for (int i = 0; i < 2; ++i) if (toggle_chip(dev, fo, mo, click, 112 + i * 2, bx0 + i * (bbw + bgap), bty, bbw, bbh, tl2[i], cfgTextBox_ == i)) cfgTextBox_ = i;
+        }
+        ROW_NEXT(56.0f)
         { ROW_BAND(52.0f)   // element selector -- Interface (TE_UI) is skipped : its font is Global > Font
             int el = (cfgTextElem_ < 0 || cfgTextElem_ >= TE_COUNT || cfgTextElem_ == TE_UI) ? 0 : cfgTextElem_;
             if (int d = row_selector(dev, fo, mo, click, 100, coX, ry + yo, ctrlW, tr("Element", "Élément"), ui_text_elem_label(el))) {
@@ -1513,7 +1523,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         }
         ROW_NEXT(52.0f)
         {
-            TextStyle& ts = ui_config().text[(cfgTextElem_ < 0 || cfgTextElem_ >= TE_COUNT) ? 0 : cfgTextElem_];
+            TextStyle& ts = ui_config().text[(cfgTextBox_ < 0 || cfgTextBox_ > 1) ? 0 : cfgTextBox_][(cfgTextElem_ < 0 || cfgTextElem_ >= TE_COUNT) ? 0 : cfgTextElem_];
             { ROW_BAND(52.0f)   // Font face (0 = default)
                 int fc = ts.face; if (fc < 0 || fc >= ui_font_count()) fc = 0;
                 if (int d = row_selector(dev, fo, mo, click, 101, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(fc))) { ts.face = wrap(fc + d, ui_font_count()); save_ui_config(); }

@@ -66,8 +66,9 @@ private:
     bool  open_    = false;
     int   tab_     = 0;       // 0 = Configuration, 1 = Profil, 2 = Help
     int   section_ = 0;       // Configuration sidebar : 0 = Party/Alliance (more later)
-    int   cfgTarget_ = 0;     // which box the Party/Alliance settings edit : 0 = party, 1 = alliance 1, 2 = alliance 2
-    int   cfgTextElem_ = 0;   // which text element the Typography controls edit (Name/HP/MP/TP/Cast/Badge/Distance/Interface)
+    int   cfgTarget_ = 0;     // which box GROUP the Per box settings edit : 0 = Party, 1 = Alliance (both alliances)
+    int   cfgTextBox_ = 0;    // which box GROUP the Typography controls edit : 0 = Party, 1 = Alliance
+    int   cfgTextElem_ = 0;   // which text element the Typography controls edit (Name/HP/MP/TP/Cast/Badge/Distance/Cost)
     bool  catOpen_[3] = { true, true, false };    // collapsible Configuration categories : Global / Per box / Advanced (Advanced holds Typography + Layout/Zones)
     // animation state (driven by the frame clock)
     float anim_     = 0.0f;   // open progress 0..1 (eased) -> fade in
