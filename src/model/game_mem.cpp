@@ -163,23 +163,32 @@ bool read_action_menu(int& type, unsigned& id, unsigned& cursor, bool& examValid
     u32 def = 0; safe_read(mptr + 0x04, &def);            // menu category definition
     if (!valid_ptr(def)) return false;
     // The menu's shared examine-DESCRIPTION object (*(mptr+0x0C), a singleton) is the structural "is there a
-    // real examinable item here" signal. Reversed via //aio menu : on a no-magic job's EMPTY magic list it
-    // reads len@+0x30 = 0 and sentinel@+0x34 = 0xFFFFFFFF ; on a real spell/trust it holds len > 0 and +0x34 = 0
-    // (plus the description text). Unlike the static examine cache (0x634F28) it is NOT left stale, so it tells a
-    // real selection from a ghost on OPEN and on RE-OPEN of the same item (where the frozen-value test fails).
+    // real examinable item here" signal. A no-magic job's EMPTY magic list leaves it ALL-ZERO ; a REAL spell
+    // populates it. Two fields matter (reversed via a WHM-vs-WAR/DNC same-state dump, both on the first spell):
+    //  - +0x34 (dsent) : 0xFFFFFFFF when empty, else a non-sentinel value -- BUT the game only clears it once
+    //    the cursor SETTLES/moves, so on the very first open it is 0xFFFFFFFF even for a real spell.
+    //  - +0x3C : the description's text metric, non-zero the moment the menu is BUILT for a real item, 0 when
+    //    empty. THIS is what shows the auto-selected FIRST spell immediately without a cursor nudge.
+    // So a real item = (dsent != 0xFFFFFFFF) OR (+0x3C != 0) ; the WAR/DNC ghost is all-zero -> stays hidden.
     { u32 desc = 0; safe_read(mptr + 0x0C, &desc);
-      if (valid_ptr(desc)) { u32 dsent = 0xFFFFFFFF; safe_read(desc + 0x34, &dsent);
-                             // the EMPTY / ghost description carries the 0xFFFFFFFF sentinel ; a REAL item has a
-                             // non-sentinel value even BEFORE its text length populates -- the auto-selected FIRST
-                             // spell reads dlen=0 dsent=1 (must still show). So gate on the sentinel ALONE, not len.
-                             examValid = (dsent != 0xFFFFFFFF); } }
+      if (valid_ptr(desc)) { u32 dsent = 0xFFFFFFFF, d3C = 0; safe_read(desc + 0x34, &dsent); safe_read(desc + 0x3C, &d3C);
+                             examValid = (dsent != 0xFFFFFFFF) || (d3C != 0); } }
     char tag[9]; read_tag(def + MENU_TAG_OFF, tag, 4);    // self-validate : real menu defs start "menu"
     if (tag[0] != 'm' || tag[1] != 'e' || tag[2] != 'n' || tag[3] != 'u') return false;
     char nm[9]; read_tag(def + MENU_NAME_OFF, nm, 8);     // 8-byte menu name -> menu type
 
+
+
+
     if (nm[0]=='m' && nm[1]=='a' && nm[2]=='g' && nm[3]=='i' && nm[4]=='c') {        // "magic   " (real spells AND trusts)
         u32 spell = 0; safe_read(ffm + EXAM_SPELL_RVA, &spell);
         type = 1; id = (spell == 0 || spell > 0x4000) ? 0 : spell; return true;     // menu IS open (frame shows) ;
+        // GHOST gate = the description-object sentinel (examValid, computed above : dsent != 0xFFFFFFFF). A
+        // no-magic job's EMPTY magic menu never populates it (stays 0xFFFFFFFF) -> the stale EXAM_SPELL ghost
+        // stays hidden. A real spell populates it as soon as the cursor settles/moves. NB: WHM and WAR magic
+        // menus are byte-identical at the mptr level on the very first frame (mptr+0x24 is the 14-row display
+        // CAPACITY, not the spell count ; the real count is buried in a +0x04-linked item chain) -> the first
+        // spell shows once you nudge the cursor. Not gating on the item chain to keep the poller cheap.
         // id 0 = nothing valid examined yet. The caller filters the GHOST via the live-examine check + the
         // box draws an EMPTY frame whenever the magic menu is open (id may be a trust / stale until proven live).
     }
