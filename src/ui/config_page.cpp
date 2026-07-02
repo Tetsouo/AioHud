@@ -1738,16 +1738,17 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                     fo->begin(dev); fo->draw_lc(dev, hx + snap(4.0f) + 2 * gw + gap + snap(22.0f), y + rh2 * 0.5f, txt, bsz, fa(C_DIM), fa(C_STROKE), 1.0f);
                 }
                 y += rh2 + snap(8.0f);
-            } else if (it.kind == 14) {               // LIVE sample : the REAL selection hand (bobbing) + its highlight bar with a glass sweep, gold (main) / blue (sub)
+            } else if (it.kind == 14) {               // LIVE sample : the REAL selection hand (bobbing) + its highlight bar with a glass sweep, gold (main) / blue (sub) / red (locked)
                 const float rh2 = snap(44.0f), hand = snap(44.0f), bx2 = hx + hand + snap(8.0f), bw = snap(200.0f);
-                for (int t2 = 0; t2 < 2; ++t2) {
+                for (int t2 = 0; t2 < 3; ++t2) {
                     if (y >= top && y + rh2 <= bot) {
-                        // the EXACT party selection frame (gold glass + glass sweep + rims, or ocean-blue for the sub)
-                        party_selframe(dev, bx2, y, bw, rh2, f.t, 1.0f, t2 == 1);
+                        // the EXACT party selection frame (gold glass + sweep + rims for main, ocean-blue for sub, red when locked)
+                        party_selframe(dev, bx2, y, bw, rh2, f.t, 1.0f, t2);
                         const float bob = party_cursor_bob(f.t, hand);                       // same horizontal bob as the in-game cursor
-                        party_cursor(dev, helpCursorTex_, hx + hand * 0.5f + bob, y + rh2 * 0.5f, hand, t2 == 1);
+                        party_cursor(dev, helpCursorTex_, hx + hand * 0.5f + bob, y + rh2 * 0.5f, hand, t2);
                         const char* cl = (t2 == 0) ? (ui_config().lang == 1 ? "Cible principale, curseur blanc" : "Main target, white hand")
-                                                   : (ui_config().lang == 1 ? "Sous-cible, curseur bleu" : "Sub-target, blue hand");
+                                       : (t2 == 1) ? (ui_config().lang == 1 ? "Sous-cible, curseur bleu"      : "Sub-target, blue hand")
+                                                   : (ui_config().lang == 1 ? "Cible verrouillée, curseur rouge" : "Locked target, red hand");
                         fo->begin(dev); fo->draw_lc(dev, bx2 + bw + snap(14.0f), y + rh2 * 0.5f, cl, bsz, fa(C_DIM), fa(C_STROKE), 1.0f);
                     }
                     y += rh2 + snap(4.0f);

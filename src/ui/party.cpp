@@ -500,10 +500,11 @@ void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32
 
 // The REAL selection hand (icon_tex passed in so it stays device-loss managed by the Party widget),
 // exposed for the Help live samples. sub = true tints it blue (sub-target), else white (main target).
-void party_cursor(u32 dev, u32 tex, float cx, float cy, float size, bool sub) {
+void party_cursor(u32 dev, u32 tex, float cx, float cy, float size, int mode) {
     if (!tex) return;
     setup_tex_state(dev, tex);
-    const u32 tint = 0xFF000000u | (sub ? 0x002E9CFFu : 0x00FFFFFFu);
+    const u32 rgb  = (mode == 1) ? 0x002E9CFFu : (mode == 2) ? 0x00FF4030u : 0x00FFFFFFu;   // blue sub / red locked / white main (matches the live cursor)
+    const u32 tint = 0xFF000000u | rgb;
     glow_quad(dev, cx - size * 0.5f, cy - size * 0.5f, size, size, tint);
     dSetTex(dev, 0, 0);
     dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);   // restore the untextured pipeline for the primitives that follow
@@ -513,21 +514,22 @@ void party_cursor(u32 dev, u32 tex, float cx, float cy, float size, bool sub) {
 // The EXACT selection frame the party draws : gold glass fill + the moving glass sweep + darkened rims
 // for the main target, ocean-blue fill + a stronger blue sweep for a sub-target. Exposed so the Help
 // shows the identical look/rhythm. t = time (drives the sweep on the same 1.4s cycle) ; alpha 0..1.
-void party_selframe(u32 dev, float x, float y, float w, float h, float t, float alpha, bool sub) {
+void party_selframe(u32 dev, float x, float y, float w, float h, float t, float alpha, int mode) {
     setup_color_state(dev);
     const float a = alpha < 0.0f ? 0.0f : (alpha > 1.0f ? 1.0f : alpha);
     const float gSwT = t > 0.0f ? t : 0.0f;
     const float gSweep = gSwT / 1.4f - (float)(int)(gSwT / 1.4f);   // 0..1 sweep phase, same as the live rows
-    if (sub) {
+    if (mode == 1) {                                                // sub-target : ocean blue, no rims
         const u32 fillT = ((u32)(0x80 * a) << 24) | 0x00159CFF;     // vivid ocean blue
         const u32 fillB = ((u32)(0x34 * a) << 24) | 0x00064FB0;     // deeper toward the bottom
         vgrad(dev, x, y, w, h, fillT, fillB);
         shine_sweep(dev, x, y, w, h, gSweep, 0x00BFEFFF, 0.80f * a);
-    } else {
-        const u32 fillT = ((u32)(0x3C * a) << 24) | 0x00FFE08A;     // faint gold glass
-        const u32 fillB = ((u32)(0x16 * a) << 24) | 0x00FFC850;
+    } else {                                                        // main (gold) or locked (red) : glass fill + sweep + curved rims
+        const bool locked = (mode == 2);                           // red when the target is LOCKED (matches the live frame)
+        const u32 fillT = locked ? (((u32)(0x52 * a) << 24) | 0x00FF6A5A) : (((u32)(0x3C * a) << 24) | 0x00FFE08A);
+        const u32 fillB = locked ? (((u32)(0x24 * a) << 24) | 0x00D83028) : (((u32)(0x16 * a) << 24) | 0x00FFC850);
         vgrad(dev, x, y, w, h, fillT, fillB);
-        shine_sweep(dev, x, y, w, h, gSweep, 0x00FFFFFF, 0.65f * a);
+        shine_sweep(dev, x, y, w, h, gSweep, locked ? 0x00FFD5C8 : 0x00FFFFFF, 0.65f * a);
         const float rw = w * 0.085f;                                // curved rims : darken the far edges (lens bulge)
         const u32 rO = ((u32)(0x3E * a) << 24), rI = 0x00000000;
         grad_quad(dev, x,          y, rw, h, rO, rI, rO, rI);       // left rim
