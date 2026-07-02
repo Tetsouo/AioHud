@@ -42,23 +42,23 @@ static const char* module_label(int i) {                       // Configuration 
     return (ui_config().lang == 1) ? fr[i] : MODULES[i];
 }
 
-// ---- palette (ARGB) ----
-static const u32 C_DIMBG    = 0xCC04070D;
-static const u32 C_TABON_T  = 0xFF3E88E8, C_TABON_B  = 0xFF2A60B4;
-static const u32 C_TABOFF_T = 0xC0202B3C, C_TABOFF_B = 0xC0151E2C;
-static const u32 C_TABHOV_T = 0xD0364865, C_TABHOV_B = 0xD0202E44;
-static const u32 C_CONTENT_T= 0xE6141C28, C_CONTENT_B= 0xE60E141E;
-static const u32 C_SIDEBAR  = 0xF0161F2D;
-static const u32 C_ROWON_T  = 0xFF2C6AC4, C_ROWON_B  = 0xFF234E92;
-static const u32 C_BORDER   = 0x33FFFFFF, C_BORDERHI = 0x66FFFFFF;
-static const u32 C_TEXT     = 0xFFEAF1FB, C_DIM = 0xFFB4C2D8, C_MUTE = 0xFF8A9AB4;
-static const u32 C_ACCENT   = 0xFF5AA2FF, C_ACCENTHI = 0xFFBFE0FF, C_STROKE = 0xFF000000, C_CLOSEHOV = 0xFFCE424C;
-// FFXI gold (titles / glint / active indicators / unsaved-Save). Interactive accents stay blue.
-static const u32 C_GOLD     = 0xFFFFDC78, C_GOLDHI = 0xFFFFF3C8, C_GOLD_DEEP = 0xFFD8A94A;
-// control surfaces : a cohesive blue "glass" (NOT translucent white, which reads grey on navy).
-static const u32 C_CTL_T    = 0x6E2A4368, C_CTL_B = 0x5E16283F;        // idle button/field fill (navy-blue glass)
-static const u32 C_CTL_BR   = 0x88486F9E;                              // idle control border (soft steel blue)
-static const u32 C_ARROW    = 0xFF9FC4F2;                              // chevron / stepper glyph idle (bright steel blue)
+// ---- palette : "Teal · Graphite" (ARGB) -- ONE cool accent (teal) on a graphite base, no 2nd accent ----
+static const u32 C_DIMBG    = 0xCC05080A;
+static const u32 C_TABON_T  = 0xFF204742, C_TABON_B  = 0xFF163330;   // active tab : dark teal glass (the accent lives in the underline)
+static const u32 C_TABOFF_T = 0xC01A2228, C_TABOFF_B = 0xC012181D;
+static const u32 C_TABHOV_T = 0xD0233C39, C_TABHOV_B = 0xD0182D2B;
+static const u32 C_CONTENT_T= 0xE6161C22, C_CONTENT_B= 0xE60E1317;
+static const u32 C_SIDEBAR  = 0xF0171C22;
+static const u32 C_ROWON_T  = 0xFF1F413C, C_ROWON_B  = 0xFF163430;   // selected row / module : teal
+static const u32 C_BORDER   = 0x2EFFFFFF, C_BORDERHI = 0x58FFFFFF;   // subtler borders read cleaner / more modern
+static const u32 C_TEXT     = 0xFFE7ECF0, C_DIM = 0xFF97A2AC, C_MUTE = 0xFF616B74;
+static const u32 C_ACCENT   = 0xFF2FD4C6, C_ACCENTHI = 0xFF7FEFE4, C_STROKE = 0xFF000000, C_CLOSEHOV = 0xFFE0555F;
+// brand + interactive accent are now ONE colour : teal (titles / glint / active indicators / Save).
+static const u32 C_GOLD     = 0xFF2FD4C6, C_GOLDHI = 0xFF8FF2E8, C_GOLD_DEEP = 0xFF178F86;
+// control surfaces : a cohesive teal "glass".
+static const u32 C_CTL_T    = 0x6E1E3A37, C_CTL_B = 0x5E132927;        // idle button/field fill (teal glass)
+static const u32 C_CTL_BR   = 0x8836726B;                             // idle control border (soft steel-teal)
+static const u32 C_ARROW    = 0xFF7FD8CE;                             // chevron / stepper glyph idle (bright teal)
 // preview gauges (party brief : HP green / MP blue / TP magenta)
 static const u32 C_HP = 0xFF5ADC5A, C_HP_D = 0xFF148C2D, C_MP = 0xFF9597FF, C_MP_D = 0xFF3A3CE0, C_TP = 0xFFCD6EFF, C_TP_D = 0xFF5A0FBE;
 
@@ -311,7 +311,7 @@ static bool arrow_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int u
     (void)fo; (void)uid;
     const bool hov = inrect(mo, x, y, s, s);
     const float t = hov ? 1.0f : 0.0f;   // instant state (no ease -> no animation)
-    rpanel(dev, x, y, s, s, snap(5.0f), lerpc(C_CTL_T, 0x884E8FE0, t), lerpc(C_CTL_B, 0x6E2E63B4, t), lerpc(C_CTL_BR, C_ACCENTHI, t), snap(1.5f));   // rounded stepper (AA corners)
+    rpanel(dev, x, y, s, s, snap(5.0f), lerpc(C_CTL_T, 0x8828B0A6, t), lerpc(C_CTL_B, 0x6E1C7A72, t), lerpc(C_CTL_BR, C_ACCENTHI, t), snap(1.5f));   // rounded stepper (AA corners), teal glass on hover
     const int dir = (glyph[0] == '<') ? -1 : +1;
     chevron(dev, x + s * 0.5f, y + s * 0.5f, s * 0.62f, dir, lerpc(C_ARROW, C_GOLDHI, t));   // fixed size (no pulse)
     return hov && click;
@@ -429,7 +429,7 @@ static bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int 
     const float h = snap(32.0f);
     const bool hov = inrect(mo, x, y, w, h);
     const float t = ease(uid, hov ? 1.0f : 0.0f);
-    rpanel(dev, x, y, w, h, snap(5.0f), lerpc(0x66182234, 0x88243A5C, t), lerpc(0x66101826, 0x88172C4E, t), lerpc(C_BORDERHI, C_ACCENT, t), snap(1.2f));
+    rpanel(dev, x, y, w, h, snap(5.0f), lerpc(0x6614302C, 0x88203A36, t), lerpc(0x660E1B19, 0x88152A28, t), lerpc(C_BORDERHI, C_ACCENT, t), snap(1.2f));   // teal glass on hover
     shine(dev, x + snap(2.0f), y + snap(2.0f), w - snap(4.0f), h - snap(4.0f), t, g_t);   // glass sweep on hover (same as the push buttons)
     cs(dev);                                                                              // reset the blend (shine leaves additive) before the caret triangle
     const float gx = x + snap(15.0f), gy = y + h * 0.5f, s = snap(4.0f);
@@ -805,7 +805,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                 C.zonePanelX = pxp / sw; C.zonePanelY = pyp / sh;   // store the CLAMPED position -> stays == what's drawn
             }
             drop_shadow(dev, pxp, pyp, pw, ph, snap(6.0f), 74);
-            vg(dev, pxp, pyp, pw, ph, 0xF01C2636, 0xF0121A26);
+            vg(dev, pxp, pyp, pw, ph, 0xF01A2624, 0xF0111A18);
             outline(dev, pxp, pyp, pw, ph, C_BORDERHI);
             vg(dev, pxp, pyp, pw, tbh, (tbHov || grabPan) ? 0xF02C3A50 : 0xF0243044, 0xF01A2434);
             flat(dev, pxp, pyp, pw, 1, 0x55FFFFFF);
@@ -878,7 +878,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             float ly = listTop - guideScroll_;
             for (int i = 0; i < C.guideGroupCount; ++i, ly += stride) {
                 if (ly < listTop || ly + rowH > listBot) continue;
-                if (dragRow == i && dragMoved) { vg(dev, px0, ly, rw2, rowH, 0xF0121A26, 0xF00C121C); outline(dev, px0, ly, rw2, rowH, C_BORDER); continue; }   // gap where the dragged row was
+                if (dragRow == i && dragMoved) { vg(dev, px0, ly, rw2, rowH, 0xF0111A18, 0xF00B1210); outline(dev, px0, ly, rw2, rowH, C_BORDER); continue; }   // gap where the dragged row was
                 GuideGroup& z = C.guideGroup[i]; const bool sel = (groupSel_ == i);
                 const bool hov = inrect(mo, px0, ly, rw2, rowH);
                 vg(dev, px0, ly, rw2, rowH, sel ? 0xFF2C5AA0 : (hov ? 0xF02A3548 : 0xF01E2838), sel ? 0xFF20447E : 0xF0161E2C);
@@ -1063,17 +1063,17 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
 
     // ===== BACK LAYER : dim the game, then a self-made MODERN gradient page (no game skin) =====
     flat(dev, 0, 0, sw, sh, C_DIMBG);                                  // darken the game behind us
-    vg(dev, 0, 0, sw, sh, 0xF01B2740, 0xF0080B14);                     // deep slate-blue -> near-black
-    vg(dev, 0, 0, sw, snap(180.0f), 0x2A2E6AB0, 0x002E6AB0);           // soft blue glow falling from the top
-    // two large magical glows drifting slowly across the page (gold + indigo) -> living, LUMINOUS background (additive)
+    vg(dev, 0, 0, sw, sh, 0xF0122320, 0xF0070A0C);                     // deep teal-graphite -> near-black
+    vg(dev, 0, 0, sw, snap(180.0f), 0x281E9A90, 0x001E9A90);           // soft teal glow falling from the top
+    // two large teal glows drifting slowly across the page -> living, LUMINOUS background (additive)
     cs_add(dev);
     {
         const float gx1 = sw * (0.28f + 0.17f * sinf(f.t * 0.17f));
         const float gx2 = sw * (0.74f + 0.15f * sinf(f.t * 0.12f + 2.1f));
         const u32 ag = (u32)((9.0f + 5.0f * pulse)) << 24;
-        soft_blob(dev, gx1, sh * 0.04f, sw * 0.36f, sh * 0.34f, ag | 0x00FFDC78);   // gold
-        soft_blob(dev, gx2, sh * 0.10f, sw * 0.34f, sh * 0.30f, 0x0E2E6AB0);        // indigo
-        soft_blob(dev, sw * 0.5f, sh * 1.02f, sw * 0.6f, sh * 0.28f, 0x10244B8C);   // bottom lift
+        soft_blob(dev, gx1, sh * 0.04f, sw * 0.36f, sh * 0.34f, ag | 0x002FD4C6);   // teal
+        soft_blob(dev, gx2, sh * 0.10f, sw * 0.34f, sh * 0.30f, 0x0E188C86);        // deep cyan-teal
+        soft_blob(dev, sw * 0.5f, sh * 1.02f, sw * 0.6f, sh * 0.28f, 0x101E7A72);   // bottom teal lift
     }
     vg(dev, 0, sh - snap(120.0f), sw, snap(120.0f), 0x00000000, 0x55000000);   // bottom vignette
     flat(dev, 0, 0, sw, snap(2.0f), lerpc(C_GOLD, C_GOLDHI, pulse));           // top GOLD hairline (FFXI glint)
@@ -1088,8 +1088,8 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     // ===== HEADER (title + close), directly on the skin =====
     const float titleSz = snap(28.0f);
     const float tw = fo->measure("AIOHUD", titleSz);
-    cs_add(dev); soft_blob(dev, ix + tw * 0.5f, iy + snap(20.0f), tw * 0.62f, snap(32.0f),   // luminous gold aura behind the wordmark (additive)
-                       ((u32)(48.0f * (0.6f + 0.4f * pulse)) << 24) | 0x00FFDC78);
+    cs_add(dev); soft_blob(dev, ix + tw * 0.5f, iy + snap(20.0f), tw * 0.62f, snap(32.0f),   // luminous teal aura behind the wordmark (additive)
+                       ((u32)(48.0f * (0.6f + 0.4f * pulse)) << 24) | 0x002FD4C6);
     fo->begin(dev);
     fo->draw_lc(dev, ix, iy + snap(22.0f), "AIOHUD", titleSz, fa(C_GOLD), fa(C_STROKE), 2.4f);   // gold wordmark
     fo->draw_lc(dev, ix + tw + snap(14.0f), iy + snap(24.0f), "CONFIGURATION", snap(15.0f), fa(lerpc(C_ACCENT, C_ACCENTHI, pulse)), fa(C_STROKE), 1.2f);
@@ -1640,7 +1640,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         rpanel(dev, cx0, ry0, cw0, ccH, snap(11.0f), 0x55101826, 0x550A111C, C_BORDER, snap(1.5f));
         rrect_fill(dev, cx0 + snap(4.0f), ry0 + snap(9.0f), snap(4.0f), ccH - snap(18.0f), snap(2.0f), lerpc(C_GOLD, C_GOLDHI, pulse), lerpc(C_GOLD, C_GOLDHI, pulse));
         const float avR = snap(22.0f), avX = cx0 + snap(34.0f), avY = ry0 + snap(34.0f);
-        cs(dev); disc(dev, avX, avY, avR, fa(0xFF2C6AC4)); disc(dev, avX, avY, avR - snap(2.0f), fa(0xFF15315C));
+        cs(dev); disc(dev, avX, avY, avR, fa(0xFF1E8A82)); disc(dev, avX, avY, avR - snap(2.0f), fa(0xFF123E3A));
         if (charName) { char ini[2] = { (char)(charName[0] >= 'a' && charName[0] <= 'z' ? charName[0] - 32 : charName[0]), 0 };
             fo->begin(dev); fo->draw_cc(dev, avX, avY, ini, snap(22.0f), fa(C_GOLDHI), fa(C_STROKE), 1.6f); }
         else { fo->begin(dev); fo->draw_cc(dev, avX, avY, "?", snap(22.0f), fa(C_MUTE), fa(C_STROKE), 1.4f); }
