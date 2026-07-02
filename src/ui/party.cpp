@@ -691,7 +691,7 @@ int Party::build_rows(void* outRows, const GameState& gs) const {
         }
         // party-window picker (Quartermaster / Lottery / remove member / ...) : frame the hovered
         // member -- 1-based cursor index into the party list (= our row order). Reversed via //aio pcur.
-        if (gs.partyMenuSel >= 1 && gs.partyMenuSel <= n) rows[gs.partyMenuSel - 1].sel = true;
+        if (gs.partyMenuSel >= 1 && gs.partyMenuSel <= n) rows[gs.partyMenuSel - 1].subsel = true;   // party-menu picker -> BLUE (sub) frame, not the gold target/lock
         // TEST (//aio sim N) : append N fake members so the live party box grows and the alliances react
         // to its size -- lets you verify the dynamic placement without needing real extra players.
         for (int k = party_sim_extra(); k > 0 && n < 6; --k) { demo_row(n, &rows[n]); ++n; }
@@ -1120,11 +1120,11 @@ void Party::draw(const Frame& f) {
         if (rows[i].subsel) subRow = i;
     }
     // the party-window PICKER (Menu -> Party -> Distribution : Quartermaster / change leader / lottery /
-    // remove) drives the frame with PRIORITY over the target/lock cursor. Both set rows[].sel, and the
-    // plain "last sel row wins" pick above let a LOCKED target (higher row index) steal the frame -> the
-    // menu cursor did nothing while locked. Force it to the menu-hovered member when that menu is open.
+    // remove) shows as the BLUE (sub) frame -- a secondary selection, distinct from the GOLD target/lock.
+    // Force the blue cursor onto the menu-hovered member (priority over any <st>) while that menu is open,
+    // so it follows the menu even when you are locked on someone (the lock keeps its own gold frame).
     if (tier_ == 0 && f.game && f.game->partyMenuSel >= 1 && f.game->partyMenuSel <= n)
-        selRow = f.game->partyMenuSel - 1;
+        subRow = f.game->partyMenuSel - 1;
     // selection cursor : slide toward the targeted row (snap on first acquire, else ease) + fade
     if (selRow >= 0) {
         const unsigned sid = rows[selRow].id;
