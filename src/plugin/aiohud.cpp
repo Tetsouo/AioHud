@@ -336,6 +336,19 @@ void aio_plugin_render6()
 static int g_pkt_log = 0;
 static int g_pkt_filter = -1;   // -1 = {0xDD, 0xDF} ; else a specific id
 
+// SEH-guarded packet dispatch. The parsers read FIXED offsets off `b` ; a SHORT/truncated packet would
+// fault, and neither this callback nor the m11 ABI thunk is exception-wrapped -> the fault would propagate
+// into the game (hard crash). Kept in its OWN function so the __except has no C++ object unwinding to fight.
+static void feed_packet(int id, const unsigned char* b)
+{
+    __try {
+        if      (id == 0xDD)  aio::party().on_dd(b);
+        else if (id == 0xDF)  aio::party().on_df(b);
+        else if (id == 0x028) aio::party().on_action(b);   // cast bar
+        else if (id == 0x076) aio::party().on_076(b);      // party-member buffs
+    } __except (EXCEPTION_EXECUTE_HANDLER) { /* short/malformed packet -> ignore, never crash the game */ }
+}
+
 void aio_plugin_packet_in(u32 a, u32 b, u32 c, u32 d)
 {
     (void)c; (void)d;
@@ -343,16 +356,13 @@ void aio_plugin_packet_in(u32 a, u32 b, u32 c, u32 d)
     u32 hdr = 0; safe_read(b, &hdr);
     int id = hdr & 0x1FF;
 
-    // feed the live party model (b = decoded packet ; safe, fully-populated buffer).
+    // feed the live party model (b = decoded packet). SEH-guarded : a truncated packet must never fault the game.
+    feed_packet(id, (const unsigned char*)b);
     if (id == 0xDD) {
-        aio::party().on_dd((const unsigned char*)b);
         u32 mhp = 0; safe_read(b + 0x08, &mhp);          // auto-capture an OUT-OF-ZONE member's
         static int ozdump = 0;                            // 0x0DD (hp==0) -> reveals the zone field
         if (mhp == 0 && ozdump < 4) { ozdump++; debug::log("OFFZONE 0xDD"); debug::hexdump("  oz", b, 64); }
     }
-    else if (id == 0xDF) aio::party().on_df((const unsigned char*)b);
-    else if (id == 0x028) aio::party().on_action((const unsigned char*)b);   // cast bar
-    else if (id == 0x076) aio::party().on_076((const unsigned char*)b);      // party-member buffs
 
     // optional RE logging (armed by //aio pkt). Dump the SOURCE `a` too -> lead to the
     // in-memory party structure (for instant read on load).
@@ -532,9 +542,16 @@ void aio_plugin_command(const char* cmd)
             const int n = aio::profile_count();
             char msg[256];
             if (n == 0) { g_host.console().print(">>> profiles: (none) <<<"); return; }
-            int off = sprintf(msg, ">>> profiles (%d): ", n);
-            for (int k = 0; k < n && off < 230; ++k) off += sprintf(msg + off, "%s%s", k ? ", " : "", aio::profile_name(k));
-            sprintf(msg + off, " <<<"); g_host.console().print(msg);
+            int off = _snprintf(msg, sizeof(msg), ">>> profiles (%d): ", n);
+            if (off < 0) off = 0;                                     // truncated already (shouldn't happen)
+            for (int k = 0; k < n && off < (int)sizeof(msg) - 8; ++k) {   // leave room for " <<<" + NUL
+                int w = _snprintf(msg + off, sizeof(msg) - off, "%s%s", k ? ", " : "", aio::profile_name(k));
+                if (w < 0) { off = (int)sizeof(msg) - 5; break; }     // name overflowed the buffer -> stop
+                off += w;
+            }
+            _snprintf(msg + off, sizeof(msg) - off, " <<<");
+            msg[sizeof(msg) - 1] = 0;                                 // _snprintf may not NUL-terminate on truncation
+            g_host.console().print(msg);
             return;
         }
         int op = 0; const char* verb = 0;

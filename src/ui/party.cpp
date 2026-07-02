@@ -577,6 +577,7 @@ void Party::configure(const json::Value& cfg) {
     if (n < 1) n = 1; if (n > MAXM) n = MAXM;
     count_ = n;
     tier_ = (int)cfg["tier"].as_num(tier_);               // which alliance group this box shows (0 = main)
+    if (tier_ < 0) tier_ = 0; if (tier_ > 2) tier_ = 2;   // clamp : raw tier_ indexes size-3 per-box arrays (box[]/border[]/g_boxRect[]) -> OOB on a bad layout.json
     char key[16];
     for (int i = 0; i < MAXM; ++i) {
         sprintf(key, "p%d_hp", i); dhp_[i] = (int)cfg[key].as_num(dhp_[i]);

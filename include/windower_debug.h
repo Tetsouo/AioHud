@@ -16,8 +16,9 @@ inline void raw(const char* s, int len) {
     if (h != INVALID_HANDLE_VALUE) { DWORD w; WriteFile(h, s, len, &w, NULL); CloseHandle(h); }
 }
 inline void log(const char* fmt, ...) {
-    char buf[1024]; va_list ap; va_start(ap, fmt);
-    int n = wvsprintfA(buf, fmt, ap); va_end(ap);   // NB: wvsprintfA has no %f
+    char buf[1026]; va_list ap; va_start(ap, fmt);   // 1024 for wvsprintfA + 2 for CRLF
+    int n = wvsprintfA(buf, fmt, ap); va_end(ap);    // NB: wvsprintfA has no %f ; caps at 1023 chars
+    if (n < 0) n = 0; if (n > 1023) n = 1023;        // never let CRLF write past buf (was buf[1024] overrun)
     buf[n++] = '\r'; buf[n++] = '\n';
     raw(buf, n);
 }

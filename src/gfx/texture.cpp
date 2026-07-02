@@ -19,7 +19,7 @@ static u32 create_locked(u32 dev, int W, int H, LR* lr)
     if (!fCreate || fCreate(dev, W, H, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &tex) < 0 || !valid_ptr(tex))
         return 0;
     auto fLock = vmethod<long(__stdcall*)(u32,u32,void*,void*,u32)>(tex, 16);
-    if (!fLock || fLock(tex, 0, lr, 0, 0) < 0 || !lr->pBits) return tex;   // created but unlocked
+    if (!fLock || fLock(tex, 0, lr, 0, 0) < 0 || !lr->pBits) { release_texture(tex); return 0; }   // lock failed -> don't hand back an uninitialised (garbage-pixel) texture
     return tex;
 }
 
