@@ -92,13 +92,26 @@ examinable and fills it for a real spell/trust —
 ```
 *(mptr + 0x0C)          -> the examine-description singleton
    +0x30  u32  description length : 0 when nothing examinable, > 0 for a real spell/trust
-   +0x34  u32  sentinel : 0xFFFFFFFF when empty, 0 when populated
+   +0x34  u32  sentinel (dsent)   : 0xFFFFFFFF when EMPTY, else a non-sentinel value
+   +0x3C  u32  description text metric : != 0 the moment the menu is BUILT for a real item, 0 when empty
 ```
-`read_action_menu` sets `examValid = (len != 0 && sentinel != 0xFFFFFFFF)` (in `gamestate.menuExamValid`);
-`party.cpp` gates the magic box on it. Unlike the cache, this is NOT left stale, so it is correct on OPEN
-and on RE-OPEN of the same item. (Reversed via `//aio menu`, comparing an empty magic list vs a trust
-list: `+0x34` read `0xFFFFFFFF` vs `0`.) The keyboard hook also now eats DIK_RETURN's key-UP after a
-consumed key-DOWN, so committing a text field with Enter no longer opens the game chat (`aiohud.cpp`).
+`read_action_menu` sets `examValid` (→ `gamestate.menuExamValid`); `party.cpp` gates the magic box on it.
+
+⚠️ **The first-open trap (fixed 2026-07-02).** `+0x34`/`+0x30` are the obvious signal, but the game only
+clears `+0x34` once the cursor **settles/moves** — so on the very FIRST open (auto-selected first spell,
+cursor unmoved) `+0x34` is still `0xFFFFFFFF`, identical to an empty menu, and the first spell (e.g. Cure)
+was wrongly hidden. `+0x3C`, by contrast, is populated the moment the menu is **built** for a real item and
+stays `0` for an empty one. So the robust gate is:
+```
+examValid = (dsent != 0xFFFFFFFF) || (desc+0x3C != 0)
+```
+The first spell shows its Cost MP immediately; a no-magic job's empty magic menu (`dsent 0xFFFFFFFF` AND
+`+0x3C == 0`) stays hidden. Reversed via a **same-state** dump: WHM-magic vs WAR/DNC-magic, both parked on
+the first spell (cursor unmoved) — the wide `//aio`-style hexdump showed `+0x3C` = `0x42` (WHM) vs `0`
+(WAR/DNC) while everything else in the menu object was byte-identical.
+
+The keyboard hook also eats DIK_RETURN's key-UP after a consumed key-DOWN, so committing a text field with
+Enter no longer opens the game chat (`aiohud.cpp`).
 
 ## See also
 - [Party cast bar — the 0x028 action packet](cast-bar.md)

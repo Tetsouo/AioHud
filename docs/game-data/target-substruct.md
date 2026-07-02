@@ -18,10 +18,17 @@ two `targetentry_t` (40 bytes / `0x28` each) + a sub-active flag.
   target_t + 0x28  u32  Targets[1].Index
   target_t + 0x2C  u32  Targets[1].ServerId    = LOCKED MAIN  (valid while a <st> cursor is up)
   target_t + 0x50  u32  flags ; bit 0x00010000 = sub-target CURSOR OPEN (set only while selecting)
+  target_t + 0x5C  u32  LOCK-ON flag = 1 while the main target <t> is locked on, else 0  (2026-07-02)
 ```
 `0x04000000` is the "nothing targeted" sentinel for a ServerId. Decode (see `read_target`):
 - bit clear → main = `Targets[0].ServerId`, sub = none.
 - bit set   → **sub = `Targets[0].ServerId`** (the cursor), **main = `Targets[1].ServerId`** (locked).
+
+**Lock-on (`+0x5C`).** `read_target` also reads `+0x5C` → `TargetInfo.locked` → `GameState.targetLocked`
+(the locked id is the reticle `Targets[0]`). The party widget tints the selection hand + frame **red**
+when the targeted member is locked (gold = targeted, red = locked, blue = sub). Reversed via `//aio tlock`
+(a one-shot `target_t` hexdump; run it un-targeted / targeting a member / locked on it → `+0x5C` is the
+**only** dword that flips `0 → 1` between "targeting" and "locked"). Probe kept in `plugin/aiohud.cpp`.
 
 ⚠️ Use the `+0x50` bit `0x00010000`, **NOT** the byte at `+0x78`. `+0x78` also goes 1 on
 cursor-open but is STICKY: it stays 1 after you *confirm* the action (clears only on cancel),
