@@ -303,17 +303,19 @@ static float badge(u32 dev, Font* fo, float x, float cy, const char* text, u32 a
     return w;
 }
 
-// a small square [<] / [>] stepper button. NO hover animation (per request) : the hover state is an
-// INSTANT tint only -- no eased spring, no halo glow, no glass sweep, no chevron pulse. uid kept for API
-// compatibility with the callers (unused now).
+// a small [<] / [>] stepper button. Modern: a clean surface that SMOOTHLY lifts on hover, the border
+// warms to the accent, the chevron brightens. No glass sweep, no glossy gradient.
 static bool arrow_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
                       float x, float y, float s, const char* glyph) {
-    (void)fo; (void)uid;
+    (void)fo;
     const bool hov = inrect(mo, x, y, s, s);
-    const float t = hov ? 1.0f : 0.0f;   // instant state (no ease -> no animation)
-    rpanel(dev, x, y, s, s, snap(5.0f), lerpc(C_CTL_T, 0x8828B0A6, t), lerpc(C_CTL_B, 0x6E1C7A72, t), lerpc(C_CTL_BR, C_ACCENTHI, t), snap(1.5f));   // rounded stepper (AA corners), teal glass on hover
+    const bool press = hov && mo && mo->down;
+    const float t = ease(uid, hov ? 1.0f : 0.0f);                    // smooth hover spring
+    const u32 ft = lerpc(press ? 0xFF12201E : C_CTL_T, 0xFF244741, t);
+    const u32 fb = lerpc(press ? 0xFF0E1917 : C_CTL_B, 0xFF193430, t);
+    rpanel(dev, x, y, s, s, snap(7.0f), ft, fb, lerpc(C_CTL_BR, C_ACCENT, t), snap(1.3f));   // rounded stepper
     const int dir = (glyph[0] == '<') ? -1 : +1;
-    chevron(dev, x + s * 0.5f, y + s * 0.5f, s * 0.62f, dir, lerpc(C_ARROW, C_GOLDHI, t));   // fixed size (no pulse)
+    chevron(dev, x + s * 0.5f, y + s * 0.5f, s * 0.62f, dir, lerpc(C_ARROW, C_ACCENTHI, t));
     return hov && click;
 }
 
@@ -330,8 +332,7 @@ static int row_selector(u32 dev, Font* fo, const MouseState* mo, bool click, int
 
     if (arrow_btn(dev, fo, mo, click, uid + 0, cx, cy, aS, "<")) delta = -1;
     const float vx = cx + aS;
-    vg(dev, vx, cy, valW, aS, 0x33101620, 0x33080C12);
-    outline(dev, vx, cy, valW, aS, C_BORDER);
+    rpanel(dev, vx, cy, valW, aS, snap(7.0f), 0x66121A18, 0x66090D0F, C_BORDER, snap(1.0f));   // rounded value field
     fo->begin(dev); fo->draw_c(dev, vx + valW * 0.5f, cy + aS * 0.5f, value, snap(14.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
     if (arrow_btn(dev, fo, mo, click, uid + 1, vx + valW, cy, aS, ">")) delta = +1;
     return delta;
@@ -365,41 +366,42 @@ static bool row_slider(u32 dev, Font* fo, const MouseState* mo, int id,
 
     const float fillW = snap(trkW * clampf(*v01, 0.0f, 1.0f));
     const float tr = trkH * 0.5f;
-    rrect_fill(dev, trkX, trkY, trkW, trkH, tr, 0x44101620, 0x44080C12);       // rounded groove
-    if (fillW >= trkH) rrect_fill(dev, trkX, trkY, fillW, trkH, tr, C_ACCENTHI, C_ACCENT);   // rounded fill
+    rrect_fill(dev, trkX, trkY, trkW, trkH, tr, 0x66101416, 0x66090C0E);       // dark groove
+    if (fillW >= trkH) rrect_fill(dev, trkX, trkY, fillW, trkH, tr, C_ACCENTHI, C_ACCENT);   // accent fill
 
-    // round knob : eases bigger on hover / while dragging, with a soft halo + rim.
+    // clean round knob : eases bigger on hover/drag with a THIN accent ring + a soft shadow (no big halo, no gloss).
     const float kt = ease(40 + id, (hot || act) ? 1.0f : 0.0f);
-    const float kr = knobR * (1.0f + 0.35f * kt);
+    const float kr = knobR * (1.0f + 0.22f * kt);
     const float kx = trkX + fillW;
-    halo_round(dev, kx, cy, kr, C_ACCENT, 0.4f + kt);   // clean circular halo around the knob
+    if (kt > 0.01f) { cs_add(dev); disc_glow(dev, kx, cy, kr + snap(1.0f), (C_ACCENT & 0x00FFFFFF) | ((u32)(72.0f * kt) << 24), snap(6.0f)); }   // soft accent ring
     cs(dev);
-    disc(dev, kx, cy, kr + snap(1.5f), fa(C_BORDERHI));                        // rim
-    disc(dev, kx, cy, kr, fa(lerpc(0xFFCFE0F5, 0xFFFFFFFF, kt)));              // body
-    disc(dev, kx, cy - kr * 0.30f, kr * 0.55f, fa(0x66FFFFFF));               // top gloss
+    disc(dev, kx, cy + snap(1.0f), kr + snap(1.0f), fa(0x55000000));           // subtle drop shadow under the knob
+    disc(dev, kx, cy, kr, fa(0xFFF6FAFA));                                     // clean white knob
     fo->begin(dev);
     fo->draw_c(dev, trkX + trkW + gap + valW * 0.5f, cy, valueText, snap(14.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
     return changed;
 }
 
-// A pill toggle chip with a label, eased on/off colour crossfade + a hover halo. uid = animation base.
+// A pill toggle chip. Modern: OFF = a neutral graphite pill ; ON = a SOLID teal fill with dark text.
+// Hover smoothly lifts the surface + warms the border with a thin accent ring. No dot, no glass sweep.
 static bool toggle_chip(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
                         float x, float y, float w, float h, const char* label, bool on) {
     const bool hov = inrect(mo, x, y, w, h);
     const float st = ease(uid + 0, on ? 1.0f : 0.0f, 14.0f);         // on/off crossfade
     const float ht = ease(uid + 1, hov ? 1.0f : 0.0f);               // hover lift
-    halo_rect(dev, x, y, w, h, on ? 0xFF49C46A : 0xFFB85A66, (st > 0.5f ? st : (1.0f - st)) * ht);
-    const u32 onT = 0xFF2E8C49, onB = 0xFF206030, offT = 0xFF552530, offB = 0xFF3A1820;
-    u32 t = lerpc(offT, onT, st), b = lerpc(offB, onB, st);
-    t = lerpc(t, lerpc(0xFF6E2E38, 0xFF3FA85A, st), ht * 0.6f);       // brighten on hover
-    const u32 brOn = 0xFF6FE49A, brOff = 0xFFD86A72;                  // hover border reflects the STATE (green on / red off) like the halo
-    const u32 brHov = lerpc(brOff, brOn, st);
-    rpanel(dev, x, y, w, h, snap(6.0f), t, b, lerpc(C_BORDER, brHov, ht), snap(1.5f));   // rounded chip (AA corners) : border tints to the state colour on hover
-    shine(dev, x + snap(2.0f), y + snap(2.0f), w - snap(4.0f), h - snap(4.0f), ht, g_t);   // glass sweep on hover (same as the push buttons) ; the dot's cs() resets the blend after
-    // a little round state dot, left of the label : green when on, dim red when off
-    const float dr = snap(4.0f), dx = x + snap(11.0f), dy = y + h * 0.5f;
-    cs(dev); disc(dev, dx, dy, dr, fa(lerpc(0xFF7E3A42, 0xFF8CF2A8, st)));
-    fo->begin(dev); fo->draw_c(dev, x + w * 0.5f + snap(6.0f), dy, label, snap(12.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+    const float r  = h * 0.5f;                                       // full pill
+    // fill : neutral graphite (off) -> solid teal (on) ; hover lightens both a touch
+    u32 ft = lerpc(0xFF1B2228, 0xFF35DACC, st), fb = lerpc(0xFF141A1F, 0xFF1FA79C, st);
+    ft = lerpc(ft, lerpc(0xFF242E35, 0xFF52ECDE, st), ht * 0.5f);
+    fb = lerpc(fb, lerpc(0xFF1A222A, 0xFF29BBAF, st), ht * 0.5f);
+    const u32 br = lerpc(lerpc(C_CTL_BR, C_ACCENTHI, st), C_ACCENTHI, ht);
+    rpanel(dev, x, y, w, h, r, ft, fb, br, snap(1.3f));
+    if (ht > 0.01f) { cs_add(dev); rrect_glow(dev, x, y, w, h, r, (C_ACCENT & 0x00FFFFFF) | ((u32)(34.0f * ht) << 24), snap(5.0f)); }   // thin accent ring
+    cs(dev);
+    // text : light on the dark OFF pill, near-black on the bright teal ON pill (high contrast)
+    const u32 txt = lerpc(C_TEXT, 0xFF06201D, st);
+    const u32 stk = lerpc(C_STROKE, 0x00000000, st);                 // drop the outline once the fill is bright
+    fo->begin(dev); fo->draw_c(dev, x + w * 0.5f, y + h * 0.5f, label, snap(12.0f), fa(txt), fa(stk), 1.0f);
     return hov && click;
 }
 
@@ -410,16 +412,17 @@ static bool push_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int ui
     const bool hov = inrect(mo, x, y, w, h);
     const bool press = hov && mo && mo->down;
     const float t = ease(uid, hov ? 1.0f : 0.0f);
-    const u32 idleT = tone ? 0xFF3A2A2E : 0xFF2A3548, idleB = tone ? 0xFF281D20 : 0xFF1D2738;
-    const u32 hovT  = tone ? 0xFFB85050 : 0xFF3A82E0, hovB  = tone ? 0xFF8A3A3A : 0xFF2A61B6;
-    const float pin = press ? snap(2.0f) : 0.0f;                     // press : nudge inward
-    const float bx = x + pin, by = y + pin, bw = w - 2 * pin, bh = h - 2 * pin;
-    drop_shadow(dev, bx, by, bw, bh, snap(4.0f), press ? 36 : 64);
-    halo_rect(dev, bx, by, bw, bh, tone ? 0xFFE06868 : C_ACCENT, t * 0.8f);
-    rpanel(dev, bx, by, bw, bh, snap(6.0f), lerpc(idleT, hovT, t), lerpc(idleB, hovB, t), lerpc(C_BORDERHI, tone ? 0xFFE57078 : C_ACCENTHI, t), snap(1.5f));   // rounded (AA corners)
-    vg(dev, bx + snap(2.0f), by + snap(2.0f), bw - snap(4.0f), bh * 0.42f, 0x33FFFFFF, 0x05FFFFFF);   // flat top sheen
-    shine(dev, bx + snap(2.0f), by + snap(2.0f), bw - snap(4.0f), bh - snap(4.0f), t, g_t);   // glass sweep on hover
-    fo->begin(dev); fo->draw_c(dev, x + w * 0.5f, y + h * 0.5f, label, snap(13.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+    const u32 accBr = tone ? 0xFFE0555F : C_ACCENT, accHi = tone ? 0xFFFF8A92 : C_ACCENTHI;
+    const u32 idleT = tone ? 0xFF241A1C : 0xFF1E252B, idleB = tone ? 0xFF1A1214 : 0xFF161C21;
+    const u32 hovT  = tone ? 0xFF39262A : 0xFF27313A, hovB  = tone ? 0xFF281A1C : 0xFF1C232A;
+    const float pin = press ? snap(1.0f) : 0.0f;                     // press : a small inward nudge
+    const float bx = x + pin, by = y + pin, bw = w - 2 * pin, bh = h - 2 * pin, r = snap(9.0f);
+    drop_shadow(dev, bx, by, bw, bh, snap(3.0f), press ? 30 : 54);
+    if (t > 0.01f) { cs_add(dev); rrect_glow(dev, bx, by, bw, bh, r, (accBr & 0x00FFFFFF) | ((u32)(46.0f * t) << 24), snap(6.0f)); }   // soft accent ring on hover
+    rpanel(dev, bx, by, bw, bh, r, lerpc(idleT, hovT, t), lerpc(idleB, hovB, t), lerpc(C_CTL_BR, accBr, t), snap(1.3f));
+    flat(dev, bx + r, by + snap(1.0f), bw - 2.0f * r, 1.0f, ((u32)(26.0f + 22.0f * t) << 24) | 0x00FFFFFF);   // crisp 1px top hairline (not a glossy gradient)
+    cs(dev);
+    fo->begin(dev); fo->draw_c(dev, x + w * 0.5f, y + h * 0.5f, label, snap(13.0f), fa(lerpc(C_TEXT, accHi, t * 0.45f)), fa(C_STROKE), 1.0f);
     return hov && click;
 }
 
@@ -429,9 +432,9 @@ static bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int 
     const float h = snap(32.0f);
     const bool hov = inrect(mo, x, y, w, h);
     const float t = ease(uid, hov ? 1.0f : 0.0f);
-    rpanel(dev, x, y, w, h, snap(5.0f), lerpc(0x6614302C, 0x88203A36, t), lerpc(0x660E1B19, 0x88152A28, t), lerpc(C_BORDERHI, C_ACCENT, t), snap(1.2f));   // teal glass on hover
-    shine(dev, x + snap(2.0f), y + snap(2.0f), w - snap(4.0f), h - snap(4.0f), t, g_t);   // glass sweep on hover (same as the push buttons)
-    cs(dev);                                                                              // reset the blend (shine leaves additive) before the caret triangle
+    rpanel(dev, x, y, w, h, snap(7.0f), lerpc(0x6614302C, 0x99203A36, t), lerpc(0x660E1B19, 0x99152A28, t), lerpc(C_BORDER, C_ACCENT, t), snap(1.2f));   // clean teal surface on hover
+    if (t > 0.01f) { cs_add(dev); rrect_glow(dev, x, y, w, h, snap(7.0f), (C_ACCENT & 0x00FFFFFF) | ((u32)(24.0f * t) << 24), snap(5.0f)); }   // thin accent ring
+    cs(dev);                                                                              // back to the colour-quad state before the caret triangle
     const float gx = x + snap(15.0f), gy = y + h * 0.5f, s = snap(4.0f);
     if (open) fill_tri(dev, gx - s, gy - s * 0.55f, gx + s, gy - s * 0.55f, gx, gy + s * 0.85f, fa(C_ACCENTHI));   // down triangle
     else      fill_tri(dev, gx - s * 0.55f, gy - s, gx - s * 0.55f, gy + s, gx + s * 0.85f, gy, fa(C_ACCENTHI));   // right triangle
@@ -1233,15 +1236,14 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             const bool hov = canSave && inrect(mo, bx, bY, saveW, bH);
             const float t = ease(410, hov ? 1.0f : 0.0f);
             const float sr = snap(bH * 0.30f);
-            if (dirty) {                                  // unsaved -> a SOLID gold pill + dark, high-contrast label
-                halo_rect(dev, bx, bY, saveW, bH, C_GOLD, 0.55f + 0.35f * pulse);
-                rpanel(dev, bx, bY, saveW, bH, sr, lerpc(0xFFF2C24E, 0xFFFFE08A, t), lerpc(0xFFCB901C, 0xFFE3A626, t), C_GOLDHI, snap(1.5f));
-                rrect_top(dev, bx + snap(2.0f), bY + snap(2.0f), saveW - snap(4.0f), bH * 0.42f, snap(sr * 0.6f), 0x44FFFFFF, 0x08FFFFFF);
-                shine(dev, bx + snap(2.0f), bY + snap(2.0f), saveW - snap(4.0f), bH - snap(4.0f), 0.85f, g_t);   // continuous sweep -> "act on me"
-                fo->begin(dev); fo->draw_c(dev, bx + saveW * 0.5f, barCy, tr("Save changes", "Enregistrer"), snap(14.0f), fa(0xFF241600), 0, 0.0f);
-            } else {                                      // saved / nothing to save -> quiet navy
-                if (canSave) halo_rect(dev, bx, bY, saveW, bH, C_ACCENT, t * 0.7f);
-                rpanel(dev, bx, bY, saveW, bH, sr, canSave ? lerpc(0xFF2A3548, 0xFF3A82E0, t) : 0xFF1E2630, canSave ? lerpc(0xFF1D2738, 0xFF2A61B6, t) : 0xFF141A22, lerpc(C_BORDERHI, C_ACCENTHI, t), snap(1.5f));
+            if (dirty) {                                  // unsaved -> a SOLID teal pill + dark, high-contrast label
+                cs_add(dev); rrect_glow(dev, bx, bY, saveW, bH, sr, (C_ACCENT & 0x00FFFFFF) | ((u32)(40.0f + 40.0f * pulse) << 24), snap(7.0f)); cs(dev);   // breathing accent ring -> "act on me"
+                rpanel(dev, bx, bY, saveW, bH, sr, lerpc(0xFF33D8CA, 0xFF52ECDE, t), lerpc(0xFF1FA79C, 0xFF29BBAF, t), C_ACCENTHI, snap(1.4f));
+                flat(dev, bx + sr, bY + snap(1.0f), saveW - 2.0f * sr, 1.0f, 0x40FFFFFF);   // crisp 1px top hairline
+                fo->begin(dev); fo->draw_c(dev, bx + saveW * 0.5f, barCy, tr("Save changes", "Enregistrer"), snap(14.0f), fa(0xFF06201D), 0, 0.0f);
+            } else {                                      // saved / nothing to save -> quiet graphite
+                if (canSave && t > 0.01f) { cs_add(dev); rrect_glow(dev, bx, bY, saveW, bH, sr, (C_ACCENT & 0x00FFFFFF) | ((u32)(44.0f * t) << 24), snap(6.0f)); cs(dev); }
+                rpanel(dev, bx, bY, saveW, bH, sr, canSave ? lerpc(0xFF1E252B, 0xFF27313A, t) : 0xFF1A2027, canSave ? lerpc(0xFF161C21, 0xFF1C232A, t) : 0xFF121820, lerpc(C_CTL_BR, C_ACCENTHI, t), snap(1.3f));
                 fo->begin(dev); fo->draw_c(dev, bx + saveW * 0.5f, barCy, tr("Saved", "Enregistré"), snap(14.0f), fa(canSave ? C_TEXT : C_MUTE), fa(C_STROKE), 1.0f);
             }
             if (canSave && dirty && hov && click) { profile_save(activeProf_); }
