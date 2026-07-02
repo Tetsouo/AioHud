@@ -1294,7 +1294,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         // rect -> anything scrolled out of view is neither drawn nor click-through. ----
         const float cfgTop = ry, cfgBot = pageBot;                     // ry == coY + 44 here (first row top)
         if (ui_config().wheel != 0 && mo && mo->x >= bandX && mo->x <= bandX + bandW && mo->y >= cfgTop && mo->y <= cfgBot) {
-            cfgScroll_ -= (float)ui_config().wheel * snap(40.0f);
+            cfgScroll_ -= (float)ui_config().wheel * snap(64.0f);
             if (cfgScroll_ < 0.0f) cfgScroll_ = 0.0f;
             if (cfgScroll_ > cfgMaxScroll_) cfgScroll_ = cfgMaxScroll_;  // clamp against LAST frame's extent
         }
@@ -1316,54 +1316,15 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
           if (int d = row_selector(dev, fo, mo, click, 20, coX, ry + yo, ctrlW, tr("Box Theme", "Thème de cadre"), window_theme_name(ui_config().skinTheme))) {
               ui_config().skinTheme = wrap(ui_config().skinTheme + d, window_theme_count()); save_ui_config(); } }
         ROW_NEXT(52.0f)
-        // Font -> party/alliance text face (global override ; per-element faces live under Advanced > Typography)
+        // Font -> the INTERFACE (config-menu) font ; also drives the HUD's default text face.
         { ROW_BAND(52.0f)
-          if (int d = row_selector(dev, fo, mo, click, 30, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(ui_config().fontFace))) {
-              ui_config().fontFace = wrap(ui_config().fontFace + d, ui_font_count()); save_ui_config(); } }
+          int gf = ui_config().text[TE_UI].face; if (gf < 0 || gf >= ui_font_count()) gf = 0;
+          if (int d = row_selector(dev, fo, mo, click, 30, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(gf))) {
+              gf = wrap(gf + d, ui_font_count());
+              ui_config().text[TE_UI].face = gf;   // the config menu font (changes live)
+              ui_config().fontFace = gf;            // and the HUD default text face
+              save_ui_config(); } }
         ROW_NEXT(52.0f)
-        // Animation : HP critical blink / TP ready pulse on or off (global)
-        { ROW_BAND(52.0f)
-            const float rowH = snap(40.0f), ty = ry + yo;
-            fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Animation", "Animation"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bgap = snap(8.0f), bbh = snap(34.0f);
-            const float bx0 = coX + ctrlW - (2 * bbw + bgap), bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, 90, bx0, bty, bbw, bbh, ui_config().animHP ? tr("HP on", "HP oui") : tr("HP off", "HP non"), ui_config().animHP)) { ui_config().animHP = !ui_config().animHP; save_ui_config(); }
-            if (toggle_chip(dev, fo, mo, click, 92, bx0 + bbw + bgap, bty, bbw, bbh, ui_config().animTP ? tr("TP on", "TP oui") : tr("TP off", "TP non"), ui_config().animTP)) { ui_config().animTP = !ui_config().animTP; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
-        // Cursor Size : the selection hand (one cursor -> a global setting)
-        { ROW_BAND(52.0f)
-            const float lo = 0.50f, hi = 2.00f;
-            char czbuf[16]; sprintf(czbuf, "%d%%", (int)(ui_config().cursorScale * 100.0f + 0.5f));
-            float v01 = (ui_config().cursorScale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, 3, coX, ry + yo, ctrlW, tr("Cursor Size", "Taille du curseur"), czbuf, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().cursorScale = v < lo ? lo : (v > hi ? hi : v);
-            }
-        }
-        ROW_NEXT(52.0f)
-        // Buff Size : only the Party box shows buffs (the game doesn't send alliance buffs)
-        { ROW_BAND(52.0f)
-            const float lo = 0.40f, hi = 2.00f;   // >100% makes buffs bigger AND grows the player row to fit
-            char bzbuf[16]; sprintf(bzbuf, "%d%%", (int)(ui_config().buffScale * 100.0f + 0.5f));
-            float v01 = (ui_config().buffScale - lo) / (hi - lo);
-            if (row_slider(dev, fo, mo, 2, coX, ry + yo, ctrlW, tr("Buff Size", "Taille des buffs"), bzbuf, &v01)) {
-                float v = lo + v01 * (hi - lo);
-                v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().buffScale = v < lo ? lo : (v > hi ? hi : v);
-            }
-        }
-        ROW_NEXT(52.0f)
-        // Max Buffs : how many status icons per member. > 16 wraps to TWO rows (16 + 16), centred.
-        { ROW_BAND(40.0f)
-            static const int BM[] = { 16, 20, 24, 32 };
-            int idx = 0; for (int k = 0; k < 4; ++k) if (BM[k] == ui_config().buffMax) { idx = k; break; }
-            char bmv[28]; sprintf(bmv, "%d", BM[idx]);   // caps the count ; the party always reserves 2 buff rows
-            if (int d = row_selector(dev, fo, mo, click, 38, coX, ry + yo, ctrlW, tr("Max Buffs", "Buffs max"), bmv)) {
-                idx = wrap(idx + d, 4); ui_config().buffMax = BM[idx]; save_ui_config(); }
-        }
-        ROW_NEXT(40.0f)
         }
         // ===== category : PER BOX (the selector below chooses which box) =====
         if (cat_header(dev, fo, mo, click, 122, hdrX, ry, hdrW, tr("Per box", "Par boîte"), catOpen_[1])) catOpen_[1] = !catOpen_[1];
@@ -1392,6 +1353,36 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             }
         }
         ROW_NEXT(46.0f)
+        // Party-only extras : buffs (the game sends none for alliances) + the selection cursor.
+        if (T == 0) { ROW_BAND(52.0f)
+            const float lo = 0.40f, hi = 2.00f;   // >100% makes buffs bigger AND grows the player row to fit
+            char bzbuf[16]; sprintf(bzbuf, "%d%%", (int)(ui_config().buffScale * 100.0f + 0.5f));
+            float v01 = (ui_config().buffScale - lo) / (hi - lo);
+            if (row_slider(dev, fo, mo, 2, coX, ry + yo, ctrlW, tr("Buff Size", "Taille des buffs"), bzbuf, &v01)) {
+                float v = lo + v01 * (hi - lo);
+                v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().buffScale = v < lo ? lo : (v > hi ? hi : v);
+            }
+            ROW_NEXT(52.0f)
+            { ROW_BAND(40.0f)
+                static const int BM[] = { 16, 20, 24, 32 };
+                int idx = 0; for (int k = 0; k < 4; ++k) if (BM[k] == ui_config().buffMax) { idx = k; break; }
+                char bmv[28]; sprintf(bmv, "%d", BM[idx]);   // caps the count ; the party always reserves 2 buff rows
+                if (int d = row_selector(dev, fo, mo, click, 38, coX, ry + yo, ctrlW, tr("Max Buffs", "Buffs max"), bmv)) {
+                    idx = wrap(idx + d, 4); ui_config().buffMax = BM[idx]; save_ui_config(); }
+                ROW_NEXT(40.0f)
+            }
+            { ROW_BAND(52.0f)
+                const float lo = 0.50f, hi = 2.00f;
+                char czbuf[16]; sprintf(czbuf, "%d%%", (int)(ui_config().cursorScale * 100.0f + 0.5f));
+                float v01 = (ui_config().cursorScale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+                if (row_slider(dev, fo, mo, 3, coX, ry + yo, ctrlW, tr("Cursor Size", "Taille du curseur"), czbuf, &v01)) {
+                    float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                    ui_config().cursorScale = v < lo ? lo : (v > hi ? hi : v);
+                }
+                ROW_NEXT(52.0f)
+            }
+        }
         // Bar Height -> HP/MP/TP gauge height (the taller rows give the room ; rows grow past the badge)
         { ROW_BAND(46.0f)
             const float lo = 0.80f, hi = 1.80f;
@@ -1423,6 +1414,17 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                 ui_config().gaugeStyle[T] = wrap(s + d, 8); save_ui_config(); }
         }
         ROW_NEXT(52.0f)
+        // Animation : HP critical blink / TP ready pulse (a Party-box setting ; applies to every gauge)
+        if (T == 0) { ROW_BAND(52.0f)
+            const float rowH = snap(40.0f), ty = ry + yo;
+            fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Animation", "Animation"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(112.0f), bgap = snap(8.0f), bbh = snap(34.0f);
+            const float bx0 = coX + ctrlW - (2 * bbw + bgap), bty = ty + (rowH - bbh) * 0.5f;
+            if (toggle_chip(dev, fo, mo, click, 90, bx0, bty, bbw, bbh, ui_config().animHP ? tr("HP on", "HP oui") : tr("HP off", "HP non"), ui_config().animHP)) { ui_config().animHP = !ui_config().animHP; save_ui_config(); }
+            if (toggle_chip(dev, fo, mo, click, 92, bx0 + bbw + bgap, bty, bbw, bbh, ui_config().animTP ? tr("TP on", "TP oui") : tr("TP off", "TP non"), ui_config().animTP)) { ui_config().animTP = !ui_config().animTP; save_ui_config(); }
+            ROW_NEXT(52.0f)
+        }
         // Job Badge : Off / Main job only / Main + Sub / Icon (job emblem tinted by role)
         { ROW_BAND(52.0f)
             int m = ui_config().jobBadge[T]; if (m < 0 || m > 3) m = 2;
@@ -1494,9 +1496,10 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             if (push_btn(dev, fo, mo, click, 61, defX, ty, bw, bh, tr("Default (all)", "Défaut (tout)"), 1)) reset_ui_config();
         }
         ROW_NEXT(56.0f)
-        { ROW_BAND(52.0f)   // element selector
-            int el = (cfgTextElem_ < 0 || cfgTextElem_ >= TE_COUNT) ? 0 : cfgTextElem_;
-            if (int d = row_selector(dev, fo, mo, click, 100, coX, ry + yo, ctrlW, tr("Element", "Élément"), ui_text_elem_label(el))) cfgTextElem_ = wrap(el + d, TE_COUNT);
+        { ROW_BAND(52.0f)   // element selector -- Interface (TE_UI) is skipped : its font is Global > Font
+            int el = (cfgTextElem_ < 0 || cfgTextElem_ >= TE_COUNT || cfgTextElem_ == TE_UI) ? 0 : cfgTextElem_;
+            if (int d = row_selector(dev, fo, mo, click, 100, coX, ry + yo, ctrlW, tr("Element", "Élément"), ui_text_elem_label(el))) {
+                int n = wrap(el + d, TE_COUNT); if (n == TE_UI) n = wrap(n + d, TE_COUNT); cfgTextElem_ = n; }
         }
         ROW_NEXT(52.0f)
         {
@@ -1552,7 +1555,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         clip_rect_end(dev);
         // scroll extent (this frame) + a thin scrollbar in the split gap
         {
-            const float viewH = cfgBot - cfgTop, contentH = (ry + cfgScroll_) - cfgTop;   // ry advanced by every row
+            const float viewH = cfgBot - cfgTop, contentH = (ry + cfgScroll_) - cfgTop + snap(40.0f);   // ry advanced by every row (+ bottom breathing room)
             float maxS = contentH - viewH; if (maxS < 0.0f) maxS = 0.0f;
             cfgMaxScroll_ = maxS;                                                          // remembered for next frame's clamp
             if (cfgScroll_ > maxS) cfgScroll_ = maxS;
