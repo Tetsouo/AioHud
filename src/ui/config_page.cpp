@@ -310,7 +310,7 @@ static bool arrow_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int u
     (void)fo;
     const bool hov = inrect(mo, x, y, s, s);
     const bool press = hov && mo && mo->down;
-    const float t = ease(uid, hov ? 1.0f : 0.0f);                    // smooth hover spring
+    const float t = ease(2000 + uid, hov ? 1.0f : 0.0f);            // smooth hover ; 2000+ = a dedicated ease namespace for arrows (never collides with slider/chip/header slots)
     const u32 ft = lerpc(press ? 0xFF12201E : C_CTL_T, 0xFF244741, t);
     const u32 fb = lerpc(press ? 0xFF0E1917 : C_CTL_B, 0xFF193430, t);
     rpanel(dev, x, y, s, s, snap(7.0f), ft, fb, lerpc(C_CTL_BR, C_ACCENT, t), snap(1.3f));   // rounded stepper
@@ -330,11 +330,11 @@ static int row_selector(u32 dev, Font* fo, const MouseState* mo, bool click, int
     const float cx = x + w - ctlW, cy = y + (rowH - aS) * 0.5f;
     int delta = 0;
 
-    if (arrow_btn(dev, fo, mo, click, uid + 0, cx, cy, aS, "<")) delta = -1;
+    if (arrow_btn(dev, fo, mo, click, uid * 2, cx, cy, aS, "<")) delta = -1;   // uid*2 / uid*2+1 : each selector's two arrows get a UNIQUE pair (adjacent selector uids can't overlap)
     const float vx = cx + aS;
     rpanel(dev, vx, cy, valW, aS, snap(7.0f), 0x66121A18, 0x66090D0F, C_BORDER, snap(1.0f));   // rounded value field
     fo->begin(dev); fo->draw_c(dev, vx + valW * 0.5f, cy + aS * 0.5f, value, snap(14.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-    if (arrow_btn(dev, fo, mo, click, uid + 1, vx + valW, cy, aS, ">")) delta = +1;
+    if (arrow_btn(dev, fo, mo, click, uid * 2 + 1, vx + valW, cy, aS, ">")) delta = +1;
     return delta;
 }
 static int wrap(int v, int n) { if (v < 0) return n - 1; if (v >= n) return 0; return v; }
@@ -392,11 +392,11 @@ static bool toggle_chip(u32 dev, Font* fo, const MouseState* mo, bool click, int
     const float r  = h * 0.5f;                                       // full pill
     // fill : neutral graphite (off) -> solid teal (on) ; hover lightens both a touch
     u32 ft = lerpc(0xFF1B2228, 0xFF35DACC, st), fb = lerpc(0xFF141A1F, 0xFF1FA79C, st);
-    ft = lerpc(ft, lerpc(0xFF242E35, 0xFF52ECDE, st), ht * 0.5f);
-    fb = lerpc(fb, lerpc(0xFF1A222A, 0xFF29BBAF, st), ht * 0.5f);
-    const u32 br = lerpc(lerpc(C_CTL_BR, C_ACCENTHI, st), C_ACCENTHI, ht);
-    rpanel(dev, x, y, w, h, r, ft, fb, br, snap(1.3f));
-    if (ht > 0.01f) { cs_add(dev); rrect_glow(dev, x, y, w, h, r, (C_ACCENT & 0x00FFFFFF) | ((u32)(34.0f * ht) << 24), snap(5.0f)); }   // thin accent ring
+    ft = lerpc(ft, lerpc(0xFF2C363E, 0xFF63F4E6, st), ht * 0.8f);        // hover clearly lifts the surface (visible on BOTH the dark OFF and the bright ON pill)
+    fb = lerpc(fb, lerpc(0xFF20292F, 0xFF34D2C5, st), ht * 0.8f);
+    const u32 br = lerpc(lerpc(C_CTL_BR, C_ACCENTHI, st), 0xFFEAFBF9, ht);   // border -> near-white on hover : a clear cue even on the bright ON pill
+    rpanel(dev, x, y, w, h, r, ft, fb, br, snap(1.4f));
+    if (ht > 0.01f) { cs_add(dev); rrect_glow(dev, x, y, w, h, r, (C_ACCENTHI & 0x00FFFFFF) | ((u32)(70.0f * ht) << 24), snap(6.0f)); }   // clear accent ring on hover
     cs(dev);
     // text : light on the dark OFF pill, near-black on the bright teal ON pill (high contrast)
     const u32 txt = lerpc(C_TEXT, 0xFF06201D, st);
