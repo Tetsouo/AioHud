@@ -167,6 +167,20 @@ static void setup_color_state(u32 dev) {
     dSetTSS(dev, 1, D3DTSS_COLOROP, D3DTOP_DISABLE);
     dSetTSS(dev, 1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
 }
+// standard TEXTURED-quad state (MODULATE tex*diffuse, straight alpha, CLAMP, LINEAR min/mag) : the block
+// every sprite draw shares (cursor / job icon / buffs / dot markers). Binds `tex` on stage 0.
+// mipLinear=false keeps a pixel-exact atlas crisp (the buff atlas) ; true = LINEAR mips elsewhere.
+static void setup_tex_state(u32 dev, u32 tex, bool mipLinear = true) {
+    dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
+    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
+    dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    dSetTex(dev, 0, tex);
+    dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+    dSetTSS(dev, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MIPFILTER, mipLinear ? D3DTEXF_LINEAR : D3DTEXF_NONE);
+    dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
+}
 static void vgrad(u32 dev, float x, float y, float w, float h, u32 top, u32 bot) {
     grad_quad(dev, x, y, w, h, top, top, bot, bot);
 }
@@ -491,15 +505,7 @@ void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32
 // exposed for the Help live samples. sub = true tints it blue (sub-target), else white (main target).
 void party_cursor(u32 dev, u32 tex, float cx, float cy, float size, bool sub) {
     if (!tex) return;
-    dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
-    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
-    dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
-    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    dSetTex(dev, 0, tex);
-    dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
-    dSetTSS(dev, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MIPFILTER, D3DTEXF_LINEAR);
-    dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
+    setup_tex_state(dev, tex);
     const u32 tint = 0xFF000000u | (sub ? 0x002E9CFFu : 0x00FFFFFFu);
     glow_quad(dev, cx - size * 0.5f, cy - size * 0.5f, size, size, tint);
     dSetTex(dev, 0, 0);
@@ -773,13 +779,7 @@ static const int JI_W = 512, JI_H = 192, JI_CELL = 64, JI_COLS = 8;
 // Leaves the device textured -> the caller's next draw resets it.
 static void draw_job_icon(u32 dev, u32 tex, float x, float y, float sz, int cell, u32 tint) {
     if (!tex || cell < 0) return;
-    dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
-    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1); dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA); dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    dSetTex(dev, 0, tex);
-    dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
-    dSetTSS(dev, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MIPFILTER, D3DTEXF_LINEAR);
-    dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
+    setup_tex_state(dev, tex);
     const float au = (float)JI_CELL / (float)JI_W, av = (float)JI_CELL / (float)JI_H;
     // crop the transparent margin baked into each cell (measured : >= 6px empty on every side of every job
     // in JOBS[1..22]) so the emblem fills the badge instead of floating with air around it. 6/64 per side is
@@ -817,15 +817,7 @@ Party::RowAnim* Party::anim_for(unsigned id) {
 static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
                               float px, float oy, float pad, float rowpit, float rowh, float S, float iconH) {
     if (!buffTex) return;
-    dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
-    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
-    dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
-    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    dSetTex(dev, 0, buffTex);
-    dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
-    dSetTSS(dev, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MIPFILTER, D3DTEXF_NONE);
-    dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
+    setup_tex_state(dev, buffTex, false);               // MIPFILTER NONE : pixel-exact buff atlas (kept crisp)
     const float bgap = snap(1.0f * S);                  // gap between icons
     float csz = ui_config().cursorScale; if (csz < 0.5f) csz = 0.5f; if (csz > 2.0f) csz = 2.0f;
     const float curW = rowh * 1.30f * csz;              // cursor icon width (matches the cursor draw)
@@ -1229,15 +1221,7 @@ void Party::draw(const Frame& f) {
     if (dot_tex_) {
         const u32 dcol[3] = { 0xFFFFFFFF, 0xFFFFEF3F, 0xFF42D98A };   // alliance=white, party=canary yellow, QM=green
         const float sz = 5.5f * S, gap = -0.5f * S, pitch = sz + gap;   // smaller pips (distance text below gets the room)
-        dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
-        dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
-        dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
-        dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-        dSetTex(dev, 0, dot_tex_);
-        dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-        dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
-        dSetTSS(dev, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MIPFILTER, D3DTEXF_LINEAR);
-        dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
+        setup_tex_state(dev, dot_tex_);
         // FIXED 3-column layout so each marker keeps its own slot: alliance=LEFT, party=MIDDLE,
         // QM=RIGHT (dcol order matches). An absent marker just leaves its column empty.
         const float markCx = cx + mw * 0.5f;
@@ -1262,15 +1246,7 @@ void Party::draw(const Frame& f) {
 
     // ---------- selection cursor ICON (hand pointing right) : slides with the selection ----------
     if (icon_tex_ && (selA_ > 0.02f || subA_ > 0.02f)) {
-        dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
-        dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
-        dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
-        dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-        dSetTex(dev, 0, icon_tex_);
-        dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-        dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
-        dSetTSS(dev, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MIPFILTER, D3DTEXF_LINEAR);
-        dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
+        setup_tex_state(dev, icon_tex_);
         float csz = ui_config().cursorScale; if (csz < 0.5f) csz = 0.5f; if (csz > 2.0f) csz = 2.0f;   // Cursor Size %
         const float tierBoost = (tier_ == 0) ? 1.0f : 1.45f;   // alliance rows are more condensed (smaller mh) -> boost so the cursor stays readable
         const float ih = mh * 1.30f * csz * tierBoost, iw = ih; // square icon, ~1.3 main-band tall * size (points at the name line)
