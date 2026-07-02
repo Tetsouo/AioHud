@@ -109,18 +109,15 @@ signal, not decoration.** Two palettes:
 
 More options ≠ better; each one is a decision the user must make and code we must maintain.
 
-- **Gauge styles: 8 → 3.** **[You]** Keep the ~3 that genuinely look great (my guess: **Vial** as the
-  signature, **Bars** as the legible classic, **Minimal/Text** as the compact option) and retire or
-  fold the rest (Segments / Sphere / Ring / Crystal). You pick the survivors — you've seen them all.
+- **Gauge styles: keep all 8.** *(Decided 2026-07-02 — user wants all of them.)* No cut. If anything
+  we make the **default** one great and let the 8 be the palette a user can switch to.
 - **Fonts: 20 → ~6 + System.** **[Rec]** Curate a short, good list (e.g. the shipped Roboto/Open Sans
   + a couple of classics) instead of a 20-long stepper. Depth stays reachable via the typography
   face field if needed.
-- **Zones: demote to Advanced.** **[Rec]** Default path becomes "drag a box, it auto-covers the native
-  window" (the reference-line fallback already does this). Zones stay for people aligning to native
-  windows precisely — opt-in, not a near-mandatory detour. This also **collapses 3 placement
-  mechanisms toward 1** (drag + auto), with zones and `layout.json` as advanced/authoring layers.
-- **[You]** Nothing here is deleted lightly — say the word on the gauge survivors and the font list
-  and I keep exactly those.
+- **Zones: keep the system, make it optional.** **[Rec]** Don't remove zones — just make the **default
+  path** "drag a box, it auto-covers the native window" so a new user never has to touch the zone
+  editor, while zones stay available (Advanced) for precise native-window alignment. See the Zones
+  explainer below before deciding. *(Pending: does the user actually use zones? — see §Open decisions.)*
 
 ---
 
@@ -146,23 +143,25 @@ Each phase is its own commit(s) on a savepoint tag, **built + validated in game 
 | **0** | Config relayout: Global / Per-box / Advanced groupings (§1). No field/behaviour change. | **[Safe]** build-only | pixels in-game unchanged; config just clearer |
 | **1** | Palette module + retint steady state; alarms untouched (§3). | **[Visual]** | your eye, over bright/dark zones |
 | **2** | HUD hierarchy: HP spine, quiet tier-3, motion only on alarms (§2). | **[Visual]** | in-game, real party |
-| **3** | Prune gauge styles + fonts to curated sets (§4); curated default + presets (§5). | **[Visual + data]** | see back-compat note |
-| **4** | Demote zones to Advanced; make drag+auto the default placement (§4). | **[Visual]** | placement still covers native window |
+| **3** | Curate the **font** list; ship a curated default look + presets (§5). All 8 gauges kept. | **[Visual + data]** | see back-compat note |
+| **4** | Make drag+auto the default placement; keep zones as Advanced (§4). | **[Visual]** | placement still covers native window |
 
-**Back-compat note (Phase 3).** `gaugeStyle` and `fontFace` are stored as **indices** in
-`aio_config.txt` / profiles. Pruning the lists renumbers them, so an old config could load the wrong
-style/font. Mitigation: keep the old index→meaning mapping stable (retired styles map to the nearest
-survivor on load, clamped), or bump a config `version` and migrate. Must be handled or saved layouts
-break — flagging it now.
+**Back-compat note (Phase 3).** `fontFace` is stored as an **index** in `aio_config.txt` / profiles,
+so curating the font list renumbers it and an old config could load the wrong font. Mitigation: keep
+the old index→meaning mapping stable (removed fonts map to the nearest survivor on load, clamped), or
+bump a config `version` and migrate. (`gaugeStyle` is untouched — all 8 kept — so no risk there.)
+Must be handled or saved layouts break — flagging it now.
 
 ---
 
 ## Open decisions for you
-1. **Gauge survivors** — which ~3 of the 8 do we keep? (§4)
-2. **Font shortlist** — which ~6? (§4)
-3. **HP dominance** — how hard do we push HP over MP/TP? (§2)
-4. **Default look + presets** — do you want me to propose "Clean / Dense / Minimal", or you name them? (§5)
-5. **Start at Phase 0** (safe config relayout) or jump straight to the palette/hierarchy visual work?
+1. ~~Gauge survivors~~ — **decided: keep all 8.**
+2. **Zones** — do you actually use the zone editor, or just drag boxes? Keep zones exactly as-is, or
+   make drag+auto the default and zones optional? (§4 + explainer)
+3. **Font shortlist** — which ~6? (§4)
+4. **HP dominance** — how hard do we push HP over MP/TP? (§2)
+5. **Default look + presets** — do you want me to propose "Clean / Dense / Minimal", or you name them? (§5)
+6. **Start at Phase 0** (safe config relayout) or jump straight to the palette/hierarchy visual work?
 
 Answer these and I'll turn §1–§3 into a concrete visual mockup (Artifact) to react to before any code.
 
