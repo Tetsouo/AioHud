@@ -1550,24 +1550,51 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                 if (toggle_chip(dev, fo, mo, click, 108, bx0 + 2 * (bbw + bgap), bty, bbw, bbh, tr("CAPS", "MAJ"), ts.upper)) { ts.upper = !ts.upper; save_ui_config(); }
             }
             ROW_NEXT(52.0f)
-            { ROW_BAND(52.0f)   // Colour : Default / Custom + preset swatches
-                static const u32 PRES[] = { 0xFFFFFFFF, 0xFFFF5A5A, 0xFF5ADC5A, 0xFF4F9DFF, 0xFFFFDC78, 0xFF7AE8FF, 0xFFFF7AE8, 0xFF202634 };
-                const int NP = (int)(sizeof(PRES) / sizeof(PRES[0]));
+            { ROW_BAND(52.0f)   // Colour : Default / Custom + a live swatch (alpha shown over a light/dark split)
                 const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
                 fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Colour", "Couleur"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
                 const float bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f, tgw = snap(96.0f), onx = coX + ctrlW - tgw;
-                if (toggle_chip(dev, fo, mo, click, 110, onx, bty, tgw, bbh, ts.colorOn ? tr("Custom", "Perso") : tr("Default", "Défaut"), ts.colorOn)) { ts.colorOn = !ts.colorOn; save_ui_config(); }
+                if (toggle_chip(dev, fo, mo, click, 110, onx, bty, tgw, bbh, ts.colorOn ? tr("Custom", "Perso") : tr("Default", "Défaut"), ts.colorOn)) {
+                    ts.colorOn = !ts.colorOn; if (ts.colorOn && (ts.color >> 24) == 0) ts.color |= 0xFF000000u; save_ui_config(); }   // enabling with alpha 0 would be invisible
                 if (ts.colorOn) {
-                    const float sw = snap(20.0f), sg = snap(6.0f), sy = bty + (bbh - sw) * 0.5f;
-                    float sx = onx - snap(12.0f) - (NP * sw + (NP - 1) * sg);
-                    for (int k = 0; k < NP; ++k) {
-                        float x = sx + k * (sw + sg); bool sel = ((ts.color & 0x00FFFFFF) == (PRES[k] & 0x00FFFFFF));
-                        flat(dev, x, sy, sw, sw, PRES[k]); outline(dev, x, sy, sw, sw, sel ? 0xFFFFFFFF : C_BORDER);
-                        if (inrect(mo, x, sy, sw, sw) && click) { ts.color = PRES[k] | 0xFF000000; save_ui_config(); }
-                    }
+                    const float pw = snap(58.0f), pxs = onx - snap(12.0f) - pw;
+                    flat(dev, pxs, bty, pw * 0.5f, bbh, 0xFFFFFFFF); flat(dev, pxs + pw * 0.5f, bty, pw * 0.5f, bbh, 0xFF262A31);   // light / dark backing
+                    flat(dev, pxs, bty, pw, bbh, ts.color); outline(dev, pxs, bty, pw, bbh, C_BORDER);                            // the colour on top -> its alpha shows
                 }
             }
             ROW_NEXT(52.0f)
+            if (ts.colorOn) {
+                // full preset palette : two rows of vivid + neutral swatches (all colours)
+                static const u32 PAL[] = {
+                    0xFFFFFFFF,0xFFC8CDD6,0xFF8A93A2,0xFF3A4150,0xFFFF5A5A,0xFFFF9A4A,0xFFFFDC78,0xFFF2F25A,0xFF9BE85A,0xFF5ADC5A,0xFF5ADCB0,0xFF5AC8FF,
+                    0xFF4F9DFF,0xFF6A7AF0,0xFFB07AF0,0xFFF07AE8,0xFFFF7AB0,0xFFE08585,0xFF86D36F,0xFFECC94A,0xFF7D9BF0,0xFFB58BF0,0xFF2C6AC4,0xFF141414 };
+                const int NPAL = (int)(sizeof(PAL) / sizeof(PAL[0])), COLS = 12;
+                { ROW_BAND(52.0f)
+                    const float sw = snap(20.0f), sg = snap(6.0f), gx = coX + snap(4.0f), gy = ry + yo - snap(1.0f);
+                    for (int k = 0; k < NPAL; ++k) {
+                        const float x = gx + (k % COLS) * (sw + sg), y = gy + (k / COLS) * (sw + sg);
+                        const bool sel = ((ts.color & 0x00FFFFFF) == (PAL[k] & 0x00FFFFFF));
+                        flat(dev, x, y, sw, sw, PAL[k]); outline(dev, x, y, sw, sw, sel ? 0xFFFFFFFF : C_BORDER);
+                        if (inrect(mo, x, y, sw, sw) && click) { ts.color = (ts.color & 0xFF000000u) | (PAL[k] & 0x00FFFFFF); if ((ts.color >> 24) == 0) ts.color |= 0xFF000000u; save_ui_config(); }   // keep current alpha
+                    }
+                }
+                ROW_NEXT(52.0f)
+                // R / G / B / A sliders (0..255) -> any RGBA colour
+                static const char* CHN[4] = { "R", "G", "B", "A" };
+                static const int   SHF[4] = { 16, 8, 0, 24 };
+                for (int ch = 0; ch < 4; ++ch) {
+                    { ROW_BAND(40.0f)
+                        int val = (int)((ts.color >> SHF[ch]) & 0xFFu);
+                        char vb[8]; sprintf(vb, "%d", val);
+                        float v01 = val / 255.0f;
+                        if (row_slider(dev, fo, mo, 120 + ch, coX, ry + yo, ctrlW, CHN[ch], vb, &v01)) {
+                            int nv = (int)(v01 * 255.0f + 0.5f); if (nv < 0) nv = 0; if (nv > 255) nv = 255;
+                            ts.color = (ts.color & ~(0xFFu << SHF[ch])) | ((u32)nv << SHF[ch]);
+                        }
+                    }
+                    ROW_NEXT(40.0f)
+                }
+            }
         }
         }   // end category Advanced (Layout + Typography)
         }   // end mouse-clip block (restores the outer mo/click)

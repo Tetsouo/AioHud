@@ -871,7 +871,7 @@ static Font* te_font(FontManager* fm, int elem, const char* ovGlobal, const char
 }
 static inline float te_sz(int e, float base)  { return base * ui_config().text[g_txtGrp][e].size; }
 static inline float te_ow(int e, float base)  { return base * ui_config().text[g_txtGrp][e].outline; }
-static inline u32   te_col(int e, u32 base)   { const TextStyle& t = ui_config().text[g_txtGrp][e]; return t.colorOn ? (t.color | 0xFF000000u) : base; }
+static inline u32   te_col(int e, u32 base)   { const TextStyle& t = ui_config().text[g_txtGrp][e]; return t.colorOn ? t.color : base; }   // honours the custom RGBA (incl. alpha)
 static const char*  te_up(int e, const char* s, char* buf, int n) {
     if (!ui_config().text[g_txtGrp][e].upper || !s) return s;
     int i = 0; for (; s[i] && i < n - 1; ++i) { char c = s[i]; buf[i] = (c >= 'a' && c <= 'z') ? (char)(c - 32) : c; } buf[i] = 0; return buf;
