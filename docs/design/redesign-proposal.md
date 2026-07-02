@@ -66,12 +66,16 @@ cast — all at roughly the **same visual weight**. In combat your eye has to hu
 | **4 — Alarm** (overrides everything) | low-HP blink, WS-ready, out-of-range veil, **lock red** | the only place saturated colour/motion is allowed |
 
 Concrete moves:
-- **[Rec/Visual]** Make **HP the visual spine** — MP/TP thinner or shorter, so HP dominates the row.
+- **[Decided] "Emphasis" becomes a config OPTION, not a fixed choice.** Because a WHM cares about MP and
+  a DD doesn't, we ship an **Emphasis** setting so each user (and eventually each job) picks the feel:
+  - **HP-dominant** — HP is the row's spine (tallest/highest-contrast), MP/TP thinner & quieter.
+  - **Balanced** — HP/MP/TP roughly equal weight (good for healers/casters).
+  - *(room to grow: per-job presets, an MP-aware mode, etc.)*
+  This fits the keep-all-options rule — nobody is forced into one reading. Default = **Balanced** (safe),
+  and a preset can flip it to HP-dominant.
 - **[Rec/Visual]** Demote tier-3 (distance, pips, sub-job) to a **muted tone** and smaller size, so
-  they stop competing with vitals.
+  they stop competing with vitals — this holds in *both* emphasis modes.
 - **[Rec]** Reserve **motion** (blink/glow/sweep) strictly for tier-4. Steady state should be still.
-- **[You]** How far to push HP dominance vs keeping MP/TP legible for healers/casters — your call;
-  we tune it live.
 
 ---
 
@@ -165,12 +169,15 @@ keyed by **name**, not position, so old configs still resolve.)
    audience needs the flexibility). Redesign only makes it easier to discover/use.
 3. ~~Cut anything?~~ — **decided: cut nothing.** Thousands of users → keep every option; tame with
    defaults/presets/grouping.
-4. **HP dominance** — how hard do we push HP over MP/TP in the reading hierarchy? (§2)
-5. **Default look + presets** — do you want me to propose "Clean / Dense / Minimal", or you name them? (§5)
-6. **Start at Phase 0** (safe config relayout — pure organisation, no pixels change) or jump straight to
-   the palette/hierarchy visual work?
+4. ~~HP dominance~~ — **decided: make it a config OPTION** (Emphasis: HP-dominant / Balanced, default
+   Balanced, room for per-job later). §2 updated.
+5. **Default look + presets** — **approved: Clean / Dense / Minimal.** (Exact settings TBD when we build them.)
+6. ~~Where to start~~ — **decided: Phase 0** (safe config relayout — pure organisation, no in-game
+   pixels change).
 
-Answer these and I'll turn §1–§3 into a concrete visual mockup (Artifact) to react to before any code.
+**Current step:** Phase 0. Savepoint tag `stable-pre-redesign` set. Next: a visual mockup (Artifact)
+of the reorganised **Configuration tab** (Global / Per-box / Advanced) to lock the arrangement before
+editing `config_page.cpp`.
 
 ## See also
 - [Interface map](interface-map.md) — the full current-state inventory this builds on
