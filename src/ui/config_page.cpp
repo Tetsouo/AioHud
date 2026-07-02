@@ -492,6 +492,8 @@ static const HelpItem HELP_PA[] = {
     {0, "Target cursor", "Curseur de cible"},
     {1, "When you target a *Party* or *Alliance* member, a hand appears at the left of their row pointing at them and a soft highlight slides onto it. The cursor follows your target from one member to the next, bobbing gently so it is always easy to spot.",
         "Quand tu cibles un membre de la *Party* ou de l'*Alliance*, une main apparaît à gauche de sa ligne en le pointant et une surbrillance douce glisse dessus. Le curseur suit ta cible de membre en membre, en oscillant légèrement pour rester bien visible."},
+    {1, "When you lock onto your target, the hand and its highlight both turn *red* instead of gold, so a glance tells you the lock is on. Take the lock off and they go back to gold.",
+        "Quand tu te verrouilles sur ta cible, la main et sa surbrillance passent au *rouge* au lieu de l'or, pour voir d'un coup d'œil que le verrou est actif. Retire le verrou et elles redeviennent or."},
     {14, "", ""},
     {1, "The game's own party menu, like Quartermaster or Lottery, also lights up the member it points at, so the box always matches the menu on screen.",
         "Le menu de groupe du jeu, comme Quartermaster ou Lottery, allume aussi le membre qu'il pointe, donc le cadre correspond toujours au menu à l'écran."},
