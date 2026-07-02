@@ -1159,7 +1159,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     shadow_down(dev, ix, bodyY, iw, snap(10.0f), (u32)(0x44000000));            // inner top shadow for depth
     vg(dev, ix, bodyY, iw, bodyH, C_CONTENT_T, C_CONTENT_B);                    // base gradient
     cs_add(dev); soft_blob(dev, ix + iw * 0.5f, bodyY + snap(4.0f), iw * 0.48f, bodyH * 0.40f, 0x0C2A4E84);   // cool light from the top (additive) -> depth
-    vg(dev, ix, bodyY + bodyH - snap(150.0f), iw, snap(150.0f), 0x00000000, 0x3A000000);   // bottom inner vignette
+    // (bottom inner vignette removed : it darkened the last rows of the now-scrollable Configuration column)
     flat(dev, ix + 1, bodyY + 1, iw - 2, 1, 0x16FFFFFF);                        // crisp top inner highlight
     outline(dev, ix, bodyY, iw, bodyH, C_BORDERHI);
 
@@ -1562,13 +1562,10 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         clip_rect_end(dev);
         // scroll extent (this frame) + a thin scrollbar in the split gap
         {
-            const float viewH = cfgBot - cfgTop, contentH = (ry + cfgScroll_) - cfgTop + snap(56.0f);   // ry advanced by every row (+ bottom breathing room)
+            const float viewH = cfgBot - cfgTop, contentH = (ry + cfgScroll_) - cfgTop + snap(16.0f);   // ry advanced by every row (+ a little bottom breathing room)
             float maxS = contentH - viewH; if (maxS < 0.0f) maxS = 0.0f;
             cfgMaxScroll_ = maxS;                                                          // remembered for next frame's clamp
             if (cfgScroll_ > maxS) cfgScroll_ = maxS;
-            { char db[96]; sprintf(db, "DBG scroll %.0f/%.0f  view %.0f  content %.0f  top %.0f bot %.0f",   // TEMP : remove after diagnosing
-                cfgScroll_, maxS, viewH, contentH, cfgTop, cfgBot);
-              fo->begin(dev); fo->draw_lc(dev, ix + snap(8.0f), pageBot - snap(9.0f), db, snap(11.0f), 0xFFFF66FF, 0xFF000000, 1.0f); }
             if (maxS > 0.5f && contentH > 1.0f) {
                 const float sbx = bandX + bandW + snap(4.0f), sbw = snap(4.0f);
                 flat(dev, sbx, cfgTop, sbw, viewH, 0x22000000);                            // track
