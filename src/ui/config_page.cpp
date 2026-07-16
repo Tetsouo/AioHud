@@ -23,6 +23,10 @@
 
 namespace aio {
 
+#ifndef AIOHUD_VERSION
+#define AIOHUD_VERSION "dev"
+#endif
+
 // Keyboard text entry is fed by the plugin's slot-14 hook (see aio_plugin_key) into ConfigPage's
 // feed_char/backspace/enter while the name field is focused -- the hook CONSUMES those keys so the
 // game never sees them. No per-frame Win32 polling here.
@@ -947,8 +951,8 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
       gem(dev, umid, uy + snap(1.0f), snap(3.5f), C_GOLDHI);
       gem(dev, u0, uy + snap(0.5f), snap(2.5f), C_GOLD);
       gem(dev, u1, uy + snap(0.5f), snap(2.5f), C_GOLD); }
-    // subtitle, small-caps, to the right of the emblem
-    fo->begin(dev); fo->draw_lc(dev, rgx + snap(14.0f), ty + snap(1.0f), "CONFIGURATION", snap(15.0f), fa(lerpc(C_ACCENT, C_ACCENTHI, pulse)), fa(C_STROKE), 1.2f);
+    // subtitle : the AioHud VERSION (small-caps), to the right of the emblem -- shown on every tab.
+    fo->begin(dev); fo->draw_lc(dev, rgx + snap(14.0f), ty + snap(1.0f), "V" AIOHUD_VERSION, snap(15.0f), fa(lerpc(C_ACCENT, C_ACCENTHI, pulse)), fa(C_STROKE), 1.2f);
 
     // close button (X), top-right -- eased red crossfade + a tiny size bump on hover
     const float cbS = snap(36.0f), cbX = ix + iw - cbS, cbY = iy + snap(2.0f);
