@@ -19,7 +19,7 @@
 ]]
 
 _addon.name     = 'AioUpdate'
-_addon.author   = 'Tetsouo'
+_addon.author   = 'ejouanchicot'
 _addon.version  = '2.1'
 _addon.commands = { 'aioupdate', 'aioup' }
 
