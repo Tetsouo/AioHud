@@ -33,18 +33,13 @@ jobs:
         shell: cmd
         run: package.bat
 
+      # Only build a payload zip on a release tag (it's attached to the Release below). Non-tag pushes just
+      # compile to validate the build. (No upload-artifact step -> no third-party Node-20 action ; the
+      # in-game updater pulls from Releases, not from CI artifacts.)
       - name: Zip payload
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: Compress-Archive -Path dist/* -DestinationPath "AioHud-${{ steps.ver.outputs.version }}.zip" -Force
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v5
-        with:
-          name: AioHud-${{ steps.ver.outputs.version }}
-          path: |
-            build/AioHud.dll
-            AioHud-*.zip
-          if-no-files-found: error
 
       - name: Publish Release
         if: startsWith(github.ref, 'refs/tags/v')
