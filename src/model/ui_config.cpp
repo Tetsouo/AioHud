@@ -3,6 +3,10 @@
 #include "model/paths.h"
 #include "model/job_track_gen.h"
 #include "model/game_mem.h"   // read_player : current character name + main/sub job -> default profile name + auto-load
+
+#ifndef AIOHUD_VERSION
+#define AIOHUD_VERSION "dev"   // injected by build.bat / CI from the git tag ; fallback for ad-hoc builds
+#endif
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
@@ -590,6 +594,7 @@ static void seed_default_profile() {
 void load_ui_config() {
     migrate_data_folder();   // move any legacy root files into data\ BEFORE the first read
     seed_default_profile();  // first-run only : plant the shipped Default profile as the starting config
+    { char vp[300]; plugin_path(vp, sizeof(vp), "data\\version.txt"); FILE* vf = fopen(vp, "w"); if (vf) { fputs(AIOHUD_VERSION, vf); fclose(vf); } }   // expose the build version for the companion updater
     load_config_from(config_path());
     // remember + AUTO-APPLY the last loaded profile so a relaunch comes back on the same profile.
     FILE* f = fopen(active_path(), "r");
