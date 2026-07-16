@@ -345,6 +345,28 @@ void Hud::draw_config_preview(const Frame& f) {
     float rightX = 0.0f, bottomY = 0.0f;
     if (!config_.preview_anchor(rightX, bottomY)) return;
 
+    // The live preview reflects the master Show : if the current module is OFF, draw a "hidden" note in the
+    // stage (so you see it won't appear in game) instead of its demo.
+    auto draw_hidden_note = [&]() {
+        float sx = 0, sy = 0, sw = 0, sh = 0; if (!config_.preview_rect(sx, sy, sw, sh)) return;
+        Font* pf = fonts_.get(ui_font_face(ui_config().fontFace), 700);
+        if (!pf) return;
+        pf->begin(f.dev);
+        pf->draw_c(f.dev, sx + sw * 0.5f, sy + sh * 0.5f,
+                   (ui_config().lang == 1) ? "Module masqu\xC3\xA9  (Afficher : Non)" : "Module hidden  (Show: Off)",
+                   (screenH_ / 1000.0f) * 22.0f, 0xFFCED6DB, 0xC0000000, 1.2f);
+    };
+    { const UiConfig& CC = ui_config(); bool off = false;
+      switch (config_.section()) {
+          case 1:  off = !CC.tgtShow;  break;  case 2:  off = !CC.plrShow;  break;
+          case 3:  off = !CC.mmShow;   break;  case 4:  off = !CC.wsShow;   break;
+          case 5:  off = !CC.scShow;   break;  case 6:  off = !CC.tpShow;   break;
+          case 7:  off = !CC.hlShow;   break;  case 8:  off = !CC.pwShow;   break;
+          case 9:  off = !CC.grimShow; break;  case 10: off = !CC.ztShow;   break;
+          case 11: off = !CC.tmShow;   break;  default: break; }
+      if (off) { draw_hidden_note(); return; }
+    }
+
     // Target module page -> preview the TARGET box (a demo target) as a MINI-MAP of the real screen : the box's
     // on-screen placement (centre-lock / dragged fraction / layout default) maps into the stage, so toggling
     // Centre H/V or dragging visibly moves it here.
@@ -489,6 +511,9 @@ void Hud::draw_config_preview(const Frame& f) {
         return;
     }
 
+    // Party page : both sides off -> hidden note. Otherwise draw only the sides that are ON (per-tier below).
+    if (!ui_config().partyShow && !ui_config().allyShow) { draw_hidden_note(); return; }
+
     Party* tiers[3] = { nullptr, nullptr, nullptr };
     for (size_t i = 0; i < widgets_.size(); ++i) {
         Widget* w = widgets_[i];
@@ -525,7 +550,7 @@ void Hud::draw_config_preview(const Frame& f) {
     for (int t = 0; t < 3; ++t) if (tiers[t]) tiers[t]->set_origin(boxX, partyTop);   // shared X ; party Y anchors the stack
 
     set_demo_select(true);                                          // show a sliding target cursor in the preview
-    for (int t = 0; t < 3; ++t) if (tiers[t]) tiers[t]->draw(f);   // tier 0 first (publishes the stack ref)
+    for (int t = 0; t < 3; ++t) if (tiers[t] && (t == 0 ? C.partyShow : C.allyShow)) tiers[t]->draw(f);   // tier 0 first (publishes the stack ref) ; honour per-side Show
     set_demo_select(false);
 
     C.box[0].posSet = sp0; C.box[1].posSet = sp1; C.box[2].posSet = sp2;
