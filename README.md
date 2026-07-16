@@ -1,6 +1,6 @@
 # AioHud
 
-**A full HUD overlay for FINAL FANTASY XI** — a native **Windower 4** plugin, drawn live over the game in Direct3D 8. It replaces and extends the native interface with a cohesive, fully in-game-configurable set of modules.
+**A full HUD overlay for FINAL FANTASY XI** — a **Windower 4** plugin drawn live over the game. It replaces and extends the native interface with a cohesive, fully in-game-configurable set of modules.
 
 ---
 
@@ -15,40 +15,26 @@
 - **Hate List** · **PointWatch** · **Treasure Pool** · **Grimoire (SCH)** · **Zone Tracker** (Dynamis / Abyssea / Omen / Nyzul / Sheol).
 - **Profiles** — character-bound: auto-named `Name Main-Sub` and auto-loaded on login / job change (custom profiles stay manual).
 
-Everything is tuned from one full-screen config window (`//aio config`) with a live preview, in **English or French**.
+Everything is tuned from one full-screen config window with a live preview, in **English or French**.
 
 ## Install
 
-1. Download **`AioHud-x.y.z.zip`** from the [latest release](../../releases/latest) and **extract it into your Windower root** (the folder that already contains `plugins\` and `addons\`, e.g. `D:\Windower\`). It drops the plugin in `plugins\` and the `//aioupdate` companion addon in `addons\` in one shot.
-2. In game: `//load AioHud` (and, for one-click updates, `//lua load aioupdate`)
-3. Open the config: `//aio config` · move boxes: `//aio edit`
-4. Update later, in game, with **no window**: `//aioupdate`
+1. Download **`AioHud-x.y.z.zip`** from the [latest release](../../releases/latest).
+2. **Extract it into your Windower folder** — the one that already contains `plugins\` and `addons\` (e.g. `D:\Windower\`). Everything lands in place automatically.
+3. Enable **AioHud** in the Windower launcher (Plugins tab), then start the game — or type `//load AioHud` in game.
 
-## Build from source
+That's it. The one-click updater loads itself with Windower from now on.
 
-Windows + MSVC (any recent Visual Studio with the **x86** C++ toolchain).
+## Everyday use
 
-```bat
-build.bat        REM -> build\AioHud.dll  (32-bit)
-deploy.bat       REM copies the DLL + assets into your Windower plugins folder
-package.bat      REM assembles a clean shippable payload into dist\
-```
-Windower keeps a loaded plugin DLL **file-locked until `//unload`** — always `//unload AioHud` before deploying. CI builds the DLL and publishes a Release on every `v*` tag.
+| Command | What it does |
+|---|---|
+| `//aio config` | open the full-screen configuration window (theme, modules, positions…) |
+| `//aio edit` | move / resize the boxes directly on screen |
+| `//aioupdate` | update to the latest version, in game, with **no window** (the HUD blinks for a moment while it reloads) |
 
-## Project layout
+Your settings and profiles live in `plugins\AioHud\data\` and are kept safe across updates.
 
-```
-src/       plugin source (C++), layered:
-  gfx/     Direct3D 8 backend (textures, fonts, primitives)
-  model/   game state, party/cast tracking, generated spell/ability tables, config
-  ui/      widgets + HUD compositor + the config window
-  plugin/  Windower plugin glue + //aio command dispatch
-include/   Windower interface headers
-assets/    runtime textures
-design/    HTML/CSS layout mockup + exports/layout.json (default box layout)
-scripts/   asset + data-table generators
-```
+### Dual-boxing
 
-## Notes
-
-Unofficial, fan-made overlay — **not affiliated with or endorsed by Square Enix**. Provided as-is; use at your own discretion. Runtime data (config, profiles) lives under `plugins\AioHud\data\` and is created in-game.
+Windower keeps the plugin locked while **any** client has it loaded. To update on a dual-box setup, `//unload AioHud` on the **other** client first, then run `//aioupdate`.
