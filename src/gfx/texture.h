@@ -39,6 +39,12 @@ u32 load_raw_texture_mip(u32 dev, const char* path, int W, int H);   // + mip ch
 // W/H come from the header ; returns 0 on any IO/parse failure (missing icon -> no icon drawn).
 u32 load_bmp_texture(u32 dev, const char* path);
 
+// Gear-icon ROM fallback : decode item `id`'s 32x32 icon straight from the game's ROM DAT files (a port of
+// EquipViewer's icon_extractor) and write it as the same V4 BMP load_bmp_texture reads, to `out_bmp_path`.
+// Lets ANY item resolve even when it isn't in the bundled assets/gearicons/ seed (the bundle becomes a cache).
+// Returns true if a BMP was written. No game install found / unknown id-range -> false (keep the id-text fallback).
+bool decode_gear_icon_from_rom(unsigned id, const char* out_bmp_path);
+
 // create an A8R8G8B8 texture from an in-memory ARGB buffer (W*H DWORDs, row-major).
 u32 make_texture_argb(u32 dev, int W, int H, const u32* pixels);
 

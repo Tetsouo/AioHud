@@ -504,8 +504,10 @@ void Player::draw(const Frame& f) {
                 else {
                     char p[160]; sprintf(p, "%s%u.bmp", GEARICON_DIR(), want);
                     u32 tex = load_bmp_texture(dev, p);
+                    if (!tex && GetFileAttributesA(p) == INVALID_FILE_ATTRIBUTES && decode_gear_icon_from_rom(want, p))
+                        tex = load_bmp_texture(dev, p);   // not in the bundled seed -> decode it once from the game's ROM DAT (cached to gearicons/ for next time)
                     if (tex) { gearTex_[s] = tex; gearId_[s] = want; gearTry_[s] = 0; }        // loaded -> cache it
-                    else if (GetFileAttributesA(p) == INVALID_FILE_ATTRIBUTES) { gearId_[s] = want; gearTry_[s] = 255; }   // no bundled icon -> accept the id-text fallback, DON'T retry (255 = give up)
+                    else if (GetFileAttributesA(p) == INVALID_FILE_ATTRIBUTES) { gearId_[s] = want; gearTry_[s] = 255; }   // no icon anywhere (no game install / unknown id) -> id-text fallback, DON'T retry (255 = give up)
                     else { gearId_[s] = want; if (gearTry_[s] < 254) ++gearTry_[s]; }          // BMP EXISTS but create failed -> retry every frame until it succeeds (never gives up on a real file ; capped <255 so it can't hit the give-up sentinel)
                 }
             }

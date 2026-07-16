@@ -4,6 +4,7 @@
 #include "model/paths.h"   // plugin_path_r : runtime-derived asset paths (gfx infra exception to the layering rule)
 #include <windows.h>
 #include <math.h>
+#include <stdio.h>   // gear-icon ROM fallback : fopen/fseek/fread + _snprintf
 
 namespace aio {
 
@@ -412,6 +413,103 @@ void preload_texture(u32 tex)
     if (!tex) return;
     auto fPre = vmethod<void(__stdcall*)(u32)>(tex, 9);
     if (fPre) __try { fPre(tex); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+}
+
+// ===== Gear-icon ROM-DAT fallback (faithful port of EquipViewer's icon_extractor, Rubenator 2021) =====
+// The FFXI install folder lives in the registry under PlayOnline*<region>\InstallFolder, value "0001".
+// Cached : resolve once. Returns "<ffxi>\ROM" or nullptr if no install is found.
+static const char* ffxi_rom_dir()
+{
+    static char rom[300]; static int tried = 0;
+    if (tried) return rom[0] ? rom : nullptr;
+    tried = 1; rom[0] = 0;
+    static const char* SUBS[] = {
+        "SOFTWARE\\PlayOnlineUS\\InstallFolder",
+        "SOFTWARE\\PlayOnline\\InstallFolder",
+        "SOFTWARE\\PlayOnlineEU\\InstallFolder",
+    };
+    char base[260]; base[0] = 0;
+    for (int i = 0; i < 3 && !base[0]; ++i) {
+        HKEY h;   // 32-bit plugin -> SOFTWARE already maps to Wow6432Node ; KEY_WOW64_32KEY is explicit + harmless.
+        if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, SUBS[i], 0, KEY_READ | KEY_WOW64_32KEY, &h) != ERROR_SUCCESS) continue;
+        DWORD type = 0, sz = sizeof(base);
+        if (RegQueryValueExA(h, "0001", NULL, &type, (LPBYTE)base, &sz) != ERROR_SUCCESS || (type != REG_SZ && type != REG_EXPAND_SZ)) base[0] = 0;
+        RegCloseKey(h);
+    }
+    if (!base[0]) return nullptr;
+    _snprintf(rom, sizeof(rom), "%s\\ROM", base); rom[sizeof(rom) - 1] = 0;
+    return rom;
+}
+
+// id-range -> (ROM DAT relative path, id offset). Straight from EquipViewer's item_dat_map.
+struct GearDat { unsigned lo, hi; const char* dat; int off; };
+static const GearDat GEAR_DAT[] = {
+    { 0x0001, 0x0FFF, "118/106", -1 },   // General Items
+    { 0x1000, 0x1FFF, "118/107",  0 },   // Usable Items
+    { 0x2000, 0x21FF, "118/110",  0 },   // Automaton Items
+    { 0x2200, 0x27FF, "301/115",  0 },   // General Items 2
+    { 0x2800, 0x3FFF, "118/109",  0 },   // Armor Items
+    { 0x4000, 0x59FF, "118/108",  0 },   // Weapon Items
+    { 0x5A00, 0x6FFF, "286/73",   0 },   // Armor Items 2
+    { 0x7000, 0x73FF, "217/21",   0 },   // Maze / Basic Items
+    { 0x7400, 0x77FF, "288/80",   0 },   // Instinct Items
+    { 0xF000, 0xF1FF, "288/67",   0 },   // Monipulator Items
+    { 0xFFFF, 0xFFFF, "174/48",   0 },   // Gil
+};
+
+// FFXI's palette bytes are bit-rotated : the decoded value is a rotate-left-by-3 of the encoded byte.
+static inline unsigned char rotl3(unsigned char x) { return (unsigned char)(((x & 0x1F) << 3) | (x >> 5)); }
+
+bool decode_gear_icon_from_rom(unsigned id, const char* out_bmp_path)
+{
+    const GearDat* d = nullptr;
+    for (int i = 0; i < (int)(sizeof(GEAR_DAT) / sizeof(GEAR_DAT[0])); ++i)
+        if (id >= GEAR_DAT[i].lo && id <= GEAR_DAT[i].hi) { d = &GEAR_DAT[i]; break; }
+    if (!d) return false;
+    const char* rom = ffxi_rom_dir();
+    if (!rom) return false;
+
+    char path[340]; _snprintf(path, sizeof(path), "%s\\%s.DAT", rom, d->dat); path[sizeof(path) - 1] = 0;
+    for (char* c = path; *c; ++c) if (*c == '/') *c = '\\';   // GEAR_DAT paths use '/'
+
+    FILE* fp = fopen(path, "rb");
+    if (!fp) return false;
+    const long idOff = (long)d->lo + d->off;
+    unsigned char data[0x800];
+    bool ok = (fseek(fp, ((long)id - idOff) * 0xC00 + 0x2BD, SEEK_SET) == 0) && (fread(data, 1, sizeof(data), fp) == sizeof(data));
+    fclose(fp);
+    if (!ok) return false;
+
+    // palette : 256 BGRA entries, each byte rotl3-decoded ; the alpha byte is additionally doubled + clamped.
+    unsigned char pal[256][4];
+    for (int g = 0; g < 256; ++g) {
+        pal[g][0] = rotl3(data[g * 4 + 0]);   // B
+        pal[g][1] = rotl3(data[g * 4 + 1]);   // G
+        pal[g][2] = rotl3(data[g * 4 + 2]);   // R
+        int a = rotl3(data[g * 4 + 3]) * 2; pal[g][3] = (unsigned char)(a < 256 ? a : 255);   // A (doubled)
+    }
+    // 32x32 pixel indices : each encoded byte e maps to palette entry rotl3(e).
+    unsigned char px[1024 * 4];
+    for (int p = 0; p < 1024; ++p) {
+        const unsigned char* c = pal[rotl3(data[0x400 + p])];
+        px[p * 4 + 0] = c[0]; px[p * 4 + 1] = c[1]; px[p * 4 + 2] = c[2]; px[p * 4 + 3] = c[3];
+    }
+    // BMP V4 header : byte-identical to EquipViewer's output (== the bundled BMPs load_bmp_texture already reads).
+    static const unsigned char HDR[122] = {
+        'B','M', 0x7A,0x10,0,0, 0,0, 0,0, 0x7A,0,0,0,                                   // file size 0x107A, pixels @ 0x7A
+        0x6C,0,0,0, 0x20,0,0,0, 0x20,0,0,0, 0x01,0, 0x20,0, 0x03,0,0,0, 0x00,0x10,0,0,   // V4, 32x32, 32bpp, BI_BITFIELDS, image 0x1000
+        0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0,
+        0x00,0x00,0xFF,0x00,  0x00,0xFF,0x00,0x00,  0xFF,0x00,0x00,0x00,  0x00,0x00,0x00,0xFF,
+        's','R','G','B',
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0, 0,0,0,0, 0,0,0,0
+    };
+    FILE* out = fopen(out_bmp_path, "wb");
+    if (!out) return false;
+    fwrite(HDR, 1, sizeof(HDR), out);
+    fwrite(px, 1, sizeof(px), out);
+    fclose(out);
+    return true;
 }
 
 } // namespace aio
