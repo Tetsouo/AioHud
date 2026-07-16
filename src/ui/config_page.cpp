@@ -2183,8 +2183,8 @@ void ConfigPage::draw_update_tab(const Frame& f, u32 dev, Font* fo, const MouseS
 
     fo->begin(dev);
     fo->draw_c(dev, midX, cy + ch - snap(30.0f),
-               tr("Updates in game with no window. Your settings and profiles are kept.",
-                  "Mise \xC3\xA0 jour en jeu, sans fen\xC3\xAAtre. Tes r\xC3\xA9glages et profils sont conserv\xC3\xA9s."),
+               tr("Updates right in game -- your settings and profiles are always kept.",
+                  "Mise \xC3\xA0 jour directement en jeu -- tes r\xC3\xA9glages et profils sont toujours conserv\xC3\xA9s."),
                snap(12.0f), fa(C_DIM), fa(C_STROKE), 1.0f);
 }
 
