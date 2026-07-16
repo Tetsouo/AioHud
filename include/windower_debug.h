@@ -8,7 +8,7 @@
 
 namespace windower { namespace debug {
 
-inline const char* log_path() { return "D:\\Windower Tetsouo\\plugins\\aiohud_debug.log"; }
+inline const char* log_path() { return "aiohud_debug.log"; }   // relative to the game dir (dev-only trace)
 
 inline void raw(const char* s, int len) {
     HANDLE h = CreateFileA(log_path(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,

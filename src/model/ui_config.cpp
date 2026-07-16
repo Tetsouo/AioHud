@@ -617,7 +617,7 @@ void load_ui_config() {
 // ---- profiles ----
 // The display NAME and the FILE name are decoupled : the user can type any printable character
 // (incl. / \ : etc.), and we %-encode the filename-illegal ones into the file name (reversible, no
-// collisions). So "Tetsouo/Default" lives in "Tetsouo%2FDefault.txt" and shows back as typed.
+// collisions). So "PlayerName1/Default" lives in "PlayerName1%2FDefault.txt" and shows back as typed.
 static char g_profNames[64][48];   // DISPLAY names (decoded)
 static int  g_profCount = 0;
 
@@ -701,7 +701,7 @@ bool profile_load(const char* name) {
 
 // Called every frame : when the character's Name/Main/Sub changes (login, job change), auto-switch profiles.
 // Priority : (1) a profile named exactly "Name Main/Sub" ; (2) else the last profile THIS character loaded manually.
-// A custom-named profile ("Tetsouo WAR Odyssey Bumba") never matches (1), so it stays manual — until you load it,
+// A custom-named profile ("PlayerName1 WAR Odyssey Bumba") never matches (1), so it stays manual — until you load it,
 // after which it becomes this character's (2) fallback. Does nothing (keeps the current config) if neither exists.
 void profile_autoload_tick() {
     char combo[64]; if (!profile_default_name(combo, sizeof(combo))) return;   // character not readable yet

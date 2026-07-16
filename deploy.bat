@@ -5,7 +5,9 @@ REM SEPARATE clean copy -> we sync the assets here too, not just the DLL.
 REM NOTE: //unload AioHud in game FIRST -- Windower keeps the DLL file-locked while loaded.
 setlocal
 set "ROOT=%~dp0"
-set "WP=D:\Windower Tetsouo\plugins"
+REM Your Windower plugins folder. Override per-machine with:  setx WINDOWER_PLUGINS "X:\path\to\Windower\plugins"
+if not defined WINDOWER_PLUGINS set "WINDOWER_PLUGINS=D:\Windower\plugins"
+set "WP=%WINDOWER_PLUGINS%"
 set "DATA=%WP%\AioHud"
 
 REM 0) MIGRATE the data folder name (once) : _aiohud_re -> AioHud. MUST run before the asset sync below, else robocopy

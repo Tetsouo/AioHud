@@ -470,7 +470,7 @@ void Target::draw(const Frame& f) {
             posId_ = g.target.id;
             // MOVEMENT SPEED (FFXI wiki + in-game probes) : base 5.0 yalms/s, MAX 8.0 (=+60%). movement_speed@0x98.
             //  - ANY PLAYER (self or other) : the field is STATIC and exact (their gear) -- verified stable even while
-            //    moving (Kaories +18% moving & at rest). -> 100*(ms/5-1), always. (Measuring position is noisy AND a
+            //    moving (a +18% test char, moving & at rest). -> 100*(ms/5-1), always. (Measuring position is noisy AND a
             //    chasing entity does catch-up = YOUR speed, so never measure.)
             //  - MOB : the field is its real speed while IDLE (tiger 6.8=+36%, normal mob 4.0=-20%) but SPIKES to a
             //    bogus 10-17 while it CHASES you. -> use it when PLAUSIBLE (<=8.0), FREEZE the last good value otherwise.

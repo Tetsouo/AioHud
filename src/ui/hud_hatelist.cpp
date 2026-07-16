@@ -76,7 +76,7 @@ void hatelist_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS
     if (maxRowsCap > 0 && maxN > maxRowsCap) maxN = maxRowsCap;   // Help sample : only a few rows
     if (preview || editing) {
         static const struct { const char* n; int hpp; float dist; const char* pc; int red; int tgt; } SMP[20] = {
-            {"Hpemde", 8, 22.4f, "Tetsouo", 0, 0}, {"Cunning Sammael", 14, 11.8f, 0, 0, 0}, {"Apex Bat", 21, 5.2f, "Kaories", 1, 1},
+            {"Hpemde", 8, 22.4f, "PlayerName1", 0, 0}, {"Cunning Sammael", 14, 11.8f, 0, 0, 0}, {"Apex Bat", 21, 5.2f, "PlayerName2", 1, 1},
             {"Locus Ghost", 28, 18.6f, 0, 0, 0}, {"Gabbrath", 35, 9.1f, "Apururu", 0, 0}, {"Bztavian", 42, 14.3f, 0, 0, 0},
             {"Naga", 48, 7.7f, "Trion", 0, 0}, {"Velkk", 54, 25.0f, 0, 0, 0}, {"Matamata", 60, 3.4f, "Ayame", 0, 0},
             {"Yumcax", 66, 33.0f, 0, 0, 0}, {"Hennetiel Tiger", 72, 12.0f, "Curilla", 0, 0}, {"Leech", 78, 6.0f, 0, 0, 0},

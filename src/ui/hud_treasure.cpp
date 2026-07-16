@@ -58,9 +58,9 @@ void treasure_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS
     const int maxN = (C.tpCount < 1) ? 1 : (C.tpCount > 10 ? 10 : C.tpCount);
     if (preview || editing) {
         static const struct { const char* n; const char* t; int tier; const char* loot; } SMP[10] = {
-            {"Heavy Metal Plate","09:05",0,0}, {"Riftcinder","08:10",1,"Tetsouo: 900"}, {"Beitetsu","07:15",2,0},
-            {"Riftborn Stone","06:20",0,"Tetsouo: 800"}, {"Pixie Hairpin +1","05:25",1,0}, {"Ginganauts Pole","04:30",2,"Tetsouo: 700"},
-            {"Crepuscular Knife","03:35",0,0}, {"Mariselle's Pole","02:40",1,"Tetsouo: 600"}, {"Defiant Scarf","01:45",2,0}, {"Ababinili","00:50",0,"Tetsouo: 500"} };
+            {"Heavy Metal Plate","09:05",0,0}, {"Riftcinder","08:10",1,"PlayerName1: 900"}, {"Beitetsu","07:15",2,0},
+            {"Riftborn Stone","06:20",0,"PlayerName2: 800"}, {"Pixie Hairpin +1","05:25",1,0}, {"Ginganauts Pole","04:30",2,"PlayerName3: 700"},
+            {"Crepuscular Knife","03:35",0,0}, {"Mariselle's Pole","02:40",1,"PlayerName1: 600"}, {"Defiant Scarf","01:45",2,0}, {"Ababinili","00:50",0,"PlayerName2: 500"} };
         static const u32 TC[3] = { 0xFF6BE06Bu, 0xFFF0A030u, 0xFFF06060u };
         for (int i = 0; i < 10 && nrows < maxN; ++i) { TRow& r = rows[nrows]; sprintf(r.idx, "%d", nrows + 1); r.name = SMP[i].n;
             int c = 0; for (; SMP[i].t[c]; ++c) r.time[c] = SMP[i].t[c]; r.time[c] = 0; r.tcol = TC[SMP[i].tier];

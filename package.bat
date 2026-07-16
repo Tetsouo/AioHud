@@ -1,7 +1,7 @@
 @echo off
 REM package.bat -- build, then assemble a Windower-root-relative payload into dist\ (a clean, shareable bundle).
 REM
-REM   The zip made from dist\ is extracted straight into the Windower ROOT (e.g. D:\Windower Tetsouo\), so both
+REM   The zip made from dist\ is extracted straight into the Windower ROOT (e.g. D:\Windower\), so both
 REM   the plugin AND its updater addon land in place in one shot :
 REM
 REM   dist\plugins\AioHud.dll            ->  <windower>\plugins\AioHud.dll

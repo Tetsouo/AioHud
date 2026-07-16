@@ -196,7 +196,7 @@ void Player::draw(const Frame& f) {
     static const unsigned short DEMOB[32] = {   // a full 32-icon strip so the preview shows the Max Buffs layout
         40, 41, 42, 43, 44, 45, 33, 34, 35, 36, 37, 38, 39, 251, 116, 117,
         118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133 };
-    const char* name = fake ? "Tetsouo" : g.me.name;
+    const char* name = fake ? "PlayerName1" : g.me.name;
     const int   mjob = fake ? 7  : g.me.mjob;                    // 7 = PLD
     const int   sjob = fake ? 1  : g.me.sjob;                    // 1 = WAR
     const int   mlvl = fake ? 99 : g.me.mlvl;

@@ -31,7 +31,7 @@ using windower::valid_ptr;
 static PartyState g_party;
 PartyState& party() { return g_party; }
 
-// One role colour per job (icon tint + badge border + job text). Grouping per Tetsouo.
+// One role colour per job (icon tint + badge border + job text). Grouping by role.
 unsigned job_role_color(int id) {
     switch (id) {
         case 3: case 5: case 15:            return 0xFF86D36F;  // WHM/RDM/SMN -> healer (green)
