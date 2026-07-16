@@ -193,7 +193,7 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
     float px, py;
     if (ovS > 0.0f) { px = ovX - boxW * 0.5f; py = ovY - boxH * 0.5f; }        // preview : centre on the given point
     else            { px = C.scX * screenW - boxW * 0.5f; py = C.scY * screenH; }
-    if (editing) { static EditBox g_scEdit; box_edit(f, g_scEdit, EDITBOX_SKILLCHAIN, px, py, boxW, boxH, ui_config().scScale, ui_config().scX, ui_config().scY, true); }
+    if (editing) { static EditBox g_scEdit; box_edit(f, g_scEdit, EDITBOX_SKILLCHAIN, px, py, boxW, boxH, ui_config().scScale, ui_config().scX, ui_config().scY, 1); }
 
     // ---- box chrome : dark rounded panel + gold border (Help-box look) ----
     dColorQuadState(dev);

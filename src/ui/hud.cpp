@@ -702,11 +702,11 @@ void Hud::draw_ws_popup(const Frame& f, bool preview, float ovCx, float ovCy, fl
 // Shared edit-mode drag for a module box : drag + snap-grid, write the new fractional origin back to
 // (cfgX,cfgY), persist on drop. centerX = the stored X is the box CENTRE (else its left edge). px/py updated.
 void box_edit(const Frame& f, EditBox& eb, int editId, float& px, float& py, float boxW, float boxH,
-                     float scale, float& cfgX, float& cfgY, bool centerX) {
+                     float scale, float& cfgX, float& cfgY, int anchorX) {
     float tfx = px / f.screenW, tfy = py / f.screenH; bool ps = true; int ch = 0, cv = 0; const bool wasDrag = eb.dragging;
     if (edit_box_drag(eb, editId, f, px, py, boxW, boxH, ZPERM_HUB, ps, tfx, tfy, ch, cv, scale))
         edit_box_grid(f.dev, f, eb, px, py, boxW, boxH, ch != 0, cv != 0);
-    cfgX = (px + (centerX ? boxW * 0.5f : 0.0f)) / f.screenW;
+    cfgX = (px + (anchorX == 1 ? boxW * 0.5f : anchorX == 2 ? boxW : 0.0f)) / f.screenW;   // 0 left / 1 centre / 2 right
     cfgY = py / f.screenH;
     if (wasDrag && !eb.dragging) save_ui_config();
 }

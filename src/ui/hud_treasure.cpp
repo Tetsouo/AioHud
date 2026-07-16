@@ -115,7 +115,7 @@ void treasure_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS
     float px, py;
     if (ovS > 0.0f) { px = ovX - boxW * 0.5f; py = ovY - boxH * 0.5f; }
     else            { px = C.tpX * screenW - boxW * 0.5f; py = C.tpY * screenH; }
-    if (editing) { static EditBox g_tpEdit; box_edit(f, g_tpEdit, EDITBOX_TREASURE, px, py, boxW, boxH, ui_config().tpScale, ui_config().tpX, ui_config().tpY, true); }
+    if (editing) { static EditBox g_tpEdit; box_edit(f, g_tpEdit, EDITBOX_TREASURE, px, py, boxW, boxH, ui_config().tpScale, ui_config().tpX, ui_config().tpY, 1); }
 
     // ---- box chrome ----
     dColorQuadState(dev);

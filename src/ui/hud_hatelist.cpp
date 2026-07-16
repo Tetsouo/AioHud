@@ -135,7 +135,7 @@ void hatelist_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS
     float px, py;
     if (ovS > 0.0f) { px = ovX - boxW * 0.5f; py = ovY - boxH * 0.5f; }
     else            { px = C.hlX * screenW - boxW * 0.5f; py = C.hlY * screenH; }
-    if (editing) { static EditBox g_hlEdit; box_edit(f, g_hlEdit, EDITBOX_HATE, px, py, boxW, boxH, ui_config().hlScale, ui_config().hlX, ui_config().hlY, true); }
+    if (editing) { static EditBox g_hlEdit; box_edit(f, g_hlEdit, EDITBOX_HATE, px, py, boxW, boxH, ui_config().hlScale, ui_config().hlX, ui_config().hlY, 1); }
 
     // ---- box chrome ----
     dColorQuadState(dev);

@@ -89,7 +89,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         float px, py;
         if (ovS > 0.0f) { px = ovX - boxW * 0.5f; py = ovY - boxH * 0.5f; }
         else            { px = C.ztX * screenW - boxW * 0.5f; py = C.ztY * screenH; }
-        if (editing) { static EditBox g_ztEdit; box_edit(f, g_ztEdit, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, true); }
+        if (editing) { static EditBox g_ztEdit; box_edit(f, g_ztEdit, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, 1); }
         dColorQuadState(dev);
         const float r0 = 6.0f * S;
         draw_themed_box(dev, f.skin, px, py, boxW, boxH, ui_config().ztBox, 1.0f, S);   // shared themed chrome (frame/transp/theme)
@@ -155,7 +155,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         float px, py;
         if (ovS > 0.0f) { px = ovX - boxW * 0.5f; py = ovY - boxH * 0.5f; }
         else            { px = C.ztX * screenW - boxW * 0.5f; py = C.ztY * screenH; }
-        if (editing) { static EditBox g_ztEdit; box_edit(f, g_ztEdit, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, true); }
+        if (editing) { static EditBox g_ztEdit; box_edit(f, g_ztEdit, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, 1); }
         dColorQuadState(dev);
         const float r0 = 6.0f * S;
         draw_themed_box(dev, f.skin, px, py, boxW, boxH, ui_config().ztBox, 1.0f, S);   // shared themed chrome (frame/transp/theme)
@@ -233,7 +233,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         float px, py;
         if (ovS > 0.0f) { px = ovX - boxW * 0.5f; py = ovY - boxH * 0.5f; }
         else            { px = C.ztX * screenW - boxW * 0.5f; py = C.ztY * screenH; }
-        if (editing) { static EditBox g_ztEditS; box_edit(f, g_ztEditS, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, true); }
+        if (editing) { static EditBox g_ztEditS; box_edit(f, g_ztEditS, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, 1); }
         dColorQuadState(dev);
         const float r0 = 6.0f * S;
         draw_themed_box(dev, f.skin, px, py, boxW, boxH, ui_config().ztBox, 1.0f, S);   // shared themed chrome (frame/transp/theme)
@@ -327,7 +327,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
     float px, py;
     if (ovS > 0.0f) { px = ovX - boxW * 0.5f; py = ovY - boxH * 0.5f; }
     else            { px = C.ztX * screenW - boxW * 0.5f; py = C.ztY * screenH; }
-    if (editing) { static EditBox g_ztEdit; box_edit(f, g_ztEdit, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, true); }
+    if (editing) { static EditBox g_ztEdit; box_edit(f, g_ztEdit, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, 1); }
 
     // ---- chrome ----
     dColorQuadState(dev);

@@ -83,7 +83,7 @@ void Hud::draw_grimoire(const Frame& f, bool preview, float ovX, float ovY, floa
     float px, py;
     if (ovS > 0.0f) { px = ovX - boxW * 0.5f; py = ovY - boxH * 0.5f; }
     else            { px = C.grimX * screenW_ - boxW * 0.5f; py = C.grimY * screenH_; }
-    if (editing) { static EditBox g_grimEdit; box_edit(f, g_grimEdit, EDITBOX_GRIMOIRE, px, py, boxW, boxH, ui_config().grimScale, ui_config().grimX, ui_config().grimY, true); }
+    if (editing) { static EditBox g_grimEdit; box_edit(f, g_grimEdit, EDITBOX_GRIMOIRE, px, py, boxW, boxH, ui_config().grimScale, ui_config().grimX, ui_config().grimY, 1); }
 
     const float bx = px + auraPad, by = py + auraPad;      // book quad
     const u32 artCol = book ? 0xFFB98CFFu : 0xFFFFD766u;   // Dark=purple / Light=gold

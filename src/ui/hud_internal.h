@@ -9,10 +9,11 @@
 namespace aio {
 
 // Shared edit-mode drag for a module box : drag + snap-grid, write the new fractional origin back to
-// (cfgX,cfgY), persist on drop. centerX = the stored X is the box CENTRE (else its left edge). px/py updated.
-// Used by ALL seven module renderers.
+// (cfgX,cfgY), persist on drop. anchorX = which box edge the stored X pins : 0 = LEFT, 1 = CENTRE, 2 = RIGHT
+// (right = the box grows LEFTWARD when its width changes, so its right edge stays put). px/py updated.
+// Used by ALL module renderers ; the caller derives px from cfgX with the matching anchor.
 void box_edit(const Frame& f, EditBox& eb, int editId, float& px, float& py, float boxW, float boxH,
-              float scale, float& cfgX, float& cfgY, bool centerX);
+              float scale, float& cfgX, float& cfgY, int anchorX);
 
 // draw an atlas sub-cell [u0..u1]x[v0..v1] at (x,y,w,h) -- Sheol weapon strip (v 0..1) or the 2D buff atlas.
 // Used by draw_zonetracker (weapon-type strip) and draw_timers (buff status atlas). Defaults on this DECLARATION only.
