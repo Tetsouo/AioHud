@@ -16,14 +16,9 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      # Puts the x86 cl.exe on PATH -> build.bat detects it and skips its local vcvars lookup.
-      - name: Set up MSVC (x86)
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x86
-
+      # No MSVC-setup action needed: build.bat locates Visual Studio itself (vswhere) and sets up the x86 toolchain.
       # Version = the tag (without the leading v) on a release, else dev-<short sha>. Fed to build.bat via env.
       - name: Resolve version
         id: ver
@@ -33,7 +28,7 @@ jobs:
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "AIOHUD_VERSION=$V" >> "$GITHUB_ENV"
 
-      # package.bat calls build.bat (compiles) then assembles the shippable payload into dist\.
+      # package.bat calls build.bat (compiles the x86 DLL) then assembles the shippable payload into dist\.
       - name: Build + package
         shell: cmd
         run: package.bat
@@ -43,7 +38,7 @@ jobs:
         run: Compress-Archive -Path dist/* -DestinationPath "AioHud-${{ steps.ver.outputs.version }}.zip" -Force
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: AioHud-${{ steps.ver.outputs.version }}
           path: |
