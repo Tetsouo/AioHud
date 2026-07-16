@@ -128,6 +128,7 @@ bool edit_box_drag(EditBox& st, int boxId, const Frame& f, float& px, float& py,
     if (m->clicked && !st.dragging && over && edit_drag_grab(&st)) {
         st.dragging = true;
         st.grabDX = m->x - px; st.grabDY = m->y - py; st.dragShift = st.dragCtrl = false;
+        st.shiftHold = st.ctrlHold = 0;   // FRESH grab : clear any leftover axis-lock hold from a previous drag
     }
     if (over && !st.dragging && !edit_drag_busy())               // hovering a grabbable box -> instant glow cue
         edit_box_hover_glow(f.dev, f, px, py, W, H);
