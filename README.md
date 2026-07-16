@@ -20,10 +20,18 @@ Everything is tuned from one full-screen config window with a live preview, in *
 ## Install
 
 1. Download **`AioHud-x.y.z.zip`** from the [latest release](../../releases/latest).
-2. **Extract it into your Windower folder** — the one that already contains `plugins\` and `addons\` (e.g. `D:\Windower\`). Everything lands in place automatically.
-3. Enable **AioHud** in the Windower launcher (Plugins tab), then start the game — or type `//load AioHud` in game.
+2. **Extract it into your Windower folder** — the one that already contains `plugins\` and `addons\` (e.g. `D:\Windower\`). This drops:
+   - `plugins\AioHud.dll` + `plugins\AioHud\` (the plugin and its assets)
+   - `addons\aioupdate\` (the one-click in-game updater)
+3. **Load it at startup.** Open `Windower\scripts\init.txt` in a text editor and add this line (anywhere on its own line):
+   ```
+   load AioHud
+   ```
+   Save the file. AioHud now loads every time you launch the game.
+   *(Alternatively you can just tick **AioHud** in the Windower launcher's Plugins tab.)*
+4. **Start the game** — or, if you're already in game, type `//load AioHud`.
 
-That's it. The one-click updater loads itself with Windower from now on.
+The first time AioHud loads, it also registers its updater (`lua load aioupdate`) in `init.txt` for you, so `//aioupdate` works from then on with nothing else to set up.
 
 ## Everyday use
 
