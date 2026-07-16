@@ -58,3 +58,6 @@ CLAUDE.md
 # dev-only diagnostic probes (kept local, excluded from the public repo)
 /src/plugin/aiohud_probes.cpp
 /src/plugin/aiohud_probes.h
+
+# local, untracked deploy target (personal Windower path)
+deploy.local.bat
