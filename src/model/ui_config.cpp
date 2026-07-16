@@ -573,8 +573,23 @@ static void migrate_data_folder() {
     plugin_path(p, sizeof(p), "aiohud_profiles"); RemoveDirectoryA(p);   // drop the now-empty legacy dir (no-op if not empty)
 }
 
+// FRESH INSTALL : if there is no config yet, seed the shipped "Default" profile (assets\default_profile.txt) so a
+// first launch comes up with a curated setup instead of the bare code defaults -- it appears in the profile library,
+// becomes the live config, and is marked active. Never touches an existing install (config.txt already present).
+static void seed_default_profile() {
+    char cfg[300]; plugin_path(cfg, sizeof(cfg), "data\\config.txt");
+    if (GetFileAttributesA(cfg) != INVALID_FILE_ATTRIBUTES) return;         // already configured -> leave everything as-is
+    char def[300]; plugin_path(def, sizeof(def), "assets\\default_profile.txt");
+    if (GetFileAttributesA(def) == INVALID_FILE_ATTRIBUTES) return;         // no shipped default -> fall back to code defaults
+    char prof[300]; plugin_path(prof, sizeof(prof), "data\\profiles\\Default.txt");
+    CopyFileA(def, prof, TRUE);   // "Default" shows up in the profile library
+    CopyFileA(def, cfg, TRUE);    // adopt it as the live config
+    FILE* f = fopen(active_path(), "w"); if (f) { fputs("Default", f); fclose(f); }   // mark it the active profile
+}
+
 void load_ui_config() {
     migrate_data_folder();   // move any legacy root files into data\ BEFORE the first read
+    seed_default_profile();  // first-run only : plant the shipped Default profile as the starting config
     load_config_from(config_path());
     // remember + AUTO-APPLY the last loaded profile so a relaunch comes back on the same profile.
     FILE* f = fopen(active_path(), "r");
