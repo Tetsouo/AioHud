@@ -28,6 +28,7 @@
 #include <math.h>
 #include <time.h>
 #include <windows.h>
+#include <locale.h>
 
 namespace aio { void timers_reset(); }   // hud_timers.cpp : //aio timers reset -> flush live buff/recast timers + focus alerts
 
@@ -130,6 +131,9 @@ static void spawn_updater(bool checkOnly);   // defined below ; launch the no-wi
 void aio_plugin_init(PluginManager host)
 {
     g_host = host;
+    setlocale(LC_NUMERIC, "C");         // dot decimals for ALL our float I/O (config.txt + layout.json strtod) whatever
+                                        // the OS locale -- a comma-locale (French-Canadian, French, German...) would
+                                        // otherwise misparse every saved/loaded position/scale and wreck box placement.
     ensure_addon_autoload();           // make the //aioupdate companion addon auto-load with Windower
     spawn_updater(true);               // no-window update CHECK at startup -> writes data\update\check.txt for the Update tab
     debug::clear();

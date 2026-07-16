@@ -11,6 +11,17 @@
 #include <cstring>
 #include <cstdlib>
 #include <windows.h>
+#include <locale.h>
+
+// Force C-locale numbers (dot decimals) for config I/O, restored on scope exit. Some systems / other addons
+// set the process locale to one with a COMMA decimal (French-Canadian, French, German...) -> then sprintf /
+// sscanf "%f" would write/read "0,5" and every saved position/scale would be corrupt. This makes AioHud's
+// config files always dot-decimal + portable, whatever the OS locale. AioHud is single-threaded (game thread).
+namespace { struct CNumLoc {
+    char saved[64];
+    CNumLoc()  { const char* p = setlocale(LC_NUMERIC, NULL); lstrcpynA(saved, p ? p : "C", sizeof(saved)); setlocale(LC_NUMERIC, "C"); }
+    ~CNumLoc() { setlocale(LC_NUMERIC, saved); }
+}; }
 
 namespace aio {
 
@@ -90,6 +101,7 @@ static const char* last_char_profile(const char* charName) {
 // ---- core (de)serialization : the live config <-> a key=value file at `path`. The named-profile
 // API and the single live-config file both go through these, so they always share one format. ----
 static void save_config_to(const char* path) {
+    CNumLoc _cnl;   // dot decimals regardless of the OS locale
     FILE* f = fopen(path, "w"); if (!f) return;
     UiConfig& c = ui_config();
     fprintf(f, "partyShow=%d\n", c.partyShow);
@@ -284,6 +296,7 @@ static void apply_rdm_uff_preset(UiConfig& c) {
 }
 
 static bool load_config_from(const char* path) {
+    CNumLoc _cnl;   // dot decimals regardless of the OS locale
     FILE* f = fopen(path, "r"); if (!f) return false;
     UiConfig& c = ui_config();
     c.guideGroupCount = 0;   // dynamic list -> rebuilt from the file (a full-config load)
