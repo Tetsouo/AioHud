@@ -1,0 +1,61 @@
+name: build
+
+# Compiles the 32-bit AioHud.dll on a Windows runner. On a `v*` tag it publishes a GitHub Release
+# with the raw DLL (for the in-game auto-updater) + a full payload zip (for manual install).
+on:
+  push:
+    branches: [ master, main ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # create Releases on a tag push
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Puts the x86 cl.exe on PATH -> build.bat detects it and skips its local vcvars lookup.
+      - name: Set up MSVC (x86)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      # Version = the tag (without the leading v) on a release, else dev-<short sha>. Fed to build.bat via env.
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then V="${GITHUB_REF#refs/tags/v}"; else V="dev-${GITHUB_SHA::7}"; fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "AIOHUD_VERSION=$V" >> "$GITHUB_ENV"
+
+      # package.bat calls build.bat (compiles) then assembles the shippable payload into dist\.
+      - name: Build + package
+        shell: cmd
+        run: package.bat
+
+      - name: Zip payload
+        shell: pwsh
+        run: Compress-Archive -Path dist/* -DestinationPath "AioHud-${{ steps.ver.outputs.version }}.zip" -Force
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AioHud-${{ steps.ver.outputs.version }}
+          path: |
+            build/AioHud.dll
+            AioHud-*.zip
+          if-no-files-found: error
+
+      - name: Publish Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            build/AioHud.dll
+            AioHud-*.zip

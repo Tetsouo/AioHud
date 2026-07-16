@@ -1,0 +1,312 @@
+// party_state_zonetracker.cpp -- Zone Tracker module (Dynamis / Abyssea / Omen / Nyzul / Sheol),
+// split out of party_state.cpp. PURE MOVE : the PartyState::zt_*/on_omen_text/on_nyzul_text/
+// nyzul_remaining/omen_short methods + their packet handlers (on_2a/on_55/on_118/on_034/on_00e)
+// and the file-static helpers used only by them. See party_state.h for the ZoneTracker struct.
+#include "model/party_state.h"
+#include "model/party_state_internal.h"   // pkt_u16 / pkt_u32 (shared packet readers)
+#include "model/paths.h"                  // plugin_path (the zone-cache path)
+#include <windows.h>                       // GetTickCount / CreateFileA / ReadFile / WriteFile
+#include <string.h>                        // strstr
+#include <math.h>                          // floor()
+
+namespace aio {
+
+// OMEN : parse a mode-161 objective line (ported from the Omen addon's text patterns). The number wanted is the one
+// preceding a keyword starting with the type's "check letter" (the addon's `check` pattern) -> skips the leading "N:".
+static int omen_num_before(const char* s, char letter) {
+    for (int i = 0; s[i]; ) {
+        if (s[i] >= '0' && s[i] <= '9') {
+            long v = 0; int j = i; while (s[j] >= '0' && s[j] <= '9') { v = v * 10 + (s[j] - '0'); ++j; }
+            int k = j; while (s[k] == ' ') ++k;
+            if (s[k] == letter) return (int)v;
+            i = j;
+        } else ++i;
+    }
+    return -1;
+}
+static int omen_first_num(const char* s) {
+    for (int i = 0; s[i]; ++i) if (s[i] >= '0' && s[i] <= '9') { long v = 0; while (s[i] >= '0' && s[i] <= '9') { v = v * 10 + (s[i] - '0'); ++i; } return (int)v; }
+    return -1;
+}
+static const char* OMEN_SHORT[15] = { "", "WS Damage", "MB Damage", "Non-MB Nuke", "Melee Round", "Kills",
+    "Critical Hits", "Abilities", "Spells", "Magic Bursts", "Skillchains", "All WS", "Physical WS", "Magic WS", "500 HP Cures" };
+const char* PartyState::omen_short(int t) { return (t >= 1 && t <= 14) ? OMEN_SHORT[t] : ""; }
+static void omen_reset_objs(ZoneTracker& zt) { for (int k = 0; k < 10; ++k) zt.omen[k] = ZoneTracker::OmenObj{}; }
+static void omen_set_floor(ZoneTracker& zt, const char* s) { int w = 0; for (int i = 0; s[i] && w < 47; ++i) { char c = s[i]; if (c >= 0x20 && c < 0x7F) zt.floorObj[w++] = c; } zt.floorObj[w] = 0; }
+
+void PartyState::on_omen_text(const char* s) {
+    if (zt_.mode != 3 || !s) return;
+    if (s[0] >= '1' && s[0] <= '9') {                              // "N: <objective>" line
+        int slot = 0, i = 0; while (s[i] >= '0' && s[i] <= '9') { slot = slot * 10 + (s[i] - '0'); ++i; }
+        if (s[i] != ':' || slot < 1 || slot > 10) return;
+        if (strstr(s, "You have failed")) return;                  // fail line -> ignore
+        const bool eval = strstr(s, "You have") != 0;
+        struct T { const char* sub; int id; char c; };
+        static const T TT[] = {                                    // distinctive tails, specific-first ; c = check letter
+            { "without performing a magic burst", 3, 'u' }, { "single magic burst", 2, 'u' }, { "single weapon skill", 1, 'u' },
+            { "single auto-attack", 4, 'i' }, { "killchain", 10, 's' }, { "elemental weapon", 13, 'e' }, { "physical weapon", 12, 'p' },
+            { "weapon skill", 11, 'w' }, { "critical", 6, 'c' }, { "magic burst", 9, 'm' }, { "anquish", 5, 'f' },
+            { "500 HP", 14, 't' }, { "pell", 8, 's' }, { "bilit", 7, 'a' } };
+        int typeId = 0; char letter = 0;
+        for (unsigned k = 0; k < sizeof(TT) / sizeof(TT[0]); ++k) if (strstr(s, TT[k].sub)) { typeId = TT[k].id; letter = TT[k].c; break; }
+        if (!typeId) return;
+        const int num = omen_num_before(s, letter);
+        ZoneTracker::OmenObj& o = zt_.omen[slot - 1];
+        if (eval) { if (num >= 0) o.cur = num; if (o.type == 0) { o.type = typeId; o.req = -1; } }
+        else      { if (o.type != typeId) o.cur = 0; o.type = typeId; if (num >= 0) o.req = num; }
+        zt_save();
+        return;
+    }
+    if (strstr(s, "seconds remaining")) { const int n = omen_first_num(s); if (n >= 0) { zt_.omenBonusSec = n; zt_.omenBonusMs = GetTickCount(); zt_save(); } return; }
+    if (strstr(s, " omen")) { const int n = omen_first_num(s); if (n >= 0) { zt_.omens = n; zt_save(); } return; }
+    if (strstr(s, "spectral light flares up")) { zt_.omenCleared = 1; zt_save(); return; }
+    if (strstr(s, "light shall come even if you fail")) { omen_set_floor(zt_, "Free Floor!"); if (zt_.omenCleared) { omen_reset_objs(zt_); zt_.omenCleared = 0; } zt_save(); return; }
+    if (strstr(s, "Vanquish") || strstr(s, "treasure portent")) { omen_set_floor(zt_, s); if (zt_.omenCleared) { omen_reset_objs(zt_); zt_.omenCleared = 0; } zt_save(); return; }
+}
+
+// ---- NYZUL ISLE : token estimator + floor/timer/objective tracker, ported 1:1 from the NyzulHelper addon (Glarin
+// of Asura). All values are derived from the run's incoming-text lines ; token math mirrors the addon exactly. ----
+static int  ny_round(double x) { return (int)floor(x + 0.5); }
+static void ny_set_timer(ZoneTracker& z, int remaining) { z.nyTimerSec = remaining; z.nyTimerMs = GetTickCount(); }
+static int  ny_relative_floor(const ZoneTracker& z) { return (z.nyFloor < z.nyStartFloor) ? z.nyFloor + 100 : z.nyFloor; }
+static double ny_token_rate(const ZoneTracker& z) {                    // +10% armband ; -10% per party member over 3
+    double r = 1.0;
+    if (z.nyArmband) r += 0.1;
+    if (z.nyPartySize > 3) r -= (z.nyPartySize - 3) * 0.1;
+    return r;
+}
+static void ny_calc_tokens(ZoneTracker& z) {                           // accrue this floor's reward at clear time
+    const int rel = ny_relative_floor(z);
+    const double rate = ny_token_rate(z);
+    const double floorBonus = (rel > 1) ? 10.0 * (double)((rel - 1) / 5) : 0.0;
+    const double penalty = (double)(ny_round(117.0 * rate) * z.nyPenalties);
+    z.nyTokens += (200.0 + floorBonus) * rate - penalty;
+}
+static void ny_resync(ZoneTracker& z) {                               // on floor arrival : seed start floor + reconcile
+    if (z.nyStartFloor == 0) { z.nyStartFloor = z.nyFloor; if (z.nyTimerMs == 0) ny_set_timer(z, 1800); }
+    const int rel = ny_relative_floor(z);
+    if (rel - z.nyStartFloor > z.nyCompleted) z.nyCompleted = rel - z.nyStartFloor;
+    z.nyPenalties = 0;
+}
+static void ny_reset_run(ZoneTracker& z) {                           // addon reset() : clears the run, NOT armband/party
+    z.nyTimerSec = 0; z.nyTimerMs = 0;
+    z.nyObjective[0] = 0; z.nyRestriction[0] = 0; z.nyObjPending = 1; z.nyRestrFail = 0;
+    z.nyStartFloor = 0; z.nyFloor = 0; z.nyCompleted = 0; z.nyPenalties = 0; z.nyTokens = 0.0;
+}
+static bool ny_has_ki(const unsigned char* p, unsigned kiId) {       // 0x055 : bitfield @0x04, table @0x84 (512 KIs/table)
+    const unsigned table = kiId / 512, bit = kiId % 512;
+    const unsigned ty = (unsigned)p[0x84] | ((unsigned)p[0x85] << 8) | ((unsigned)p[0x86] << 16) | ((unsigned)p[0x87] << 24);
+    if (ty != table) return false;
+    return (p[0x04 + bit / 8] >> (bit % 8)) & 1;
+}
+// strip FFXI format/control bytes -> printable ASCII, skipping `skip` leading source chars + trimming spaces. The
+// format codes 0x1E/0x1F/0x7F each carry a 1-byte argument that must ALSO be dropped (else e.g. the "\x7F\x31" line
+// terminator leaks a stray '1' at the tail) -- mirrors the addon's strip_format (0x1E./0x1F./0x7F. gsubs).
+static void ny_copy_text(char* dst, int cap, const char* s, int skip) {
+    int w = 0;
+    for (int i = 0; s[i] && w < cap - 1; ++i) {
+        if (i < skip) continue;
+        unsigned char c = (unsigned char)s[i];
+        if (c == 0x1E || c == 0x1F || c == 0x7F) { if (s[i + 1]) ++i; continue; }   // format code + its 1-byte arg
+        if (c >= 0x20 && c < 0x7F) dst[w++] = (char)c;
+    }
+    while (w > 0 && dst[w - 1] == ' ') --w;                                          // trim trailing spaces
+    dst[w] = 0;
+    int st = 0; while (dst[st] == ' ') ++st;                                         // trim leading spaces (from `skip`)
+    if (st) { int j = 0; for (;;) { dst[j] = dst[st + j]; if (!dst[st + j]) break; ++j; } }
+}
+
+int PartyState::nyzul_remaining() const {
+    if (zt_.nyTimerMs == 0) return 0;
+    return zt_.nyTimerSec - (int)((GetTickCount() - zt_.nyTimerMs) / 1000u);
+}
+
+// ---- ZONE-TRACKER cache : the reference addons lose everything on reload ; we don't. Every tracked mode's timer is a
+// GetTickCount stamp (dynEntryMs / visitantMs / omenBonusMs / nyTimerMs), and GetTickCount is SYSTEM uptime -> it keeps
+// counting across a DLL unload/reload (same game process), so the whole run stays live. We persist the ENTIRE
+// ZoneTracker (all four modes) and restore it ONLY on a fresh plugin load while already standing in the SAME zone (see
+// zt_set_zone) ; a new run always re-enters via a zone change, so it never picks up a stale cache. ----
+static const char* zt_cache_path() { static char b[260]; if (!b[0]) plugin_path(b, 260, "data\\cache\\zone.bin"); return b; }
+static const int ZT_CACHE_VER = (int)(0x5A540000u | (sizeof(ZoneTracker) & 0xFFFF));   // 'ZT' | struct size -> auto-invalidate
+void PartyState::zt_save() const {
+    if (zt_.mode == 0) return;                              // nothing to persist outside a tracked zone
+    HANDLE h = CreateFileA(zt_cache_path(), GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    if (h == INVALID_HANDLE_VALUE) return;
+    DWORD w = 0; int ver = ZT_CACHE_VER;
+    WriteFile(h, &ver, sizeof(ver), &w, 0);
+    WriteFile(h, &zt_, sizeof(zt_), &w, 0);                 // ZoneTracker is trivially copyable (POD) -> raw blob
+    CloseHandle(h);
+}
+bool PartyState::zt_load(int zone) {
+    HANDLE h = CreateFileA(zt_cache_path(), GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+    if (h == INVALID_HANDLE_VALUE) return false;
+    int ver = 0; ZoneTracker c; DWORD got = 0; bool ok = false;
+    if (ReadFile(h, &ver, sizeof(ver), &got, 0) && got == sizeof(ver) && ver == ZT_CACHE_VER &&
+        ReadFile(h, &c, sizeof(c), &got, 0) && got == sizeof(c)) {
+        // must be the SAME zone we're re-entering + a real tracked mode ; a reboot resets GetTickCount, leaving the
+        // stored stamps in the "future" (> now) -> reject as stale.
+        const unsigned now = GetTickCount();
+        const bool freshTimers = (c.dynEntryMs <= now && c.visitantMs <= now && c.omenBonusMs <= now && c.nyTimerMs <= now);
+        if (c.curZone == zone && c.mode != 0 && freshTimers) { zt_ = c; ok = true; }
+    }
+    CloseHandle(h);
+    return ok;
+}
+void PartyState::on_nyzul_text(const char* s, int mode) {
+    if (zt_.mode != 4 || !s || !s[0]) return;
+    bool ch = false;                                          // only a real state change triggers a disk write (these modes spam)
+    if (mode == 123) {
+        if (strstr(s, "Security field malfunction")) { ny_copy_text(zt_.nyRestriction, 40, s, 0); zt_.nyRestrFail = 1; ch = true; }
+        else if (strstr(s, "Time limit has been reduced")) { const int n = omen_first_num(s); if (n >= 0) { ny_set_timer(zt_, nyzul_remaining() - n * 60); ch = true; } }
+        else if (strstr(s, "Potential token reward reduced")) { zt_.nyPenalties++; ch = true; }
+    } else if ((mode == 146 || mode == 148) && strstr(s, "(Earth time)")) {   // "... N minute(s) (Earth time)" -> set timer
+        const int mult = strstr(s, "minute") ? 60 : 1; const int n = omen_first_num(s); if (n >= 0) { ny_set_timer(zt_, n * mult); ch = true; }
+    } else if (mode == 146) {
+        if (strstr(s, "objective complete. Rune of Transfer activated")) {
+            zt_.nyCompleted++; zt_.nyObjPending = 0; zt_.nyRestriction[0] = 0; zt_.nyRestrFail = 0; ny_calc_tokens(zt_); ch = true;
+        }
+    } else if (mode == 148) {
+        if (strstr(s, "Objective:")) {
+            if (strstr(s, "Commencing")) { const char* o = "Complete on-site objectives"; int k = 0; for (; o[k] && k < 47; ++k) zt_.nyObjective[k] = o[k]; zt_.nyObjective[k] = 0; }
+            else ny_copy_text(zt_.nyObjective, 48, s, 10);   // skip the "Objective:" prefix
+            zt_.nyObjPending = 1; ch = true;
+        } else if (strstr(s, "archaic")) { ny_copy_text(zt_.nyRestriction, 40, s, 0); ch = true; }   // a floor restriction (keeps warning colour)
+        else if (strstr(s, "Welcome to Floor")) { const int n = omen_first_num(s); if (n >= 0) { zt_.nyFloor = n; ny_resync(zt_); ch = true; } }
+    }
+    if (ch) zt_save();
+}
+
+static void omen_reset_objs(ZoneTracker& zt);            // fwd : zt_set_zone resets the Omen objectives on entry
+static void omen_set_floor(ZoneTracker& zt, const char* s);
+
+// ZONE TRACKER : Dynamis time-extension tables (minutes per owned granule KI ; city zones vs the rest).
+static const int ZT_CITY_TE[5]  = { 10, 10, 10, 15, 15 };   // Crimson / Azure / Amber / Alabaster / Obsidian
+static const int ZT_OTHER_TE[5] = { 10, 10, 10, 10, 20 };
+void PartyState::zt_recompute_dyn_limit() {
+    const int z = zt_.dynZone;
+    const bool city  = (z == 185 || z == 186 || z == 187 || z == 188);
+    const bool other = (z == 134 || z == 135 || z == 39 || z == 40 || z == 41 || z == 42);
+    int lim = 3600;
+    if (city || other) { const int* TE = city ? ZT_CITY_TE : ZT_OTHER_TE; for (int i = 0; i < 5; ++i) if (zt_.ki[i]) lim += TE[i] * 60; }
+    zt_.dynLimitSec = lim;
+}
+void PartyState::zt_set_zone(int zone, const char* name) {
+    if (zone == zt_.curZone) return;                        // no transition
+    const int oldZone = zt_.curZone;
+    const int prevMode = zt_.mode;
+    // Fresh plugin load (crash/reload) while ALREADY standing in a tracked zone -> restore the cached run instead of
+    // resetting it. A NEW run always re-enters via a real zone change (oldZone >= 0), so it never restores a stale cache.
+    if (oldZone < 0 && zt_load(zone)) { zt_.curZone = zone; return; }
+    zt_.curZone = zone;
+    int mode = 0;
+    if (name) { if (name[0] == 'D' && name[1] == 'y' && name[2] == 'n') mode = 1;         // "Dynamis..."
+                else if (name[0] == 'A' && name[1] == 'b' && name[2] == 'y') mode = 2; }  // "Abyssea..."
+    if (zone == 292) mode = 3;                                                            // Reisenjima Henge (Omen)
+    if (zone == 77)  mode = 4;                                                            // Nyzul Isle (Uncharted Area)
+    if ((zone == 298 || zone == 279) && oldZone == 247) mode = 5;                         // Sheol A/B/C -- ONLY from Rabao (298/279 are also Selbina HTMBs)
+    if (mode == 3) {
+        if (zt_.mode != 3) { omen_reset_objs(zt_); zt_.omens = 0; zt_.omenBonusSec = 0; zt_.omenCleared = 0; omen_set_floor(zt_, "Waiting for objectives..."); }
+        zt_.mode = 3;
+    } else if (mode == 1) {
+        if (zt_.mode != 1) for (int i = 0; i < 5; ++i) zt_.ki[i] = 0;                     // fresh run
+        zt_.mode = 1; zt_.dynZone = zone; zt_.dynEntryMs = GetTickCount();
+        zt_recompute_dyn_limit();
+    } else if (mode == 2) {
+        // fresh entry : no visitant status yet -> the 5-minute EXPULSION grace timer (a visitant message overwrites it)
+        if (zt_.mode != 2) { for (int i = 0; i < 7; ++i) zt_.lights[i] = 0; zt_.visitantMin = 5; zt_.visitantMs = GetTickCount(); }
+        // client message base drifted +23 from the addon's old message_ids (7315 -> 7338), confirmed live via
+        // //aio abylog : the two /heal bulk reports landed at rel 0/1 (mid 7338/7339) and visitant at rel 9/10 (7348).
+        zt_.mode = 2; zt_.abyOffset = (zone == 215 || zone == 253) ? 7238 : 7338;
+    } else if (mode == 4) {
+        // A reload mid-run was already handled by zt_load() above ; reaching here means a genuine NEW entry -> clear it.
+        if (prevMode != 4) { ny_reset_run(zt_); zt_.nyPartySize = (count > 0) ? count : 1; }
+        zt_.mode = 4;
+    } else if (mode == 5) {
+        // Fresh Sheol entry from Rabao -> new run : the FIRST 0x02A msg-40016 self-baselines the counter (segBase =
+        // its p2-p1 = the banked total before the first kill), so start unset. KEEP zt_.sheolzone : on_034 set it at
+        // the Rabao conflux menu just before this zone change, and it must carry into the run (cleared on exit, below).
+        zt_.segBase = -1;
+        zt_.segments = 0; zt_.segLastRun = 0;
+        zt_.mode = 5;
+    } else {
+        // Sheol -> Rabao (247) : FREEZE the run total as "N (last run)" (addon's conserve) + clear A/B/C for the next
+        // run. Any other exit resets everything.
+        if (prevMode == 5 && zone == 247) { zt_.mode = 5; zt_.segLastRun = 1; zt_.sheolzone = 0; }
+        else {
+            if (prevMode == 5) { zt_.segments = 0; zt_.segLastRun = 0; zt_.segBase = -1; zt_.sheolzone = 0; }
+            // Nyzul -> staging (77 -> 72) : addon keeps the run but zeroes the timer + armband ; any other exit resets it.
+            if (oldZone == 77 && zone == 72) { zt_.nyTimerSec = 0; zt_.nyTimerMs = 0; zt_.nyArmband = 0; }
+            else if (prevMode == 4) ny_reset_run(zt_);
+            zt_.mode = 0;
+        }
+    }
+    if (zt_.mode != 0) zt_save();                            // snapshot on entry into any tracked zone (Dynamis/Abyssea/Omen/Nyzul)
+}
+void PartyState::on_034(const unsigned char* p) {           // 0x034 NPC interaction : the Rabao conflux entry menu -> which Sheol (A/B/C)
+    if (zt_.curZone != 247) return;                        // only the Rabao (247) entry menu
+    if (pkt_u16(p, 0x2C) != 173) return;                   // Menu ID 173 = the Odyssey conflux
+    if (pkt_u32(p, 0x04) != selfId_) return;               // ...interacting with US
+    const int i = (int)pkt_u32(p, 0x08);                   // Menu Parameters[0] = 1/2/3 = Sheol A/B/C
+    if (i > 0 && i < 4) { zt_.sheolzone = i; zt_save(); }  // set now (in Rabao) ; kept through the zone-in
+}
+void PartyState::on_00e(const unsigned char* p) {          // 0x00E NPC update : fallback A/B/C from a mob's instance bits (menu missed)
+    if (zt_.mode != 5 || zt_.sheolzone) return;            // only inside a Sheol run, and only while still unknown
+    const unsigned id = pkt_u32(p, 0x04);                  // the entity's server id
+    if (id < 0x01000000u) return;
+    const unsigned instance = (id >> 12) & 0xFFFu;         // unique instance bits (addon : bit.band(bit.rshift(id,12),0xFFF))
+    static const unsigned INST[3][2] = { {1019, 1020}, {1021, 1022}, {1023, 1024} };   // Sheol A / B / C
+    for (int k = 0; k < 3; ++k)
+        if (instance == INST[k][0] || instance == INST[k][1]) { zt_.sheolzone = k + 1; zt_save(); break; }
+}
+void PartyState::on_118(const unsigned char* p) {           // 0x118 currency2 : Mog Segments @byte 0x8C (reference total)
+    // The banked total is NOT pushed live during a run (no 0x118 fires per kill) -> the run counter is driven by the
+    // 0x02A msg-40016 per-kill message (on_2a). We only keep segBank here for reference (e.g. the Rabao "(last run)").
+    zt_.segBank = (int)pkt_u32(p, 0x8C);
+}
+void PartyState::on_55(const unsigned char* p) {            // 0x055 : key items ; granules are Type 3, bits 9..13
+    if (zt_.curZone == 72 && ny_has_ki(p, 797)) zt_.nyArmband = 1;   // Nyzul assault armband, captured in the staging point
+    if (zt_.mode != 1) return;
+    if (pkt_u32(p, 0x84) != 3) return;
+    for (int i = 0; i < 5; ++i) { const int bit = 9 + i; zt_.ki[i] = (unsigned char)((p[0x04 + bit / 8] >> (bit % 8)) & 1); }
+    zt_recompute_dyn_limit();
+    zt_save();                                             // KIs / time-extensions changed -> persist
+}
+void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol segments (mode 5) + Abyssea zone messages (mode 2)
+    // SHEOL / ODYSSEY segments : msg **40016** (masked 0x7FFF = 7248) carries p1 = segments THIS kill, p2 = the RUNNING
+    // banked total. segments = p2 - baseline (baseline = p2-p1 at the first message) -> IDEMPOTENT (a duplicate chunk
+    // shares p2 so it can't double-count) and packet-loss-proof (p2 is authoritative). The banked total does NOT push
+    // a live 0x118, so this per-kill message is the only live source (confirmed via //aio sheollog 2026-07-10 : 40016
+    // p2 = 947498/947511/947524, p1=13, baseline 947485). The msg id drifts every patch (was 40005/40015...) -> if the
+    // counter stops after a client update, //aio sheollog + find the new id whose p2 tracks your banked total.
+    if (zt_.mode == 5) {
+        if (!zt_.segLastRun && (pkt_u16(p, 0x1A) & 0x7FFFu) == 7248) {
+            const int gain = (int)pkt_u32(p, 0x08), total = (int)pkt_u32(p, 0x0C);
+            if (zt_.segBase < 0) zt_.segBase = total - gain;   // baseline = banked total BEFORE this (first-seen) kill
+            zt_.segments = (total > zt_.segBase) ? (total - zt_.segBase) : 0;
+            zt_save();
+        }
+        return;
+    }
+    if (zt_.mode != 2) return;
+    const int rel = (int)(pkt_u16(p, 0x1A) & 0x3FFF) - zt_.abyOffset;
+    const int p1 = (int)pkt_u32(p, 0x08), p2 = (int)pkt_u32(p, 0x0C), p3 = (int)pkt_u32(p, 0x10), p4 = (int)pkt_u32(p, 0x14);
+    auto addL = [&](int idx, int add, int cap) { int v = zt_.lights[idx] + add; if (v > cap) v = cap; zt_.lights[idx] = v; };
+    bool ch = true;                                        // a matched case changed lights/visitant -> persist (default: no)
+    switch (rel) {
+        case 0:   zt_.lights[0] = p1; zt_.lights[6] = p2; zt_.lights[4] = p3; zt_.lights[5] = p4; break;   // /heal : pearl,ebon,gold,silver (exact)
+        case 1:   zt_.lights[1] = p1; zt_.lights[2] = p2; zt_.lights[3] = p3; break;                       // /heal : azure,ruby,amber (exact)
+        case 183: addL(0, 5, 230); break;                                                                 // pearlescent
+        case 184: addL(4, 5 * (p1 + 1), 200); break;                                                      // golden
+        case 185: addL(5, 5 * (p1 + 1), 200); break;                                                      // silvery
+        case 186: addL(6, p1 + 1, 200); break;                                                            // ebon
+        case 187: addL(1, 8, 255); break;                                                                 // azure
+        case 188: addL(2, 8, 255); break;                                                                 // ruby
+        case 189: addL(3, 8, 255); break;                                                                 // amber
+        case 9: case 10: case 45: zt_.visitantMin = p1; zt_.visitantMs = GetTickCount(); break;           // update / wears / gain
+        case 12:  zt_.visitantMin += p1; zt_.visitantMs = GetTickCount(); break;                          // extend
+        default: ch = false; break;
+    }
+    if (ch) zt_save();
+}
+
+} // namespace aio

@@ -1,0 +1,44 @@
+# AioHUD clang-tidy -- CHECKS ONLY (clang-tidy does not reformat). Curated for a 32-bit Direct3D 8
+# fixed-function plugin: it flags the language-level wins from docs/tech-stack/modern-cpp-style.md
+# without fighting the project's load-bearing constraints.
+#
+# Deliberately NOT enabled (they contradict the design -- see modern-cpp-style.md §2):
+#   cppcoreguidelines-avoid-c-arrays / modernize-avoid-c-arrays  -> fixed-capacity arrays are the no-heap design
+#   cppcoreguidelines-owning-memory / -pro-bounds-*              -> manual D3D handle lifecycle, raw pixel loops
+#   cppcoreguidelines-pro-type-reinterpret-cast / -cstyle-cast   -> reinterpreting game memory is inherent here
+#   modernize-use-trailing-return-type                           -> not the house style
+#   *-exceptions*, anything pushing std::vector/std::string      -> SEH boundary, no per-frame heap
+#
+# Run (needs clang-tidy + a compile-commands.json or explicit flags -- the shipping build stays MSVC cl):
+#   clang-tidy src/model/game_mem.cpp -- -m32 -std=c++17 -Iinclude -Isrc
+Checks: >
+  -*,
+  bugprone-*,
+  performance-*,
+  misc-*,
+  modernize-use-nullptr,
+  modernize-use-override,
+  modernize-use-bool-literals,
+  modernize-use-using,
+  modernize-use-equals-default,
+  modernize-use-equals-delete,
+  modernize-redundant-void-arg,
+  readability-const-return-type,
+  readability-make-member-function-const,
+  readability-redundant-member-init,
+  readability-redundant-string-init,
+  readability-redundant-declaration,
+  readability-misleading-indentation,
+  readability-static-definition-in-anonymous-namespace,
+  cppcoreguidelines-pro-type-member-init,
+  -bugprone-narrowing-conversions,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-reserved-identifier,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -misc-non-private-member-variables-in-classes,
+  -misc-use-anonymous-namespace,
+  -misc-include-cleaner
+
+WarningsAsErrors: ''
+HeaderFilterRegex: '(src|include)/.*\.(h|hpp)$'
+FormatStyle: none
