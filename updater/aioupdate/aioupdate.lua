@@ -18,9 +18,11 @@ _addon.version  = '2.0'
 _addon.commands = { 'aioupdate', 'aioup' }
 
 local base     = windower.windower_path
+if base:sub(-1) ~= '\\' and base:sub(-1) ~= '/' then base = base .. '\\' end   -- ensure a trailing separator
 local data_dir = base .. 'plugins\\AioHud\\data'
 local done     = data_dir .. '\\update\\done.txt'
 local vfile    = data_dir .. '\\version.txt'
+local DEBUG    = false   -- flip to true to trace the flag path + each poll in chat
 
 local function log(s) windower.add_to_chat(207, 'AioUpdate: ' .. s) end
 
@@ -41,6 +43,7 @@ local function read_status()
 end
 
 windower.register_event('addon command', function()
+    if DEBUG then log('flag = ' .. done); log('installed = v' .. installed()) end
     os.remove(done)                       -- clear any stale status
     log('checking for updates...')
     windower.send_command('aio update')   -- the plugin runs the no-window updater
@@ -48,6 +51,7 @@ windower.register_event('addon command', function()
     local function poll()
         tries = tries + 1
         local s = read_status()
+        if DEBUG and (s or tries % 3 == 0) then log('poll ' .. tries .. ': ' .. (s or '(no flag yet)')) end
         if s then
             if s:find('^UPTODATE') then
                 log('already up to date (v' .. installed() .. ').')

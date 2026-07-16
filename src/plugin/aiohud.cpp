@@ -343,8 +343,11 @@ static void spawn_updater()
     cmd[sizeof(cmd) - 1] = 0;
     STARTUPINFOA si; ZeroMemory(&si, sizeof(si)); si.cb = sizeof(si);
     PROCESS_INFORMATION pi; ZeroMemory(&pi, sizeof(pi));
-    if (CreateProcessA(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, NULL, &si, &pi)) {
+    if (CreateProcessA(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {   // CREATE_NO_WINDOW = hidden console ; the child survives this DLL unloading (its parent is pol.exe, not the DLL)
         CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
+    } else {
+        char e[96]; _snprintf(e, sizeof(e), ">>> AioHud : updater launch failed (CreateProcess err %lu) <<<", GetLastError());
+        g_host.console().print(e);
     }
 }
 
