@@ -1007,6 +1007,7 @@ void Party::draw(const Frame& f) {
             buffW = bmar + (float)cnt * bs + (float)(cnt - 1) * bgap;
         }
     }
+    buffReserveW_ = buffW;   // expose for the config preview (so it centres the box + buff-strip cluster)
 
     // EDIT MODE : drag this box to reposition it live on the game (stores a fraction-of-screen pos).
     // The drag operates on the REAL cluster rect (= g_boxRect : party box + the cost box on top + the left

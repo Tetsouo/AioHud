@@ -539,7 +539,8 @@ void Hud::draw_config_preview(const Frame& f) {
     // SNAP the box origin to whole pixels : measure() is fractional, so an un-snapped origin puts the
     // whole box (badge, name, gauges) on sub-pixel coords -> the first glyph's left column gets eaten by
     // filtering ONLY in the preview (live uses an integer layout origin). This is the truncation cause.
-    const float boxX     = (float)(int)(psx + (psw - pw) * 0.5f + 0.5f);             // centre the stack horizontally
+    const float buffW    = tiers[0]->buff_reserve_w();                               // left buff strip -> shift right so the box+buffs cluster centres (not just the box)
+    const float boxX     = (float)(int)(psx + (psw - pw + buffW) * 0.5f + 0.5f);     // centre the box + buff-strip cluster horizontally
     const float partyTop = (float)(int)(psy + (psh + stackH) * 0.5f - ph + 0.5f);    // centre the whole stack vertically
     for (int t = 0; t < 3; ++t) if (tiers[t]) tiers[t]->set_origin(boxX, partyTop);   // shared X ; party Y anchors the stack
 

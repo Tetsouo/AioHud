@@ -35,6 +35,7 @@ public:
     void dispose() override;                  // release the dot texture (unload)
     void draw(const Frame& f) override;
     int  tier() const { return tier_; }      // 0 = main party, 1/2 = alliance boxes (used by the config preview)
+    float buff_reserve_w() const { return buffReserveW_; }   // last-drawn width of the left buff strip (0 for alliances) -> the preview centres the box+buffs cluster
     int  tcfg() const { return tier_ == 0 ? 0 : 1; }   // config GROUP : 0 = Party, 1 = Alliance (both alliance boxes share one config)
     u32  cursor_tex() const { return icon_tex_; }   // the loaded selection-hand texture (for the Help live sample)
 
@@ -81,6 +82,7 @@ private:
     static const int MAXM = 6;
     int count_ = 6;
     int tier_  = 0;                                        // 0 = main party box, 1 = alliance1, 2 = alliance2
+    mutable float buffReserveW_ = 0.0f;                    // width of the left buff strip from the last draw (0 for alliances)
     int dhp_[MAXM] = { 100, 70, 18, 45, 0, 95 };            // % (0..100)  (overridable by config)
     int dmp_[MAXM] = {  42, 73,  0, 60, 0, 40 };            // %
     int dtp_[MAXM] = { 3000, 1000, 2000, 300, 0, 600 };     // 0..3000
