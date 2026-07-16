@@ -30,6 +30,14 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Party", "Groupe"), catOpen_[1])) catOpen_[1] = !catOpen_[1];
     ROW_NEXT(42.0f)
     if (catOpen_[1]) {
+        // Show : master on/off for the main PARTY box (independent of Alliance below).
+        { ROW_BAND(52.0f)
+            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Show", "Afficher"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(150.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().partyShow ? tr("On", "Oui") : tr("Off", "Non"), ui_config().partyShow != 0)) { ui_config().partyShow = !ui_config().partyShow; save_ui_config(); }
+        }
+        ROW_NEXT(52.0f)
         // ---- Appearance : the PARTY box theme (procedural families = colour grid ; FFXI = game theme numbers). ----
         { ROW_BAND(52.0f)   // Box Theme (family)
           const int fam = window_theme_family(ui_config().skinTheme), var = window_theme_variant(ui_config().skinTheme);
@@ -218,6 +226,14 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alliance", "Alliance"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
     ROW_NEXT(42.0f)
     if (catOpen_[7]) {
+        // Show : master on/off for the two ALLIANCE boxes (independent of the Party box above).
+        { ROW_BAND(52.0f)
+            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Show", "Afficher"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(150.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().allyShow ? tr("On", "Oui") : tr("Off", "Non"), ui_config().allyShow != 0)) { ui_config().allyShow = !ui_config().allyShow; save_ui_config(); }
+        }
+        ROW_NEXT(52.0f)
         // ---- Theme : follow the Party box theme, or give the alliance boxes their OWN (procedural themes fully). ----
         { ROW_BAND(52.0f)
             const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);

@@ -92,6 +92,10 @@ static const char* last_char_profile(const char* charName) {
 static void save_config_to(const char* path) {
     FILE* f = fopen(path, "w"); if (!f) return;
     UiConfig& c = ui_config();
+    fprintf(f, "partyShow=%d\n", c.partyShow);
+    fprintf(f, "allyShow=%d\n", c.allyShow);
+    fprintf(f, "tgtShow=%d\n", c.tgtShow);
+    fprintf(f, "plrShow=%d\n", c.plrShow);
     fprintf(f, "skinTheme=%d\n", c.skinTheme);
     fprintf(f, "skinLum=%.3f\n", c.skinLum);
     fprintf(f, "skinHue=%08X\n", c.skinHue);
@@ -289,7 +293,11 @@ static bool load_config_from(const char* path) {
                              // A small buffer truncated it mid-line, so most tracked-spell keys were dropped on reload.
     while (fgets(line, sizeof(line), f)) {
         int v, v1, v2, ps, idx, b0, b1, b2, bc; float x, y, s, fv, f1, f2; unsigned uc;
-        if      (sscanf(line, "skinTheme=%d", &v) == 1) c.skinTheme = v;
+        if      (sscanf(line, "partyShow=%d", &v) == 1) c.partyShow = v;
+        else if (sscanf(line, "allyShow=%d", &v) == 1)  c.allyShow = v;
+        else if (sscanf(line, "tgtShow=%d", &v) == 1)   c.tgtShow = v;
+        else if (sscanf(line, "plrShow=%d", &v) == 1)   c.plrShow = v;
+        else if (sscanf(line, "skinTheme=%d", &v) == 1) c.skinTheme = v;
         else if (sscanf(line, "skinLum=%f", &fv) == 1)  c.skinLum = fv;
         else if (sscanf(line, "skinHue=%x", &uc) == 1)  c.skinHue = uc;
         else if (sscanf(line, "skinBoxAlpha=%f", &fv) == 1) c.skinBoxAlpha = fv;
@@ -722,6 +730,7 @@ static bool box_eq(const BoxStyle& a, const BoxStyle& b) {
     return a.on == b.on && a.alpha == b.alpha && a.themeCopy == b.themeCopy && a.theme == b.theme && a.lum == b.lum && a.hue == b.hue;
 }
 static bool persist_eq(const UiConfig& a, const UiConfig& b) {
+    if (a.partyShow != b.partyShow || a.allyShow != b.allyShow || a.tgtShow != b.tgtShow || a.plrShow != b.plrShow) return false;
     if (a.skinTheme != b.skinTheme || a.fontFace != b.fontFace || a.skinLum != b.skinLum || a.skinHue != b.skinHue || a.skinBoxAlpha != b.skinBoxAlpha) return false;
     if (a.allyThemeCopy != b.allyThemeCopy || a.allyTheme != b.allyTheme || a.allyLum != b.allyLum || a.allyHue != b.allyHue || a.allyBoxAlpha != b.allyBoxAlpha) return false;
     if (a.buffScale != b.buffScale) return false;
@@ -926,6 +935,7 @@ void guide_push_out(int perm, float sw, float sh, float& ex, float& ey, float ew
 
 void reset_ui_config() {   // general Default : everything
     UiConfig& c = ui_config();
+    c.partyShow = 1; c.allyShow = 1; c.tgtShow = 1; c.plrShow = 1;
     c.skinTheme = 0; c.skinLum = 0.0f; c.skinHue = 0; c.skinBoxAlpha = 1.0f; c.fontFace = 0; c.buffScale = 0.92f; c.buffMax = 20; c.buffRows = 2; c.uiStyle = 0; c.uiColor = 0; c.uiAccent = 0; c.cursorScale = 1.0f;
     c.allyThemeCopy = 1; c.allyTheme = 0; c.allyLum = 0.0f; c.allyHue = 0; c.allyBoxAlpha = 1.0f;
     for (int k = 0; k < 3; ++k) { c.barHeight[k] = 1.0f; c.barWidth[k] = 1.0f; c.badgeScale[k] = 1.0f; c.gaugeStyle[k] = 0; c.jobBadge[k] = 2; c.cast[k] = true; }

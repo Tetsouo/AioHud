@@ -70,11 +70,13 @@ struct BoxStyle {
 struct UiConfig {
     // ---- Party / Alliance ----
     TextStyle text[2][TE_COUNT];   // per-element typography, per config group : [0]=Party, [1]=Alliance (Interface font = [0][TE_UI])
+    int   partyShow = 1;       // master on/off : draw the main PARTY box (0 = hide the whole party module)
     int   skinTheme = 0;       // window-skin theme index (the Hud applies it -> all boxes)
     float skinLum   = 0.0f;    // box-theme luminosity : -1 = darker .. 0 = neutral .. +1 = lighter (procedural themes)
     float skinBoxAlpha = 1.0f; // PARTY/ALLIANCE box chrome OPACITY (1 = solid .. 0 = fully see-through) ; content stays opaque
     unsigned skinHue = 0;      // custom box-theme HUE (0 = use the theme's preset ; else this opaque colour tints the family)
     // ---- Alliance boxes : optionally their OWN theme (else follow the Party skinTheme). Same encoding as skinTheme. ----
+    int   allyShow = 1;        // master on/off : draw the two ALLIANCE boxes (0 = hide alliance ; party can still show)
     int   allyThemeCopy = 1;   // 1 = alliance boxes follow the Party box theme ; 0 = their own theme below
     int   allyTheme    = 0;    // alliance box-theme index (family x hue, like skinTheme)
     float allyLum      = 0.0f; // alliance box-theme luminosity (procedural themes)
@@ -89,6 +91,7 @@ struct UiConfig {
     unsigned uiAccent = 0;     // custom config-menu accent (0 = use uiStyle/uiColor preset ; else derive the accent family from this opaque colour)
     float cursorScale = 1.0f;  // selection-cursor (hand) size multiplier (0.50 .. 2.00)
     // ---- Target module (its OWN box theme, independent of the party skinTheme) ----
+    int   tgtShow    = 1;      // master on/off : draw the Target module at all (0 = never show the target box)
     int   tgtBox     = 1;      // 1 = draw the box chrome ; 0 = NO box (name/%/bar/buffs/timer float with a heavy outline)
     float tgtBoxAlpha = 1.0f;  // box chrome OPACITY (1 = solid .. 0.1 = near-transparent) ; the content stays opaque
     int   tgtThemeCopy = 0;    // 1 = the Target box FOLLOWS the party box theme (skinTheme/skinLum) ; 0 = its own below
@@ -119,6 +122,7 @@ struct UiConfig {
     float tgtX = 0.0f, tgtY = 0.0f;   // top-left as a FRACTION of the screen when tgtPosSet
     int   tgtCenterH = 0, tgtCenterV = 0;   // LOCK the box centred on the screen H / V axis (widget re-centres each frame ; a drag releases it)
     // ---- Player Hub module (single box, like Target) : Phase 1 = identity + vitals + buffs ----
+    int   plrShow    = 1;      // master on/off : draw the Player Hub at all (0 = never show the player box)
     int   plrBox     = 1;      // 1 = draw the box chrome ; 0 = no box
     float plrBoxAlpha = 1.0f;  // box chrome OPACITY (content stays opaque)
     int   plrThemeCopy = 1;    // 1 = the Player box FOLLOWS the party box theme (skinTheme/skinLum) ; 0 = its own below

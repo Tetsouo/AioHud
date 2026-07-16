@@ -277,12 +277,17 @@ void Hud::render(u32 dev) {
         set_vial_provider(bars_);   // let the party rows / Help borrow the real fiole assets this frame (null-safe -> fallback)
         if (worldReady) {           // logged in -> draw the HUD ; not yet (login/char screen) -> only the config overlay below
         for (size_t i = 0; !hideForRules && i < widgets_.size(); ++i) {
+            const char* tn = widgets_[i]->type_name();
             // preview active -> the party tiers AND the target box are redrawn inside the stage by
             // draw_config_preview ; skip them here so they don't also draw at their live HUD position.
-            if (pvActive) { const char* tn = widgets_[i]->type_name();
+            if (pvActive) {
                 // These are redrawn INSIDE the preview stage by draw_config_preview (per section) ; skip the
                 // live draw so they don't also show through the transparent preview window.
                 if (strcmp(tn, "PartyList") == 0 || strcmp(tn, "TargetBar") == 0 || strcmp(tn, "Minimap") == 0) continue; }
+            // MASTER show/hide per module (the config preview draws these separately, so previews stay visible).
+            if (strcmp(tn, "PartyList") == 0) { if (static_cast<Party*>(widgets_[i])->tier() == 0 ? !ui_config().partyShow : !ui_config().allyShow) continue; }
+            else if (strcmp(tn, "TargetBar") == 0) { if (!ui_config().tgtShow) continue; }
+            else if (strcmp(tn, "PlayerHub")  == 0) { if (!ui_config().plrShow) continue; }
             widgets_[i]->draw(f);
         }
         for (size_t i = 0; i < widgets_.size(); ++i)   // hand the Help the party's selection-hand texture (for its live cursor sample)

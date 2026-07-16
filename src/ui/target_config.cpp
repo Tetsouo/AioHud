@@ -33,6 +33,14 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6])) catOpen_[6] = !catOpen_[6];
         ROW_NEXT(42.0f)
         if (catOpen_[6]) {
+        // Show : master on/off for the WHOLE Target module (hidden everywhere when off ; other rows stay editable).
+        { ROW_BAND(52.0f)
+            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Show", "Afficher"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(150.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().tgtShow ? tr("On", "Oui") : tr("Off", "Non"), ui_config().tgtShow != 0)) { ui_config().tgtShow = !ui_config().tgtShow; save_ui_config(); }
+        }
+        ROW_NEXT(52.0f)
         // Box : draw the frame chrome or not. NO box -> name/%/bar/buffs/timer float with a heavy outline, and the
         // theme rows below are hidden (no chrome to theme).
         { ROW_BAND(52.0f)
