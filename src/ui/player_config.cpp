@@ -301,6 +301,17 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         if (!ui_config().plrEqThemeBorder) {
         CFG_COLOR_PICKER(&ui_config().plrEqColor)
         }   // end custom colour (!plrEqThemeBorder)
+        // Cell background : the cell FILL colour -- Default dark, or a custom colour (filled slots stay a touch brighter).
+        { ROW_BAND(52.0f)
+            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Cell background", "Fond des cases"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(150.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().plrEqCellBgCustom ? tr("Custom", "Perso") : tr("Default", "Défaut"), ui_config().plrEqCellBgCustom != 0)) { ui_config().plrEqCellBgCustom = !ui_config().plrEqCellBgCustom; save_ui_config(); }
+        }
+        ROW_NEXT(52.0f)
+        if (ui_config().plrEqCellBgCustom) {
+        CFG_COLOR_PICKER(&ui_config().plrEqCellBg)
+        }   // end custom cell background
         }   // end sub-section Equipment (catOpen_[12])
         ry += snap(10.0f);
 

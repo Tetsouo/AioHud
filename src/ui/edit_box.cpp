@@ -139,27 +139,36 @@ bool edit_box_drag(EditBox& st, int boxId, const Frame& f, float& px, float& py,
             // from the key event's flags (aio_plugin_key -> edit_set_modifiers), which is stable and never stuck,
             // so we use it directly -- no more flicker-bridge / hold frames (which used to leave it locked).
             const bool shift = edit_shift(), ctrl = edit_ctrl();
-            st.dragShift = shift; st.dragCtrl = ctrl;
-            // Freeze the locked axis to the box's current position AND re-sync that axis's grab offset each frame,
-            // so releasing the key (or a flicker) never snaps the box to the mouse (no jump).
-            if (shift) { ey = py; st.grabDY = m->y - py; }
-            if (ctrl)  { ex = px; st.grabDX = m->x - px; }
+            // FREE placement : Ctrl+Shift held TOGETHER (a combo that would otherwise just freeze both axes = useless)
+            // or Alt when the game doesn't swallow it -> ignore axis-lock, box-vs-box repulsion AND keep-out zones.
+            const bool freePlace = (shift && ctrl) || edit_alt();
+            st.dragShift = shift && !freePlace; st.dragCtrl = ctrl && !freePlace; st.dragFree = freePlace;
+            // AXIS-LOCK (only when NOT free) : Shift = horizontal only, Ctrl = vertical only. Freeze the locked axis
+            // to the box's current position + re-sync that axis's grab offset each frame so a key release / flicker
+            // never snaps the box to the mouse.
+            if (!freePlace) {
+                if (shift) { ey = py; st.grabDY = m->y - py; }
+                if (ctrl)  { ex = px; st.grabDX = m->x - px; }
+            }
             if (ex > f.screenW - W) ex = f.screenW - W; if (ex < 0.0f) ex = 0.0f;
             if (ey > f.screenH - H) ey = f.screenH - H; if (ey < 0.0f) ey = 0.0f;
-            // SNAP to the screen centre (engages the centre-lock so it stays centred through a resize).
+            // SNAP to the screen centre (engages the centre-lock so it stays centred through a resize). Not in free mode.
             const float SNAP = snap(12.0f), ecx = (f.screenW - W) * 0.5f, ecy = (f.screenH - H) * 0.5f;
-            bool snapH = !ctrl  && fabsf(ex - ecx) < SNAP;
-            bool snapV = !shift && fabsf(ey - ecy) < SNAP;
+            bool snapH = !freePlace && !ctrl  && fabsf(ex - ecx) < SNAP;
+            bool snapV = !freePlace && !shift && fabsf(ey - ecy) < SNAP;
             if (snapH) ex = ecx; if (snapV) ey = ecy;
-            guide_push_out(zperm, f.screenW, f.screenH, ex, ey, W, H);   // repelled by any forbidding zone
-            edit_box_push_out(boxId, f.t, ex, ey, W, H);                      // repelled by every OTHER box (no overlap)
+            if (!freePlace) {   // free placement overrides ALL restrictions -> drop it anywhere, over any box or keep-out zone
+                guide_push_out(zperm, f.screenW, f.screenH, ex, ey, W, H);   // repelled by any forbidding zone
+                edit_box_push_out(boxId, f.t, ex, ey, W, H);                      // repelled by every OTHER box (no overlap)
+            }
             if (ex > f.screenW - W) ex = f.screenW - W; if (ex < 0.0f) ex = 0.0f;
             if (ey > f.screenH - H) ey = f.screenH - H; if (ey < 0.0f) ey = 0.0f;
             if (fabsf(ex - ecx) > 0.5f) snapH = false;                   // a zone pushed it off centre -> lock didn't hold
             if (fabsf(ey - ecy) > 0.5f) snapV = false;
             posSet = true;
-            if (!ctrl)  { fx = clampf(ex / f.screenW, 0.0f, 1.0f); centerH = snapH ? 1 : 0; }   // only the moved axis updates
-            if (!shift) { fy = clampf(ey / f.screenH, 0.0f, 1.0f); centerV = snapV ? 1 : 0; }
+            // free mode moves BOTH axes -> persist both ; else only the un-locked axis updates.
+            if (freePlace || !ctrl)  { fx = clampf(ex / f.screenW, 0.0f, 1.0f); centerH = snapH ? 1 : 0; }
+            if (freePlace || !shift) { fy = clampf(ey / f.screenH, 0.0f, 1.0f); centerV = snapV ? 1 : 0; }
             px = snap(ex); py = snap(ey);                                // immediate feedback
         } else { st.dragging = false; st.dragShift = st.dragCtrl = false;                        // released -> persist once + free the lock
                  edit_drag_release(&st); save_ui_config(); }
@@ -189,6 +198,14 @@ void edit_box_grid(u32 dev, const Frame& f, const EditBox& st, float px, float p
         grad_quad(dev, 0.0f, cy - 4.0f, sw, 8.0f, gl, gl, gl, gl); grad_quad(dev, 0.0f, cy - 1.0f, sw, 2.0f, c, c, c, c); }
     if (st.dragCtrl)  { const u32 c = 0xFFFFC24A, gl = 0x40FFC24A; const float cx = snap(px + W * 0.5f);
         grad_quad(dev, cx - 4.0f, 0.0f, 8.0f, sh, gl, gl, gl, gl); grad_quad(dev, cx - 1.0f, 0.0f, 2.0f, sh, c, c, c, c); }
+    // FREE-placement cue (Alt) : a green frame around the WHOLE SCREEN (drawn on the full-screen grid layer, so the
+    // box chrome -- painted AFTER the grid -- can't cover it). Unmistakable "no restrictions, drop it anywhere",
+    // and doubles as an Alt-detected check : no green border => the plugin isn't seeing Alt held.
+    if (st.dragFree) { const u32 c = 0xFF56E0A0u, gl = 0x2856E0A0u; const float t = snap(3.0f), h = snap(10.0f);
+        grad_quad(dev, 0.0f, 0.0f, sw, h, gl, gl, 0x0056E0A0u, 0x0056E0A0u);                 // soft inner glow (top)
+        grad_quad(dev, 0.0f, sh - h, sw, h, 0x0056E0A0u, 0x0056E0A0u, gl, gl);               //                 (bottom)
+        grad_quad(dev, 0.0f, 0.0f, sw, t, c, c, c, c); grad_quad(dev, 0.0f, sh - t, sw, t, c, c, c, c);
+        grad_quad(dev, 0.0f, 0.0f, t, sh, c, c, c, c); grad_quad(dev, sw - t, 0.0f, t, sh, c, c, c, c); }
 }
 
 } // namespace aio

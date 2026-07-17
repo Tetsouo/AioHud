@@ -45,6 +45,7 @@ public:
     void set_skin(int idx);
     int  skin_index() const { return skinIdx_; }
     ConfigPage& config() { return config_; }   // the //aio config overlay
+    void set_peek(bool on) { peekHide_ = on; }  // hold-End "peek" : hide the ENTIRE HUD while held, restore on release
     float screenW() const { return screenW_; }   // resolution detected at RENDER time (reliable)
     float screenH() const { return screenH_; }
 
@@ -73,6 +74,7 @@ private:
     LiquidBars*          bars_ = nullptr;          // cached (PlayerHub vitals) for //aio lay
     Layout               layout_;                  // last loaded descriptor (kept for re-placement on resize)
     bool                 have_layout_ = false;     // a valid layout_ has been loaded
+    bool                 peekHide_ = false;        // End held -> hide the whole HUD (peek at the game) ; reset on focus loss
     bool                 wsFontWarmed_ = false;    // the WS-popup font's big atlases pre-baked (so the first WS never hitches)
     u32                  tpCoffer_ = 0;            // treasure-pool coffer icon texture (forgotten on device change)
     bool                 tpCofferTried_ = false;

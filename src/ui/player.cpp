@@ -575,6 +575,11 @@ void Player::draw(const Frame& f) {
         // (gold plate / iron-steel bevel / neon tube / frost rime), matching the current theme -- not a flat
         // colour. FFXI-theme / custom -> a flat coloured border (accB).
         const bool themedCells = c.plrEqThemeBorder && window_theme_is_proc(eqTheme);
+        // cell BACKGROUND : custom colour (occupied = plrEqCellBg ; the gradient bottom + empty cells are derived
+        // shades so filled slots still read brighter) or the default dark. Same colours for the themed + flat paths.
+        const bool eqBgC = c.plrEqCellBgCustom != 0;
+        const u32 bgOccT = eqBgC ? c.plrEqCellBg : 0xE0121620u, bgOccB = eqBgC ? scl(c.plrEqCellBg, 0.72f) : 0xE00A0F16u;
+        const u32 bgEmpT = eqBgC ? scl(c.plrEqCellBg, 0.55f) : 0xC00E0E12u, bgEmpB = eqBgC ? scl(c.plrEqCellBg, 0.40f) : 0xC0060608u;
         color_state(dev);
         if (themedCells) {
             // FUSED themed grid : cell backgrounds abut EDGE-TO-EDGE, then ONE themed frame around the whole 4x4 +
@@ -583,7 +588,7 @@ void Player::draw(const Frame& f) {
             for (int s = 0; s < 16; ++s) {
                 const int dp = EQ_DPOS[s]; const bool occ = eq.id[s] != 0 && eq.id[s] != 0xFFFF;
                 const float cx = snap(gx0 + (dp % 4) * eqCell), cy = snap(gy0 + (dp / 4) * eqCell);
-                const u32 bt = occ ? 0xE0121620u : 0xC00E0E12u, bb = occ ? 0xE00A0F16u : 0xC0060608u;
+                const u32 bt = occ ? bgOccT : bgEmpT, bb = occ ? bgOccB : bgEmpB;
                 grad_quad(dev, cx, cy, snap(eqCell), snap(eqCell), bt, bt, bb, bb);   // full-cell bg (no gap)
             }
             if (window_theme_family(eqTheme) == 4) {   // NEON : internal lattice as neon tubes (colour/white/colour),
@@ -606,7 +611,7 @@ void Player::draw(const Frame& f) {
             for (int s = 0; s < 16; ++s) {   // flat coloured separators between ALL cases (FFXI / custom)
                 const int dp = EQ_DPOS[s]; const bool occ = eq.id[s] != 0 && eq.id[s] != 0xFFFF;
                 rrect_bordered(dev, snap(gx0 + (dp % 4) * eqCell), snap(gy0 + (dp / 4) * eqCell), cellSz, cellSz, r,
-                               occ ? 0xE0121620u : 0xC00E0E12u, occ ? 0xE00A0F16u : 0xC0060608u,
+                               occ ? bgOccT : bgEmpT, occ ? bgOccB : bgEmpB,
                                accB | (occ ? 0xCC000000u : 0x99000000u), 1.0f);
             }
         }

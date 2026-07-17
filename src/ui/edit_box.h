@@ -27,7 +27,7 @@ struct EditBox {
     bool  dragging = false;
     float grabDX = 0.0f, grabDY = 0.0f;
     int   shiftHold = 0, ctrlHold = 0;      // frames the axis-lock stays engaged after the last key reading
-    bool  dragShift = false, dragCtrl = false;
+    bool  dragShift = false, dragCtrl = false, dragFree = false;   // dragFree = FREE placement this frame (Ctrl+Shift or Alt)
 };
 
 // Handle this frame's drag for the box at (px,py) size (W,H). Updates px/py to the live position and writes

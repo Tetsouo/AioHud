@@ -14,6 +14,7 @@
 #include "model/ui_config.h"
 #include "model/gamestate.h"   // GameState::me (character name) for the Profile page
 #include "model/map_dat.h"     // load_zone_map : the Help owns its own copy of the live zone map (radar sample)
+#include "ui/edit_box.h"       // edit_drag_busy() : hide the edit-layout toolbar while a box is being dragged
 #include "ui/party.h"          // party_gauge() : the REAL HP/MP/TP liquid gauge, for the Help live samples
 #include "ui/target.h"         // target_help_* : the REAL Target element samples (HP+trail, range, debuffs, TH)
 #include "ui/minimap.h"        // minimap_help_* : the REAL Minimap element samples (round disc, legend, moon, day)
@@ -1665,7 +1666,10 @@ void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const Mouse
             }
         }
         }   // end if (editShowLines_)
-        const float bw = snap(820.0f), bh = snap(46.0f), bx = snap((sw - bw) * 0.5f), by = snap(22.0f);
+        // The toolbar HIDES while a box is being dragged (it sits at the top and would otherwise mask boxes
+        // dragged up there) -> it reappears the moment the click is released.
+        if (!edit_drag_busy()) {
+        const float bw = snap(820.0f), bh = snap(62.0f), bx = snap((sw - bw) * 0.5f), by = snap(22.0f);
         const float pop = ease(900, 1.0f, 16.0f);                                   // subtle slide-in
         const float byA = by - (1.0f - pop) * snap(10.0f);
         shadow_down(dev, bx - snap(4.0f), byA + bh, bw + snap(8.0f), snap(10.0f), 0x55000000);
@@ -1673,9 +1677,14 @@ void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const Mouse
         flat(dev, bx, byA, bw, 1, 0x55FFFFFF);                                       // top sheen
         outline(dev, bx, byA, bw, bh, C_BORDERHI);
         fo->begin(dev);
-        fo->draw_lc(dev, bx + snap(16.0f), byA + bh * 0.5f, tr("EDIT LAYOUT  |  drag,  wheel = size", "ÉDITION  |  glisser,  molette = taille"), snap(14.0f), C_TEXT, C_STROKE, 1.0f);
+        // ROW 1 : title (left) + the action buttons (right).  ROW 2 : the full legend, centred, clear of the buttons.
+        fo->draw_lc(dev, bx + snap(18.0f), byA + snap(19.0f), tr("EDIT LAYOUT", "ÉDITION"), snap(15.0f), C_TEXT, C_STROKE, 1.2f);
+        fo->draw_c(dev, bx + bw * 0.5f, byA + snap(47.0f),
+                   tr("Wheel = size  \xC2\xB7  Ctrl = lock Vertical  \xC2\xB7  Shift = lock Horizontal  \xC2\xB7  Ctrl+Shift = free placement",
+                      "Molette = taille  \xC2\xB7  Ctrl = bloque Vertical  \xC2\xB7  Shift = bloque Horizontal  \xC2\xB7  Ctrl+Shift = placement libre"),
+                   snap(12.0f), C_MUTE, C_STROKE, 1.0f);
         const bool tbClick = click && editConfirm_ == 0;   // while the confirm modal is up the toolbar is inert
-        const float bh2 = snap(30.0f), dby = byA + (bh - bh2) * 0.5f;
+        const float bh2 = snap(28.0f), dby = byA + snap(7.0f);   // buttons on ROW 1 ; the legend sits on ROW 2 below them
         const float db = snap(80.0f),  dbx = bx + bw - db - snap(10.0f);            // Done (far right)
         const float rb = snap(90.0f),  rbx = dbx - rb - snap(8.0f);                 // Default
         const float sb = snap(120.0f), sbx = rbx - sb - snap(8.0f);                 // Clear lines
@@ -1709,6 +1718,7 @@ void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const Mouse
         }
         if (push_btn(dev, fo, mo, tbClick, CTRL_ID, rbx, dby, rb, bh2, tr("Default", "Défaut"), 1)) editConfirm_ = 2;   // -> confirm
         if (push_btn(dev, fo, mo, tbClick, CTRL_ID, dbx, dby, db, bh2, tr("Done", "Terminé"), 0)) { ui_config().editLayout = false; editShowLines_ = false; editZoneName_ = -1; nameFocus_ = false; groupSel_ = -1; save_ui_config(); }
+        }   // end if (!edit_drag_busy()) -> toolbar hidden while dragging
 
         // CONFIRMATION dialog for the destructive actions (Clear lines / Default), drawn on top and capturing input.
         if (editConfirm_ != 0) {

@@ -776,7 +776,7 @@ static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
     const float bmar = snap(curW * 0.55f + 6.0f * S);   // just LEFT of the VISIBLE cursor, + a small breathing gap
     const float au = (float)BUFF_CELL / (float)BUFF_ATLAS_W;    // one cell, in UV space
     const float av = (float)BUFF_CELL / (float)BUFF_ATLAS_H;
-    int bmaxCfg = ui_config().buffMax; if (bmaxCfg < 1) bmaxCfg = 1; if (bmaxCfg > 32) bmaxCfg = 32;   // config choice
+    int bmaxCfg = ui_config().buffMax; if (bmaxCfg < 0) bmaxCfg = 0; if (bmaxCfg > 32) bmaxCfg = 32;   // config choice (0 = no buffs)
     // ONE or TWO rows (config: Buff Rows). Two-row keeps a fixed icon size and reserves both rows so the
     // party size is stable ; one-row uses a bigger (full-line-tall) icon. The reserved band (party.h
     // buffBandH) matches whichever mode is active, so the row grows to fit.
@@ -997,7 +997,7 @@ void Party::draw(const Frame& f) {
     float buffW = 0.0f;
     if (tier_ == 0) {
         int maxNb = 0; for (int i = 0; i < n; ++i) if (rows[i].buffs && rows[i].nbuff > maxNb) maxNb = rows[i].nbuff;
-        int bmax = ui_config().buffMax; if (bmax < 1) bmax = 1; if (bmax > 32) bmax = 32; if (maxNb > bmax) maxNb = bmax;
+        int bmax = ui_config().buffMax; if (bmax < 0) bmax = 0; if (bmax > 32) bmax = 32; if (maxNb > bmax) maxNb = bmax;
         const int PERROW = (ui_config().buffRows > 1) ? 16 : 32;
         const int cnt = maxNb < PERROW ? maxNb : PERROW;
         if (cnt > 0) {
@@ -1024,8 +1024,9 @@ void Party::draw(const Frame& f) {
             if (m->down) {
                 float ex = m->x - g_grabDX, ey = m->y - g_grabDY;    // new cluster top-left (px)
                 const float ew = clW, eh = clH;
+                const bool altFree = (edit_shift() && edit_ctrl()) || edit_alt();   // Ctrl+Shift (or Alt) = FREE placement : no magnetic snap, no zone/box repulsion
                 const float SNAP = snap(10.0f);
-                for (int b = 0; b < 3; ++b) {
+                if (!altFree) for (int b = 0; b < 3; ++b) {
                     if (b == tier_ || !g_boxRect[b].valid) continue;
                     const BoxRect& r = g_boxRect[b];
                     if      (fabsf(ex - r.x) < SNAP)              ex = r.x;              // left  -> left
@@ -1040,13 +1041,15 @@ void Party::draw(const Frame& f) {
                 // keep the WHOLE cluster on screen
                 if (ex > f.screenW - ew) ex = f.screenW - ew; if (ex < 0.0f) ex = 0.0f;
                 if (ey > f.screenH - eh) ey = f.screenH - eh; if (ey < 0.0f) ey = 0.0f;
-                // P3 : push out of any guide ZONE that forbids this box (party -> ZPERM_PARTY, alliance -> ZPERM_ALLIANCE), then re-clamp on screen
-                guide_push_out(tier_ == 0 ? ZPERM_PARTY : ZPERM_ALLIANCE, f.screenW, f.screenH, ex, ey, ew, eh);
-                if (ex > f.screenW - ew) ex = f.screenW - ew; if (ex < 0.0f) ex = 0.0f;
-                if (ey > f.screenH - eh) ey = f.screenH - eh; if (ey < 0.0f) ey = 0.0f;
-                edit_box_push_out(EDITBOX_PARTY + tier_, f.t, ex, ey, ew, eh);   // GLOBAL no-overlap : repelled by the standalone boxes + the other clusters (magnetic snap above already keeps them adjacent, so this only fires on a real overlap)
-                if (ex > f.screenW - ew) ex = f.screenW - ew; if (ex < 0.0f) ex = 0.0f;
-                if (ey > f.screenH - eh) ey = f.screenH - eh; if (ey < 0.0f) ey = 0.0f;
+                // P3 : push out of any guide ZONE that forbids this box (party -> ZPERM_PARTY, alliance -> ZPERM_ALLIANCE), then re-clamp on screen. Alt = free placement -> skip both repulsions (screen clamp above still applies).
+                if (!altFree) {
+                    guide_push_out(tier_ == 0 ? ZPERM_PARTY : ZPERM_ALLIANCE, f.screenW, f.screenH, ex, ey, ew, eh);
+                    if (ex > f.screenW - ew) ex = f.screenW - ew; if (ex < 0.0f) ex = 0.0f;
+                    if (ey > f.screenH - eh) ey = f.screenH - eh; if (ey < 0.0f) ey = 0.0f;
+                    edit_box_push_out(EDITBOX_PARTY + tier_, f.t, ex, ey, ew, eh);   // GLOBAL no-overlap : repelled by the standalone boxes + the other clusters (magnetic snap above already keeps them adjacent, so this only fires on a real overlap)
+                    if (ex > f.screenW - ew) ex = f.screenW - ew; if (ex < 0.0f) ex = 0.0f;
+                    if (ey > f.screenH - eh) ey = f.screenH - eh; if (ey < 0.0f) ey = 0.0f;
+                }
                 // cluster top-left -> stored PLACED top : the box px = ex + buffW (undo the left strip) ; undo costH + maskOff
                 float nx = (ex + buffW) / f.screenW, ny = (ey + costH + maskOff) / f.screenH;
                 nx = nx < 0.0f ? 0.0f : (nx > 1.0f ? 1.0f : nx);   // never store an off-screen position that

@@ -324,7 +324,7 @@ unsigned int aio_plugin_key(u32 key, u32 b, u32 /*c*/) {
     if (mCtrl)  ks[VK_CONTROL] = 0x80;
     if (mAlt)   ks[VK_MENU]    = 0x80;
     if (GetKeyState(VK_CAPITAL) & 1) ks[VK_CAPITAL] = 0x01;   // Caps Lock toggle (best-effort)
-    aio::edit_set_modifiers(mShift, mCtrl);                    // edit-mode axis-lock : always the TRUE state now
+    aio::edit_set_modifiers(mShift, mCtrl, mAlt);              // edit-mode axis-lock (Shift/Ctrl) + Alt = free placement : always the TRUE state now
 
     int nc = 0; WCHAR wbuf[8] = { 0 };
     // Pass the ORIGINAL scan code (a valid US scan) -- recomputing the user-layout scan returns 0 for many
@@ -335,6 +335,14 @@ unsigned int aio_plugin_key(u32 key, u32 b, u32 /*c*/) {
                              dik, (unsigned)b, vk, (int)pressed, nc, (unsigned)wbuf[0],
                              (ks[VK_SHIFT] & 0x80) != 0, (ks[VK_CONTROL] & 0x80) != 0, (ks[VK_MENU] & 0x80) != 0,
                              (int)g_hud.config().wants_keys());
+
+    // End (HELD) = "peek" : hide the ENTIRE HUD while End is down, restore it on release. Only when NOT typing
+    // (inside a text field End = cursor-to-end, handled below). DIK 0xCF = the dedicated End ; 0x4F = numpad End
+    // with NumLock off (nc == 0). Consume it so the game never sees End.
+    if (!g_hud.config().wants_keys() && (dik == 0xCF || (dik == 0x4F && nc == 0))) {
+        g_hud.set_peek(pressed);   // pressed = hide, release = show
+        return 1u;
+    }
 
     // DIK_RETURN key-UP guard : Enter's key-DOWN commits + blurs the field the SAME frame, so by the time
     // its key-UP arrives wants_keys() is false and the stray release would reach the game (opening chat).

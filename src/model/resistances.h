@@ -32,7 +32,7 @@ inline const char* res_elem_name(int i) {
 // elemental cell colours (Fire..Dark), from the addon's ELE_COL, as ARGB for the small element square.
 inline unsigned res_elem_color(int i) {
     static const unsigned C[8] = { 0xFFFF5A46u, 0xFF8CE1FFu, 0xFF8CE696u, 0xFFCDA55Fu,
-                                   0xFFC88CF5u, 0xFF5AA0FFu, 0xFFF5F5F5u, 0xFFAA78C8u };
+                                   0xFFCF86FFu, 0xFF5AA0FFu, 0xFFF5F5F5u, 0xFF6B4A8Cu };   // Thunder = bright violet, Dark = deep dark violet (were both mid-purple -> indistinguishable)
     return (i >= 0 && i < 8) ? C[i] : 0xFFFFFFFFu;
 }
 

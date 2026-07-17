@@ -245,6 +245,7 @@ void Hud::render(u32 dev) {
     f.game  = &state_;            // the per-frame snapshot widgets read from
     f.skin  = &skin_;             // the shared FFXI window skin (9-slice chrome)
     poll_mouse(mouse_, screenW_, screenH_, (HWND)dFocusWindow(dev));   // cursor + click for this frame (gated on game focus)
+    if (!mouse_.focused) peekHide_ = false;   // lost focus while End held -> the key-up may be missed ; un-peek so the HUD can't stay stuck hidden
     f.mouse = &mouse_;
     f.screenW = screenW_; f.screenH = screenH_;
     // Amortise the load hitch : cap NEW font-atlas bakes per frame so the ~10-15 first-use sizes spread over a few
@@ -274,9 +275,10 @@ void Hud::render(u32 dev) {
         // EDIT LAYOUT "Rules" mode : hide the WHOLE HUD so only the reference lines + the edit toolbar
         // (both drawn by config_.draw below) remain -- you align the rules onto the game's native windows.
         const bool hideForRules = ui_config().editLayout && config_.edit_lines_active();
+        const bool hideHud = hideForRules || peekHide_;   // peek (End held) hides the whole HUD too
         set_vial_provider(bars_);   // let the party rows / Help borrow the real fiole assets this frame (null-safe -> fallback)
         if (worldReady) {           // logged in -> draw the HUD ; not yet (login/char screen) -> only the config overlay below
-        for (size_t i = 0; !hideForRules && i < widgets_.size(); ++i) {
+        for (size_t i = 0; !hideHud && i < widgets_.size(); ++i) {
             const char* tn = widgets_[i]->type_name();
             // preview active -> the party tiers AND the target box are redrawn inside the stage by
             // draw_config_preview ; skip them here so they don't also draw at their live HUD position.
@@ -292,7 +294,7 @@ void Hud::render(u32 dev) {
         }
         for (size_t i = 0; i < widgets_.size(); ++i)   // hand the Help the party's selection-hand texture (for its live cursor sample)
             if (strcmp(widgets_[i]->type_name(), "PartyList") == 0 && static_cast<Party*>(widgets_[i])->tier() == 0) { config_.set_help_cursor_tex(static_cast<Party*>(widgets_[i])->cursor_tex()); break; }
-        if (!hideForRules) {   // Rules mode hides the WHOLE HUD (like the widget loop above) -- these boxes must depop too
+        if (!hideHud) {   // Rules mode / End-peek hide the WHOLE HUD (like the widget loop above) -- these boxes must depop too
             draw_skillchains(f);                    // skillchains box (target's active chain) -- placed via //aio edit
             draw_treasure_pool(f);                  // treasure pool box (lottery items) -- placed via //aio edit
             draw_hate_list(f);                      // hate list box (mobs aggro'd on the party) -- placed via //aio edit

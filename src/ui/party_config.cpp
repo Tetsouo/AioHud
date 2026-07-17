@@ -122,11 +122,11 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         }
         ROW_NEXT(52.0f)
         { ROW_BAND(40.0f)   // Max Buffs
-            static const int BM[] = { 16, 20, 24, 32 };
-            int idx = 0; for (int k = 0; k < 4; ++k) if (BM[k] == ui_config().buffMax) { idx = k; break; }
-            char bmv[28]; sprintf(bmv, "%d", BM[idx]);
+            static const int BM[] = { 0, 16, 20, 24, 32 };   // 0 = no buff strip at all
+            int idx = 0; for (int k = 0; k < 5; ++k) if (BM[k] == ui_config().buffMax) { idx = k; break; }
+            char bmv[28]; if (BM[idx] == 0) lstrcpynA(bmv, tr("None", "Aucun"), sizeof(bmv)); else sprintf(bmv, "%d", BM[idx]);
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Max Buffs", "Buffs max"), bmv)) {
-                idx = wrap(idx + d, 4); ui_config().buffMax = BM[idx]; save_ui_config(); }
+                idx = wrap(idx + d, 5); ui_config().buffMax = BM[idx]; save_ui_config(); }
         }
         ROW_NEXT(40.0f)
         { ROW_BAND(52.0f)   // Buff Rows : 1 or 2

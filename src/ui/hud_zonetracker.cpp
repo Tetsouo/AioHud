@@ -212,7 +212,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         float contentW = fH->measure(hdr, zH); if (showSeg && fB->measure(sb, zB) > contentW) contentW = fB->measure(sb, zB);
         char wl[24], vb[12];
         const float dotD = 9.0f * S, dotR = dotD * 0.5f;   // element colour puck
-        const float subGap = gap, colGap = gap * 6.0f;     // between the 2 element sub-cols / (wider) between weapons and elements
+        const float subGap = gap * 2.5f, colGap = gap * 6.0f;   // between the 2 element sub-cols (roomier so adjacent pucks/values don't crowd) / (wider) between weapons and elements
         float wCellW = 0.0f, eValW = 0.0f, eCellW = 0.0f, resW = 0.0f;
         if (haveRes) {
             if (fB->measure(rd.family, zB) > contentW) contentW = fB->measure(rd.family, zB);
@@ -223,7 +223,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
             for (int i = 0; i < 8; ++i) { sprintf(vb, "%d%%", rd.elem[i].pct); const float w = fB->measure(vb, zB); if (w > eValW) eValW = w; }
             eCellW = dotD + gap * 0.5f + eValW;             // element cell = [colour puck] value%
             resW = wCellW + colGap + eCellW + subGap + eCellW;   // PHYSICAL column | MAGICAL 2-col, side by side
-            if (resW > contentW) contentW = resW;
+            if (resW + gap * 2.0f > contentW) contentW = resW + gap * 2.0f;   // + breathing room so the right element column never touches the frame
             if (showJoke && fB->measure("Cruel Joke", zB) > contentW) contentW = fB->measure("Cruel Joke", zB);
         }
         if (contentW < 130.0f * S) contentW = 130.0f * S;

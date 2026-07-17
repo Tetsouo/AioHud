@@ -145,6 +145,8 @@ struct UiConfig {
     float plrEqCell  = 1.0f;   // equipment cell size multiplier (0.50 .. 2.00)
     int   plrEqThemeBorder = 1;// 1 = cell borders follow the box theme (proc hue / FFXI skin) ; 0 = custom colour below
     unsigned plrEqColor = 0xFF6699BBu;   // custom cell-border colour (used when plrEqThemeBorder == 0)
+    int   plrEqCellBgCustom = 0;         // 1 = custom cell BACKGROUND colour (plrEqCellBg) ; 0 = the default dark
+    unsigned plrEqCellBg = 0xE0121620u;  // custom equipment cell background (occupied top ; empty + bottom are derived shades)
     int   plrEqPlace = 0;      // equipment grid placement : 0 = in-box centre, 1 = in-box left, 2 = in-box right, 3 = docked LEFT (outside), 4 = docked RIGHT (outside)
     int   plrEquipDetach = 0;  // 0 = equipment lives INSIDE the Player Hub ; 1 = STANDALONE module (own position + size below, dragged in //aio edit)
     bool  plrEquipPosSet = false;  // standalone equipment has a user-placed position (edit mode) ; else a default spot
@@ -364,9 +366,10 @@ void guide_push_out(int perm, float sw, float sh, float& ex, float& ey, float ew
 
 // modifier-key state (fed by the plugin's keyboard hook -> reliable in the render thread, unlike
 // GetAsyncKeyState). Used for edit-mode axis-lock : Shift = horizontal only, Ctrl = vertical only.
-void edit_set_modifiers(bool shift, bool ctrl);
+void edit_set_modifiers(bool shift, bool ctrl, bool alt);
 bool edit_shift();
 bool edit_ctrl();
+bool edit_alt();   // Alt held during an edit-mode drag = FREE placement (ignore box-vs-box + keep-out zones)
 
 // persistence : skinTheme / fontFace / per-box position+scale are saved to disk and restored.
 void load_ui_config();         // called once at startup
