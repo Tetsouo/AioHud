@@ -166,6 +166,8 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         for (int i = 0; i < si.nElem; ++i) { w4 += fProp->measure(sc_up(SC_PROP, scelem_name(si.elem[i]), pbuf, 24), zProp); if (i + 1 < si.nElem) w4 += fProp->measure(" · ", zProp); } }
     const bool shTitle = C.scTitle != 0, shTimer = C.scTimer != 0, shStep = C.scStep != 0, shProps = C.scProps != 0;
     const int  shownList = C.scList ? listN : 0;
+    float scGap = C.scListGap; if (scGap < 0.6f) scGap = 0.6f; if (scGap > 3.0f) scGap = 3.0f;
+    const float listPit = lineH * scGap;   // per-WS row pitch in the continuation list (config: WS spacing slider)
     float bw = shTitle ? fTitle->measure(title, zTitle) : 0.0f;
     if (shTimer) { const float a = fTimer->measure(l2u, zTimer); if (a > bw) bw = a; }
     if (shStep && stepW > bw) bw = stepW;
@@ -184,7 +186,7 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
     if (shownList > 0) { const float lw = lcName + listGap + listArrowW + listGap + lcLvl + lColGap + lcProp; if (lw > bw) bw = lw; }
     if (bw < 40.0f * S) bw = 40.0f * S;   // floor : keep a sane minimum even with everything but one line off
     const int nBody = (shTimer ? 1 : 0) + (shStep ? 1 : 0) + (shProps ? 1 : 0);
-    const float listH = (shownList > 0) ? (7.0f * S + shownList * lineH) : 0.0f;
+    const float listH = (shownList > 0) ? (7.0f * S + shownList * listPit) : 0.0f;
     const float boxW = bw + 2.0f * pad, boxH = (shTitle ? titleH : 0.0f) + nBody * lineH + listH + 2.0f * pad;
     if (measureOnly) { if (outW) *outW = boxW; if (outH) *outH = boxH; return; }   // Help scale-to-fit : report dims, don't draw
 
@@ -245,7 +247,7 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
             fList->begin(dev); fList->draw_lc(dev, lvlX, cy, lvb, zList, dim, strk, oList);
             const char* pp = sc_up(SC_LIST, scprop_name(list[i].prop), pb2, 24);
             fList->draw_lc(dev, propX, cy, pp, zList, scprop_color(list[i].prop), strk, oList);
-            cy += lineH;
+            cy += listPit;
         }
     }
 }

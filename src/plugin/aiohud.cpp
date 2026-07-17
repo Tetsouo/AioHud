@@ -390,6 +390,15 @@ void aio_plugin_unload()
 // The spawned process is detached, so it survives this plugin being unloaded mid-update.
 static void spawn_updater(bool checkOnly)
 {
+    // De-dupe FULL updates : the config button now spawns directly AND the AioUpdate addon may also send
+    // `aio update` (from request.txt or a typed //aioupdate) -> without this, two PowerShell updaters could race
+    // the same download/extract. One spawn per 5s window is plenty (checkOnly probes are unaffected).
+    if (!checkOnly) {
+        static DWORD s_lastFullSpawn = 0;
+        const DWORD now = GetTickCount();
+        if (s_lastFullSpawn != 0 && now - s_lastFullSpawn < 5000) return;
+        s_lastFullSpawn = now;
+    }
     char ps1[300], data[300], plugins[300];
     aio::plugin_path(ps1, sizeof(ps1), "assets\\aioupdate.ps1");
     aio::plugin_path(data, sizeof(data), "data");
@@ -444,8 +453,9 @@ void aio_update_request()
     char done[340]; _snprintf(done, sizeof(done), "%s\\done.txt", dir); done[sizeof(done) - 1] = 0;
     DeleteFileA(done);   // drop any stale phase so the tab reads only THIS run's progress
     char p[320]; _snprintf(p, sizeof(p), "%s\\request.txt", dir); p[sizeof(p) - 1] = 0;
-    FILE* f = fopen(p, "w"); if (f) { fputs("go", f); fclose(f); }
+    FILE* f = fopen(p, "w"); if (f) { fputs("go", f); fclose(f); }   // legacy signal (an old addon still watches this)
     g_updBusy = true; g_updFinal = 0; g_updMsg[0] = 0; g_updReqT = GetTickCount();
+    spawn_updater(false);   // START THE DOWNLOAD NOW -> no longer waits on the addon's poll ; the addon only does the //unload + //load (de-dupe guard prevents a double PS)
 }
 // forget the in-progress state (Update tab's terminal-state button -> back to the normal check flow).
 void aio_update_clear() { g_updBusy = false; g_updFinal = 0; g_updMsg[0] = 0; }

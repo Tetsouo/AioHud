@@ -184,6 +184,7 @@ struct UiConfig {
     int   scStep  = 1;         // show the "Step: N > <move>" line
     int   scProps = 1;         // show the "[property] (elements)" line
     int   scList  = 1;         // show the continuation WS list
+    float scListGap = 1.0f;    // vertical spacing multiplier between each WS in the continuation list (0.6 .. 3.0)
     int   scNearby = 1;        // display scope : 1 = beyond your cursor target <t>, ALSO show your battle-target <bt>
                                //   (engaged, reticle off) then the newest LIVE chain on a nearby mob (party members'
                                //   SCs) ; 0 = STRICT, only your current cursor target <t>'s chain (nothing while you
