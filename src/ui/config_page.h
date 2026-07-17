@@ -140,6 +140,10 @@ private:
                             float& ry, int& ri, float e,
                             float bandX, float bandW, float coX, float ctrlW,
                             float hdrX, float hdrW);
+    void draw_ep_config(u32 dev, Font* fo, const MouseState* mo, bool click,
+                            float& ry, int& ri, float e,
+                            float bandX, float bandW, float coX, float ctrlW,
+                            float hdrX, float hdrW);
     // Configuration-tab own category blocks (INTERFACE / LAYOUT), lifted out of draw() ; same row/geometry
     // signature as the per-module config panels (config_page.cpp ; byte-identical).
     void draw_interface_category(u32 dev, Font* fo, const MouseState* mo, bool click,
@@ -186,6 +190,7 @@ private:
     int   cfgPwTextElem_ = 0;    // which PointWatch text element the typography sub-section edits (PW_LABEL / PW_VALUE / PW_RATE)
     int   cfgGrimTextElem_ = 0;  // which Grimoire text element the typography sub-section edits (GRIM_CHARGE / GRIM_TIMER)
     int   cfgZtTextElem_ = 0;    // which Zone Tracker text element the typography sub-section edits (ZT_HEADER / ZT_BODY)
+    int   cfgEpTextElem_ = 0;    // which EmpyPop text element the typography sub-section edits (EP_TITLE / EP_POP / EP_FROM / EP_COLL)
     int   cfgTmTextElem_ = 0;    // which Timers text element the typography sub-section edits (TM_HEADER / TM_BODY)
     int   trkJob_ = 0;           // Timers "track per job" : MAIN job whose checklist is shown (0 = follow current main job)
     int   trkSub_ = -1;          // SUB job for the checklist (-1 = follow current sub ; 0 = none ; 1..22 = a job)

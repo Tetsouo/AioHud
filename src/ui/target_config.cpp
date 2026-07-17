@@ -250,6 +250,22 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().tgtRange ? tr("On", "Oui") : tr("Off", "Non"), ui_config().tgtRange != 0)) { ui_config().tgtRange = !ui_config().tgtRange; save_ui_config(); }
         }
         ROW_NEXT(52.0f)
+        // Cast : show the target's ACTION bar (its live spell cast : name + filling bar) under the HP bar.
+        { ROW_BAND(52.0f)
+            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Cast", "Sort"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().tgtCast ? tr("On", "Oui") : tr("Off", "Non"), ui_config().tgtCast != 0)) { ui_config().tgtCast = !ui_config().tgtCast; save_ui_config(); }
+        }
+        ROW_NEXT(52.0f)
+        // Cast placeholder : a demo cast bar during normal play so it can be positioned even when not casting.
+        { ROW_BAND(52.0f)
+            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Cast placeholder", "Sort fictif"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().tgtCastDemo ? tr("On", "Oui") : tr("Off", "Non"), ui_config().tgtCastDemo != 0)) { ui_config().tgtCastDemo = !ui_config().tgtCastDemo; save_ui_config(); }
+        }
+        ROW_NEXT(52.0f)
         }   // end sub-section Detail (catOpen_[8])
         // ---- sub-section : Debuffs ----
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Debuffs", "Debuffs"), catOpen_[9])) catOpen_[9] = !catOpen_[9];

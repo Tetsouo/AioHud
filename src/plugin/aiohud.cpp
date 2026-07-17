@@ -21,6 +21,7 @@
 #include "model/party_state.h"
 #include "model/game_mem.h"
 #include "model/ui_config.h"
+#include "model/nms_gen.h"          // NMS / NMS_N : the //aio pop <nm> selector
 #include "model/paths.h"
 #include <string.h>
 #include <stdio.h>
@@ -300,13 +301,18 @@ unsigned int aio_plugin_mouse(u32 eventtype, u32 /*x*/, u32 /*y*/, u32 delta, u3
 // out right -- NOT a hard-coded QWERTY table. While a config text field is focused we feed the char
 // and CONSUME the key (return 1) so the game never sees it ; otherwise the key passes straight through.
 static bool g_keyLog = false;   // //aio keylog -> dump every key event to aiohud_debug.log for diagnosing input bugs
-unsigned int aio_plugin_key(u32 key, u32 b, u32 /*c*/) {
-    // RE'd from a live capture : a = DirectInput scan code ; b distinguishes press vs release --
-    // a PRESS carries a large value (a pointer, b > 0xFFFF), a RELEASE a small one (0 / modifier
-    // bits). (My earlier "b != 0 = pressed" was wrong : a release WITH a modifier held is small but
-    // non-zero -> it looked pressed -> keys stuck.) c is junk.
+unsigned int aio_plugin_key(u32 key, u32 b, u32 c) {
+    // RE'd from a live capture (2026-07-17, //aio keylog) : `c` is the Win32 keystroke lParam flags -- its top
+    // byte follows the standard WM_KEY* semantics : bit 31 (0x80000000) = TRANSITION (1 = key released), bit 30
+    // (0x40000000) = previous state (1 = auto-repeat), bit 24 (0x01000000) = extended key. So press/release is
+    // bit 31 of c, and it is machine-INDEPENDENT.
+    //   The old heuristic `pressed = (b > 0xFFFF)` read press/release off b (a pointer-ish value on press, small
+    //   on release). It happens to work on most setups but NOT all : on some machines the RELEASE also carries a
+    //   large b -> the break was misread as a press -> every key fed TWICE (reported as doubled typing "gg" for
+    //   "g", only inside our fields since the game uses its own input path). c's transition bit fixes that.
+    //   `b` is still used below for the MODIFIER bits (its low byte), which was always reliable.
     const int  dik     = (int)key & 0xFF;
-    const bool pressed = (b > 0xFFFF);
+    const bool pressed = (c & 0x80000000u) == 0;   // bit 31 clear = key DOWN (make) ; set = key UP (break)
     // Windower hands us a US-POSITIONAL scan code (built from the VK via the US layout), NOT the raw hardware
     // scan -> recover the real VK by mapping it back through the US layout, then translate that VK to a char
     // with the USER's layout (AZERTY / accents / any locale -- e.g. AZERTY 'a' arrives as US scan 0x1E).
@@ -332,8 +338,8 @@ unsigned int aio_plugin_key(u32 key, u32 b, u32 /*c*/) {
     // OEM/punctuation VKs, which made ToUnicode fail (the missing , ; : ! ? . / etc.).
     if (pressed && vk)
         nc = ToUnicodeEx(vk, (UINT)dik, ks, wbuf, 8, 0x4, layout);   // 0x4 = don't mutate kernel dead-key state
-    if (g_keyLog) debug::log("KEY dik=%02X b=%08X vk=%02X pr=%d nc=%d ch=U+%04X sh=%d ct=%d al=%d want=%d",
-                             dik, (unsigned)b, vk, (int)pressed, nc, (unsigned)wbuf[0],
+    if (g_keyLog) debug::log("KEY key=%08X b=%08X c=%08X dik=%02X vk=%02X pr=%d nc=%d ch=U+%04X ch1=U+%04X sh=%d ct=%d al=%d want=%d",
+                             (unsigned)key, (unsigned)b, (unsigned)c, dik, vk, (int)pressed, nc, (unsigned)wbuf[0], (unsigned)wbuf[1],
                              (ks[VK_SHIFT] & 0x80) != 0, (ks[VK_CONTROL] & 0x80) != 0, (ks[VK_MENU] & 0x80) != 0,
                              (int)g_hud.config().wants_keys());
 
@@ -341,7 +347,12 @@ unsigned int aio_plugin_key(u32 key, u32 b, u32 /*c*/) {
     // (inside a text field End = cursor-to-end, handled below). DIK 0xCF = the dedicated End ; 0x4F = numpad End
     // with NumLock off (nc == 0). Consume it so the game never sees End.
     if (!g_hud.config().wants_keys() && (dik == 0xCF || (dik == 0x4F && nc == 0))) {
-        g_hud.set_peek(pressed);   // pressed = hide, release = show
+        if (aio::ui_config().hidePeekMode) {          // TOGGLE : each fresh PRESS flips hidden/shown ; ignore the release
+            static bool s_peek = false;
+            if (pressed) { s_peek = !s_peek; g_hud.set_peek(s_peek); }
+        } else {
+            g_hud.set_peek(pressed);                   // HOLD : pressed = hide, release = show
+        }
         return 1u;
     }
 
@@ -561,6 +572,76 @@ void aio_plugin_command(const char* cmd)
             aio::set_party_demo_total(total);
             return;
         }
+    }
+
+    // //aio ept <nm> -> track that Abyssea NM in the EmpyPop box + show it. "//aio ept" alone toggles the box ;
+    // "ept list" prints the NM names ; "ept off"/"hide" hides it. "pop" is kept as an alias. The friendly driver
+    // for the module (no config needed). Case is already folded (buf is lowercased), so "//aio EPT" works too.
+    // "ept"/"pop" are 3 chars each, and NEITHER is the dev probe token "ep" (tok_arg requires a delimiter after
+    // "ep", which "ept" lacks) -> no clash. Placed after the party/demo block ; NM keys are letters+spaces only,
+    // so none collide with the keywords above, and we fully handle + return here so the name never leaks below.
+    if (const char* pp = (strstr(buf, "ept") ? strstr(buf, "ept") : strstr(buf, "pop"))) {
+        const char* a = pp + 3; while (*a == ' ' || *a == '\t') ++a;
+        aio::UiConfig& C = aio::ui_config();
+        // Output goes to the FFXI CHAT LOG (not the Windower console) via the reversed ffxi()->add_to_chat, so
+        // it reads like the GearSwap message system. Colour is IN-BAND : a 0x1F byte + a palette index switches
+        // colour mid-line (160 gray, 50 yellow, 158 green) -- built with %c, never "\xNN" (which would merge with
+        // a following hex digit). `mode` sets the base channel ; 1 = a normal always-visible system line.
+        const int GRAY = 160, YEL = 50, GRN = 158, MODE = 1;
+        auto chat = [](const char* s) { g_host.ffxi().add_to_chat(MODE, s); };
+        if (!*a) {                                                  // bare "//aio ept" -> toggle
+            C.epShow = !C.epShow; aio::save_ui_config();
+            char m[64]; _snprintf(m, sizeof(m), "%c%c[EmpyPop] %s", 0x1F, C.epShow ? GRN : GRAY, C.epShow ? "shown" : "hidden");
+            chat(m); return;
+        }
+        if (strncmp(a, "off", 3) == 0 || strncmp(a, "hide", 4) == 0) {
+            C.epShow = 0; aio::save_ui_config();
+            char m[48]; _snprintf(m, sizeof(m), "%c%c[EmpyPop] hidden", 0x1F, GRAY);
+            chat(m); return;
+        }
+        if (strncmp(a, "list", 4) == 0) {                           // the NM names, coloured, in the chat log
+            // FFXI resets colour to WHITE at every line break -- INCLUDING the game's own word-wrap, whose position
+            // depends on each player's chat width, so we can't predict it. Fix (as suggested) : re-emit the colour
+            // byte before EVERY name, so wherever the game wraps, each name still carries its own colour. We only
+            // split into separate add_to_chat calls to stay under a single FFXI chat line's byte cap.
+            const int BUDGET = 120;
+            char sep[40]; _snprintf(sep, sizeof(sep), "%c%c%s", 0x1F, GRAY, "==============================");
+            char hdr[64]; _snprintf(hdr, sizeof(hdr), "%c%c%s", 0x1F, YEL, "[EmpyPop] NM list  //aio ept <name>");
+            chat(sep); chat(hdr); chat(sep);
+            char line[256]; int w = 0;
+            for (int k = 0; k < aio::NMS_N; ++k) {
+                const char* nm = aio::NMS[k].en;
+                const int col = (lstrcmpiA(aio::NMS[k].key, C.epTrack) == 0) ? YEL : GRN;   // tracked NM -> yellow
+                const int need = (w ? 2 : 0) + 2 + (int)strlen(nm);   // ", " + colour(2) + name
+                if (w && w + need > BUDGET) { chat(line); w = 0; }    // flush -> new chat line (stays under the cap)
+                if (w) { line[w++] = ','; line[w++] = ' '; }
+                line[w++] = 0x1F; line[w++] = (char)col;              // colour re-stated before THIS name
+                w += _snprintf(line + w, sizeof(line) - w, "%s", nm);
+            }
+            if (w) chat(line);
+            chat(sep);
+            return;
+        }
+        // otherwise `a` is an NM-name pattern : case-insensitive substring on the (lowercase) key. buf is already
+        // lowercased, and NMS[].key is lowercase, so a plain strstr matches ("dynamis" -> Arch Dynamis Lord).
+        int hit = -1, nhit = 0;
+        for (int k = 0; k < aio::NMS_N; ++k) if (strstr(aio::NMS[k].key, a)) { if (!nhit) hit = k; ++nhit; }
+        if (nhit == 0) {
+            char m[96]; _snprintf(m, sizeof(m), "%c%c[EmpyPop] no NM matches -- try //aio ept list", 0x1F, YEL);
+            chat(m);
+        } else if (nhit > 1) {                                      // ambiguous -> show the matches so the user can refine
+            char line[240]; int w = _snprintf(line, sizeof(line), "%c%c[EmpyPop] several match: %c%c", 0x1F, YEL, 0x1F, GRN);
+            bool first = true;
+            for (int k = 0; k < aio::NMS_N && w < (int)sizeof(line) - 24; ++k)
+                if (strstr(aio::NMS[k].key, a)) { w += _snprintf(line + w, sizeof(line) - w, "%s%s", first ? "" : ", ", aio::NMS[k].en); first = false; }
+            chat(line);
+        } else {
+            lstrcpynA(C.epTrack, aio::NMS[hit].key, sizeof(C.epTrack));
+            C.epShow = 1; aio::save_ui_config();
+            char m[96]; _snprintf(m, sizeof(m), "%c%c[EmpyPop] tracking %c%c%s", 0x1F, GRAY, 0x1F, YEL, aio::NMS[hit].en); m[sizeof(m) - 1] = 0;
+            chat(m);
+        }
+        return;
     }
 
     // //aio menu N -> select the N-th window theme (1-based). The skin-select digit form is caught here.

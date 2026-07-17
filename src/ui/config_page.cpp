@@ -49,11 +49,11 @@ void aio_update_clear();                            // forget the in-progress st
 const char* aio_version_string();
 // Settings modules (the Configuration sidebar). Add a module here = a new settings page ; the profile
 // is GLOBAL (a profile snapshots every module), so it lives in the profile bar, not per-module.
-static const char* MODULES[]  = { "Party / Alliance", "Target", "Player", "Minimap", "Arcade WS", "Skillchains", "Treasure Pool", "Hate List", "PointWatch", "Grimoire (SCH)", "Zone Tracker", "Timers", "Interface" };
+static const char* MODULES[]  = { "Party / Alliance", "Target", "Player", "Minimap", "Arcade WS", "Skillchains", "Treasure Pool", "Hate List", "PointWatch", "Grimoire (SCH)", "Zone Tracker", "Timers", "EmpyPop", "Interface" };
 static const int   MODULE_N   = (int)(sizeof(MODULES) / sizeof(MODULES[0]));
 static const int   SEC_INTERFACE = MODULE_N - 1;               // "Interface" = the config MENU's own look (font + accent) ; last sidebar entry, not a HUD module
 static const char* module_label(int i) {                       // Configuration sidebar module name (localized)
-    static const char* fr[] = { "Groupe / Alliance", "Cible", "Joueur", "Minicarte", "Arcade WS", "Skillchains", "Tr\xC3\xA9sor", "Liste de haine", "PointWatch", "Grimoire (SCH)", "Zone Tracker", "Timers", "Interface" };
+    static const char* fr[] = { "Groupe / Alliance", "Cible", "Joueur", "Minicarte", "Arcade WS", "Skillchains", "Tr\xC3\xA9sor", "Liste de haine", "PointWatch", "Grimoire (SCH)", "Zone Tracker", "Timers", "EmpyPop", "Interface" };
     return (ui_config().lang == 1 && i >= 0 && i < (int)(sizeof(fr) / sizeof(fr[0]))) ? fr[i] : MODULES[i];
 }
 
@@ -143,6 +143,9 @@ void treasure_help_fit(const Frame& f, float availW, float maxScale, float& outS
 void zonetracker_help_box(const Frame& f, float cx, float cy, float s, int variant);
 void zonetracker_help_fit(const Frame& f, float availW, float maxScale, int variant, float& outScale, float& outH);
 void zonetracker_help_measure(const Frame& f, int variant, float& outW, float& outH);
+// EmpyPop Help sample : the REAL EmpyPop stack in preview mode (the built-in chloris chain), config-aware. Defined in hud_empypop.cpp.
+void empypop_help_box(const Frame& f, float cx, float cy, float s);
+void empypop_help_fit(const Frame& f, float availW, float maxScale, float& outScale, float& outH);
 
 // ---- Help content. kind 0 = heading, 1 = paragraph, 2 = bullet. Each item carries EN + FR text. ----
 struct HelpItem { int kind; const char* en; const char* fr; };
@@ -737,6 +740,38 @@ static const HelpItem HELP_ZONETRACKER[] = {
 };
 static const int HELP_ZONETRACKER_N = (int)(sizeof(HELP_ZONETRACKER) / sizeof(HELP_ZONETRACKER[0]));
 
+// EMPYPOP : the pop items + key items needed to spawn an Abyssea empyrean NM. Live sample (kind 47) draws the
+// REAL stack in preview mode via empypop_help_box (the built-in chloris chain, so it renders for any player).
+static const HelpItem HELP_EMPYPOP[] = {
+    {0, "EmpyPop", "EmpyPop"},
+    {1, "*EmpyPop* lists everything you need to pop one Abyssea empyrean NM : the pop items and key items, the placeholders that drop them and where, and, when the NM has one, its collectable progress. Pick the NM you are farming and the box lays out the whole spawn chain so you always know the next step.",
+        "*EmpyPop* liste tout ce qu'il faut pour faire appara\xC3\xAetre un NM emp\xC3\xA9r\xC3\xA9""en d'Abyssea : les items de pop et key items, les placeholders qui les d\xC3\xA9posent et o\xC3\xB9, et, quand le NM en a un, sa progression de collectable. Choisis le NM que tu farm et le cadre d\xC3\xA9roule toute la cha\xC3\xAene de spawn pour toujours conna\xC3\xAetre l'\xC3\xA9tape suivante."},
+    {47, "", ""},
+
+    {0, "Reading the box", "Lire le cadre"},
+    {2, "The *title* names the tracked NM, and turns to *READY!* once every pop item is in hand.",
+        "Le *titre* nomme le NM suivi, et passe \xC3\xA0 *READY!* d\xC3\xA8s que tous les items de pop sont en main."},
+    {2, "Each *pop line* is an item or key item you need, with a *from* line under it : the placeholder mob or NPC and its map position.",
+        "Chaque *ligne de pop* est un item ou key item requis, avec une ligne *from* en dessous : le mob placeholder ou PNJ et sa position sur la carte."},
+    {2, "The *collectable* row, when the NM uses one, counts your progress toward its target.",
+        "La ligne *collectable*, quand le NM en utilise une, compte ta progression vers son objectif."},
+
+    {0, "Configuration", "Configuration"},
+    {1, "The EmpyPop module in //aio config tunes the box, with a live preview on the right that follows your changes. It is off by default, since it only helps while farming one specific NM.",
+        "Le module EmpyPop dans //aio config r\xC3\xA8gle le cadre, avec un aper\xC3\xA7u en direct \xC3\xA0 droite qui suit tes changements. Il est d\xC3\xA9sactiv\xC3\xA9 par d\xC3\xA9""faut, car il ne sert que pour farm un NM pr\xC3\xA9""cis."},
+    {2, "*Track NM* picks which empyrean NM the box follows, out of the full Abyssea list.",
+        "*Suivre NM* choisit quel NM emp\xC3\xA9r\xC3\xA9""en le cadre suit, dans la liste compl\xC3\xA8te d'Abyssea."},
+    {2, "*Collectable* shows or hides the collectable progress row. *Box / Frame* sets the theme and can turn the frame off. *Size* scales the whole box.",
+        "*Collectable* affiche ou masque la ligne de progression. *Box / Cadre* r\xC3\xA8gle le th\xC3\xA8me et peut couper le cadre. *Taille* met tout le cadre \xC3\xA0 l'\xC3\xA9""chelle."},
+    {2, "*Text* styles the Title, Pop, From and Collectable each on its own, with font, size, outline, bold / italic / caps and colour.",
+        "*Texte* stylise le Titre, le Pop, le From et le Collectable chacun s\xC3\xA9par\xC3\xA9ment, avec police, taille, contour, gras / italique / capitales et couleur."},
+
+    {0, "Preview", "Aperçu"},
+    {1, "Open //aio config on the EmpyPop module to tune it against a sample chain, then turn Show on to track your NM live. Drag it anywhere in //aio edit.",
+        "Ouvre //aio config sur le module EmpyPop pour le r\xC3\xA9gler sur une cha\xC3\xAene d'exemple, puis active Afficher pour suivre ton NM en direct. D\xC3\xA9place-le o\xC3\xB9 tu veux avec //aio edit."},
+};
+static const int HELP_EMPYPOP_N = (int)(sizeof(HELP_EMPYPOP) / sizeof(HELP_EMPYPOP[0]));
+
 // UPDATE : how to keep AioHud current from the Update tab (user-facing, no dev jargon).
 static const HelpItem HELP_UPDATE[] = {
     {0, "Updating AioHud", "Mettre à jour AioHud"},
@@ -773,6 +808,7 @@ static const HelpModule HELP_MODULES[] = {
     { "Skillchains",      "Skillchains",        HELP_SKILLCHAINS, HELP_SKILLCHAINS_N },
     { "Treasure Pool",    "Pool de trésor",     HELP_TREASURE, HELP_TREASURE_N },
     { "Zone Tracker",     "Suivi de zone",      HELP_ZONETRACKER, HELP_ZONETRACKER_N },
+    { "EmpyPop",          "EmpyPop",            HELP_EMPYPOP, HELP_EMPYPOP_N },
     { "Update",           "Mise à jour",        HELP_UPDATE,  HELP_UPDATE_N },
 };
 static const int HELP_MODULE_N = (int)(sizeof(HELP_MODULES) / sizeof(HELP_MODULES[0]));
@@ -842,6 +878,16 @@ void ConfigPage::draw_interface_category(u32 dev, Font* fo, const MouseState* mo
             const bool on = ui_config().uiCursor != 0;
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, on ? tr("On", "Oui") : tr("Off", "Non"), on)) {
                 ui_config().uiCursor = !ui_config().uiCursor; save_ui_config(); }
+        }
+        ROW_NEXT(48.0f)
+        // Hide key (End) : HOLD = the HUD is hidden only while End is held (peek) ; TOGGLE = one press hides, the next shows.
+        { ROW_BAND(48.0f)
+            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Hide key", "Touche masquer"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
+            const bool tog = ui_config().hidePeekMode != 0;
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, tog ? tr("Toggle", "Bascule") : tr("Hold", "Maintien"), tog)) {
+                ui_config().hidePeekMode = tog ? 0 : 1; save_ui_config(); }
         }
         ROW_NEXT(48.0f)
         // Custom accent : a toggle that swaps the style presets + nuance chart for the free HSV picker
@@ -1237,6 +1283,9 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                            bandX, bandW, coX, ctrlW, hdrX, hdrW);
         } else if (section_ == 11) {
             draw_tm_config(dev, fo, mo, click, ry, ri, e,
+                           bandX, bandW, coX, ctrlW, hdrX, hdrW);
+        } else if (section_ == 12) {
+            draw_ep_config(dev, fo, mo, click, ry, ri, e,
                            bandX, bandW, coX, ctrlW, hdrX, hdrW);
         } else if (section_ == SEC_INTERFACE) {
             draw_interface_category(dev, fo, mo, click, ry, ri, e,   // the config MENU's own font + accent colour
@@ -2186,6 +2235,16 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
                 if (y >= top && y + rh2 <= bot) {
                     helpPlayer_ = true;
                     helpPlayerCx_ = hx + hw * 0.5f; helpPlayerCy_ = y + rh2 * 0.5f; helpPlayerW_ = hw - snap(16.0f); helpPlayerH_ = rh2 - snap(16.0f);
+                }
+                y += rh2 + snap(8.0f);
+            } else if (it.kind == 47) {               // LIVE sample : the EmpyPop stack in YOUR config -- as BIG as fits the help width
+                float s = 1.4f, bh = 0.0f;
+                empypop_help_fit(f, hw * 0.9f, 1.4f, s, bh);
+                const float rh2 = bh + snap(14.0f);
+                if (y >= top && y + rh2 <= bot) {
+                    cs(dev);
+                    empypop_help_box(f, hx + hw * 0.5f, y + rh2 * 0.5f, s);
+                    cs(dev);
                 }
                 y += rh2 + snap(8.0f);
             } else {                                  // paragraph

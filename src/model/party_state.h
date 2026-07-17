@@ -165,6 +165,54 @@ struct ZoneTracker {
     unsigned char segLastRun = 0;   // 1 = frozen "N (last run)" display back in Rabao after a run
 };
 
+// EMPYPOP (module) : the pop items / key items needed to spawn an Abyssea empyrean NM. Each GLOBAL pop is a
+// GROUP holding the chain of sub-pops that obtains it ; a group is "obtained" once you hold its global pop.
+// NM pop-chain DATA ported from the Empy Pop Tracker addon, (c) 2020 Dean James (Xurion of Bismarck), BSD-3
+// (see NOTICE-EmpyPop.txt + nms_gen.h) ; the reading + the rendering are ours. See game-data/key-items.md +
+// game-data/inventory.md for the two memory reads this hangs off.
+//
+// This is DATA, not lines : the upstream Lua baked colour markup into the model, which would drag rendering
+// into model/ (layering rule). Widgets colour `owned` / `pool` themselves ; nothing here knows about pixels.
+// Capacities are measured over the generated table (worst case chloris : 4 groups / 15 nodes) with headroom ;
+// ep_refresh CLAMPS rather than overflowing, so a future regen that grows past them degrades, never corrupts.
+struct EmpyPopNode {
+    unsigned short id = 0;
+    unsigned char  isKI = 0;        // 1 = key item (read via owns_key_item) ; 0 = item (via count_item)
+    unsigned char  depth = 0;       // 0 = the group's global pop ; 1+ = a sub-pop, one indent level each
+    unsigned char  owned = 0;
+    unsigned char  pool = 0;        // copies of this id sitting in the treasure pool right now
+    const char*    name = 0;        // resolved from the gen tables (static storage) ; 0 = unknown id
+    const char*    fromName = 0;    // "Adamastor, Forced (C-4)" -- free text carrying the map position
+};
+struct EmpyPopGroup {
+    unsigned char obtained = 0;
+    unsigned char first = 0, count = 0;   // [first, first+count) into EmpyPop::nodes -- node[first] IS the global pop
+};
+struct EmpyPop {
+    static const int MAX_GROUPS = 8;      // measured max 5 (arch dynamis lord)
+    static const int MAX_NODES  = 24;     // measured max 15 (chloris)
+    char         key[32] = {0};           // the tracked NM's lookup key, COPIED (longest is "arch dynamis lord").
+                                          // Never the caller's pointer : the config owns that buffer and may reuse
+                                          // it, which would both dangle and defeat the change check (strcmp of a
+                                          // buffer against itself is always 0). "" = nothing tracked.
+    const char*  nmName = 0;              // display name ("Briareus") -- static storage, from the generated table
+    bool         valid = false;           // false = unknown key / no data -> widget draws nothing
+    bool         allDone = false;         // every group obtained -> "READY!"
+    EmpyPopGroup groups[MAX_GROUPS];
+    int          nGroups = 0;
+    EmpyPopNode  nodes[MAX_NODES];
+    int          nNodes = 0;
+    // Collectable (23 of the 28 NMs have one) : a plain "have N of M" counter, not part of the pop chain.
+    unsigned short collId = 0, collTarget = 0;
+    unsigned       collCount = 0;
+    unsigned char  collPool = 0;
+    bool           hasColl = false, collDone = false;
+};
+// The EmpyPop DEMO chain (chloris, 2 of its 4 key items owned + one pool drop + 30/50 collectable) : the config
+// preview / Help sample / edit placeholder. Pure data, zero memory read -> it renders identically on a character
+// who owns nothing. Built by the widget ONCE (it never changes) ; lives in model/ because it reads nms_gen.h.
+void ep_build_sample(EmpyPop& out);
+
 // Buff timers (Timers module) : EXACT server-sent durations from the 0x063 type-9 packet. `expiry` is an absolute
 // FFXI 1/60-second tick ; remaining seconds = (int)(expiry - ffxi_now_tick()) / 60 (the signed diff handles the
 // 32-bit wrap). Includes gear / merits / Composure / song duration -- nothing to estimate.
@@ -229,6 +277,12 @@ struct PartyState {
     int  nyzul_remaining() const;                   // live floor-timer seconds left (0 = no timer ; may be < 0, clamp at display)
     void zt_save() const;                           // persist the current zone-tracker run to disk (survives an unload/reload/crash)
     bool zt_load(int zone);                         // restore it for `zone` -> true if a valid same-zone cache loaded (fresh plugin load)
+
+    EmpyPop ep_;                                 // EmpyPop module : the tracked NM's pop chain, resolved against live memory
+    const EmpyPop& empypop() const { return ep_; }   // the EmpyPop widget reads this
+    void ep_refresh(const char* nmKey);          // call once/frame with the tracked NM key (0 = nothing tracked).
+                                                 // SELF-THROTTLES to 2 Hz -- it snapshots the ~101 KB item container --
+                                                 // but rebuilds immediately when nmKey changes, so the UI never lags a pick.
 
     PointWatch pw_;                              // XP / CP / ML + Merits (PointWatch module)
     unsigned char pwMainJob_ = 0;                // 0x061 Main Job id -> indexes the 0x063 Order-5 job-point array

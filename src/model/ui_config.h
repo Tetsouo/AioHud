@@ -44,6 +44,7 @@ enum { HL_DIST = 0, HL_NAME, HL_PCT, HL_TARGET, HL_TE_COUNT };  // Hate List tex
 enum { PW_LABEL = 0, PW_VALUE, PW_RATE, PW_TE_COUNT };          // PointWatch text elements (Label / Value / Rate)
 enum { GRIM_CHARGE = 0, GRIM_TIMER, GRIM_TE_COUNT };           // Grimoire text elements (Charge count / Recast timer)
 enum { ZT_HEADER = 0, ZT_BODY, ZT_TE_COUNT };                  // Zone Tracker text elements (Header / Body)
+enum { EP_TITLE = 0, EP_POP, EP_FROM, EP_COLL, EP_TE_COUNT };  // EmpyPop text elements (NM title / pop name / "from <mob>" / collectable)
 enum { TM_HEADER = 0, TM_NAME, TM_TIMER, TM_TE_COUNT };        // Timers text elements (column titles / buff+recast name / MM:SS)
 enum { TMDISP_ICON = 0, TMDISP_NAME, TMDISP_BOTH };           // Timers column display : Icon / Name / Icon+Name
 enum { TMSRC_MINE = 0, TMSRC_PLAYERS, TMSRC_TRUSTS, TMSRC_ALL };   // Timers Duration buff-source filter : mine / +players / +trusts / all
@@ -90,6 +91,7 @@ struct UiConfig {
     int   uiColor   = 0;       // colour index WITHIN the chosen style
     unsigned uiAccent = 0;     // custom config-menu accent (0 = use uiStyle/uiColor preset ; else derive the accent family from this opaque colour)
     int   uiCursor  = 0;       // draw AioHud's OWN mouse cursor in the config window (for players whose modded game DAT hides the native cursor) ; 0 = rely on the game cursor
+    int   hidePeekMode = 0;    // the HUD-hide key (End) : 0 = HOLD (hidden only while held) ; 1 = TOGGLE (press to hide, press again to show)
     float cursorScale = 1.0f;  // selection-cursor (hand) size multiplier (0.50 .. 2.00)
     // ---- Target module (its OWN box theme, independent of the party skinTheme) ----
     int   tgtShow    = 1;      // master on/off : draw the Target module at all (0 = never show the target box)
@@ -108,6 +110,7 @@ struct UiConfig {
     int   tgtRange   = 1;      // show the DISTANCE gauge (range zones : Melee/WS/Magic/... on a mob, Trade/AoE/Cast on an ally)
     float tgtRangeH  = 1.0f;   // DISTANCE gauge height multiplier (like tgtBarH for the HP bar)
     int   tgtCast    = 1;      // show the target's ACTION bar (its live spell cast : name + filling bar) under the HP bar
+    int   tgtCastDemo = 0;     // show a DEMO cast bar during normal play (placeholder for positioning ; live cast wins)
     int   tgtSub     = 1;      // show the SUB-TARGET (<st>) compact bar (name + mini HP) at the bottom while a sub-target cursor is up
     int   tgtSubPos  = 0;      // SUB-TARGET box placement relative to the main box : 0 Above-Right 1 Above-Left 2 Below-Right 3 Below-Left 4 Right 5 Left
     int   tgtDebuffs = 1;      // show the debuff icons row on the target box (0 = off)
@@ -141,6 +144,7 @@ struct UiConfig {
     int   plrGil     = 1;      // show the gil band (coin icon + amount)
     int   plrSpeed   = 1;      // show the movement-speed band (Speed icon + %)
     int   plrCast    = 1;      // show the player's ACTION bar (own Magic cast / job ability / WS : name + filling bar)
+    int   plrCastDemo = 0;     // show a DEMO cast bar during normal play (placeholder for positioning ; live cast wins)
     int   plrEquip   = 1;      // show the equipment viewer (4x4 grid of the 16 equipped items)
     float plrEqCell  = 1.0f;   // equipment cell size multiplier (0.50 .. 2.00)
     int   plrEqThemeBorder = 1;// 1 = cell borders follow the box theme (proc hue / FFXI skin) ; 0 = custom colour below
@@ -235,6 +239,18 @@ struct UiConfig {
     int   ztSheolRes  = 1;     // Sheol : show the target's resistances (weapons / elements)
     int   ztSheolJoke = 1;     // Sheol : show the Cruel Joke vulnerability line
     TextStyle ztText[ZT_TE_COUNT];   // per-element typography : [ZT_HEADER] [ZT_BODY]
+    // ---- EmpyPop module : the pop items / key items needed to spawn an Abyssea empyrean NM ----
+    int   epShow  = 0;         // show the EmpyPop box. OFF by default : a niche tracker only useful while
+                               // farming ONE specific NM -- unlike ztShow, nothing auto-hides it per zone.
+    float epScale = 1.0f;      // size multiplier (0.5 .. 2.0)
+    float epX     = 0.80f;     // horizontal RIGHT edge (screen fraction) ; the box grows LEFTward from it as content
+                               // widens, so the top-right corner stays put. epY = its TOP (grows down).
+    float epY     = 0.25f;
+    int   epColl  = 1;         // show the collectable counter row (23 of the 28 NMs have one)
+    char  epTrack[32] = "briareus";   // tracked NM : the nms_gen.h KEY ("arch dynamis lord" -- spaces are real),
+                                      // NOT an index. NMS[] is sorted by key, so an index would silently
+                                      // re-point at a different NM the day the generated table gains an entry.
+    TextStyle epText[EP_TE_COUNT];   // per-element typography : [EP_TITLE] [EP_POP] [EP_FROM] [EP_COLL]
     // ---- Timers module : self buff timers (exact durations from 0x063 type-9 ; same buff-icon atlas as Player/Party) ----
     int   tmShow  = 1;         // show the buff-timers box
     float tmScale = 1.0f;      // size multiplier (0.5 .. 2.0)
@@ -293,7 +309,7 @@ struct UiConfig {
         else if (idx >= 0) tmTrackOff[job][idx] = tmTrackOff[job][--tmTrackOffN[job]];
     }
     // Per-module box appearance (shared bundle ; Target/Player inline their own). Default = follow Party theme.
-    BoxStyle scBox, tpBox, hlBox, pwBox, ztBox, mmBox;   // mmBox = the Minimap CLOCK box (day / moon header), not the map
+    BoxStyle scBox, tpBox, hlBox, pwBox, ztBox, mmBox, epBox;   // mmBox = the Minimap CLOCK box (day / moon header), not the map
     TextStyle mmText[MM_TE_COUNT];   // clock per-element typography : [MM_TIME] time, [MM_DAY] day, [MM_MOON] moon, [MM_REAL] real/GMT
     bool  mmPosSet = false;    // user-placed position (edit mode) ; else the layout default
     float mmX = 0.0f, mmY = 0.0f;   // top-left as a screen fraction when mmPosSet

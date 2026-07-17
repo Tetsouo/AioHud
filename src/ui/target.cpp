@@ -508,8 +508,11 @@ void Target::draw(const Frame& f) {
     float castPct = 0.0f, castA = 0.0f; int castKind = 0; const char* castName = 0;
     if (fake) { castName = "Flame Breath"; castPct = 0.62f; castA = 1.0f; }        // preview sample
     else if (present) castName = party().cast_label(g.target.id, castPct, castA, &castKind);
-    const bool  actReserve = ui_config().tgtCast && present && !tPureNPC;           // slot ALWAYS reserved (stable box height) for a target that can act
+    const bool  actReserve = ui_config().tgtCast && present && !tPureNPC;           // slot reserved (stable box height) for a target that can act
     const bool  actShow    = actReserve && castName && castA > 0.01f;              // the name + fill draw only while actually casting
+    // the empty grey slot ("placeholder") : the reserved track drawn while idle, shown when casting OR when
+    // Cast-placeholder is on ; hidden when idle + placeholder off.
+    const bool  actTrack   = actReserve && (actShow || ui_config().tgtCastDemo != 0 || fake);
     const float actNameSz = snap(tgt_sz(TGT_NAME, 11.0f * S));
     const float actBarH2  = snap(6.0f * S);
     const float actSecH   = actReserve ? snap(actNameSz + snap(3.0f * S) + actBarH2 + snap(7.0f * S)) : 0.0f;
@@ -754,7 +757,7 @@ void Target::draw(const Frame& f) {
     // ---- ACTION bar : the target's live action. Slot is ALWAYS reserved (a faint empty track) so the box height
     //      never jumps ; while the mob casts/readies, the spell/ability NAME (left) + a filling bar show. Fill is
     //      MAGIC-PURPLE for a spell (cat 8), TP/WS-ORANGE for a weaponskill / ability / TP move (cat 7). ----
-    if (actReserve) {
+    if (actTrack) {
         const float aby = snap(actY + actNameSz + snap(3.0f * S)), abr = actBarH2 * 0.5f;
         setup_color_state(dev);
         rrect(dev, barX, aby, barW, actBarH2, abr, mul_a(0x50121828u, a), mul_a(0x500C1120u, a), snap(1.0f * S));   // faint empty track (reserved slot)

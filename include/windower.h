@@ -6,7 +6,8 @@
 //
 // Interfaces (RTTI names) and the indices we use:
 //   PluginManager (host)  : vtbl[3]=Console vtbl[4]=TextHandler vtbl[5]=PrimitiveHandler vtbl[7]=ffxi
-//   Console               : vtbl[3]=print(char*)
+//   Console               : vtbl[3]=print(char*)   -> Windower CONSOLE (overlay), not the chat log
+//   ffxi (get(7))         : vtbl[0]=add_to_chat(char* text, int mode)  -> FFXI CHAT LOG (see docs)
 //   TextHandler           : vtbl[0]=create(char* name)->TextObject
 //   TextObject            : 0=text 1=visible(+0x30) 3=font 4=size(+0x7c) 6=color(+0xa4) 9=pos(+0x58)
 //                           NB: a TextObject needs BOTH font and size (size default 0) or it won't render.
@@ -143,6 +144,32 @@ public:
     }
 };
 
+// ------------------------------------------------------------------- Ffxi
+// host->get(7) : the Windower `ffxi` singleton (RTTI `.?AVffxi@@`, the
+// `windower.ffxi.*` object). Its vtable has exactly ONE virtual method and it is
+// the C implementation of Lua's `windower.add_to_chat(mode, text)`:
+//   [0] add_to_chat(this, const char* text, int mode)   __stdcall (ret 12)
+// It enqueues (mode,text) under a critical section and SetEvents Windower's
+// chat-injection worker -> the line lands in the FFXI CHAT LOG (NOT the console).
+// Colour is in-band: a 0x1F byte followed by a palette index (e.g. "\x1F\x9E"
+// green, "\x1F\x32" yellow, "\x1F\xA0" gray); `mode` is the chat channel/mode.
+// Reversed 2026-07-17 (docs/reference/service-interfaces.md): LuaCore's
+// add_to_chat binding FUN_100779b0 calls ((*(G+4))->vtbl[7])()->vtbl[0](this,
+// text, mode); *(G+4) is the PluginManager, vtbl[7] the ffxi getter (FUN_10072e00,
+// Hook.dll), and the target ffxi::vftable[0] = FUN_10036910.
+class Ffxi {
+    u32 p_;
+public:
+    explicit Ffxi(u32 p = 0) : p_(p) {}
+    bool valid() const { return valid_ptr(p_); }
+    u32  raw() const { return p_; }
+    // Write a line to the FFXI chat log. `text` may embed 0x1F,<palette> colour runs.
+    void add_to_chat(int mode, const char* text) {                     // [0] (this, text, mode)
+        auto f = vmethod<void(__stdcall*)(u32, const char*, int)>(p_, 0);
+        if (f) __try { f(p_, text, mode); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
+};
+
 // ------------------------------------------------------------- PluginManager
 class PluginManager {
     u32 p_;
@@ -158,6 +185,7 @@ public:
     Console          console()           { return Console(get(3)); }
     TextHandler      text_handler()      { return TextHandler(get(4)); }
     PrimitiveHandler primitive_handler() { return PrimitiveHandler(get(5)); }
+    Ffxi             ffxi()              { return Ffxi(get(7)); }   // add_to_chat -> FFXI chat log
     // raw service pointers (for debug/exploration of not-yet-wrapped interfaces)
     u32 service_raw(int idx)    { return get(idx); }
     u32 console_raw()           { return get(3); }

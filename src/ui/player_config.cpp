@@ -150,6 +150,8 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         PLR_TOGGLE(CTRL_ID, "MP",               ui_config().plrMp)
         PLR_TOGGLE(CTRL_ID, "TP",               ui_config().plrTp)
         PLR_TOGGLE(CTRL_ID, tr("Speed", "Vitesse"), ui_config().plrSpeed)
+        PLR_TOGGLE(CTRL_ID, tr("Cast", "Sort"), ui_config().plrCast)
+        PLR_TOGGLE(CTRL_ID, tr("Cast placeholder", "Sort fictif"), ui_config().plrCastDemo)
         PLR_TOGGLE(CTRL_ID, tr("Buffs", "Buffs"), ui_config().plrBuffs)
         PLR_TOGGLE(CTRL_ID, tr("Equipment", "Équipement"), ui_config().plrEquip)
         }   // end sub-section Content (catOpen_[7])

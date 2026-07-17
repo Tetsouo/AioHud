@@ -44,16 +44,10 @@ CLAUDE.md
 /docs/
 /research/
 /re/
-# loose dev notes / analyses / audits / feature docs
-/Cpp_Audit.md
-/Moonphase.md
-/Movement_Speed_Analysis.md
-/Movement_Speed_FFXI.md
+# loose dev notes / feature docs (the analyses/audits now live under /docs/, already ignored above)
 /FOCUS.md
 /design/README.md
 /design/exports/DESIGN_BRIEF.md
-# loose screenshots
-/compteur-de-vitesse.png
 
 # dev-only diagnostic probes (kept local, excluded from the public repo)
 /src/plugin/aiohud_probes.cpp
@@ -61,3 +55,6 @@ CLAUDE.md
 
 # local, untracked deploy target (personal Windower path)
 deploy.local.bat
+
+# personal editor workspace
+/aiohud.code-workspace

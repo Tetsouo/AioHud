@@ -269,6 +269,9 @@ void Player::draw(const Frame& f) {
     else castName = party().cast_label(party().selfId_, castPct, castA, &castKind);
     const bool  actReserve = c.plrCast != 0;
     const bool  actShow    = actReserve && castName && castA > 0.01f;
+    // the empty grey slot ("placeholder") : the reserved track drawn while idle, so you can position the bar.
+    // Shown when actually casting OR when Cast-placeholder is on ; hidden (no bar) when idle + placeholder off.
+    const bool  actTrack   = actReserve && (actShow || c.plrCastDemo != 0 || fake);
     const float actNameSz  = snap(plr_sz(PLR_CAST, 11.0f * S));
     const float actBarH    = snap(6.0f * S);
     const float actH       = actReserve ? snap(actNameSz + snap(3.0f * S) + actBarH + snap(6.0f * S)) : 0.0f;
@@ -448,7 +451,8 @@ void Player::draw(const Frame& f) {
 
     // ---- ACTION bar : the player's own live action -> Magic cast (purple) / job ability (cyan) / weaponskill
     //      (orange), name + filling bar. Slot ALWAYS reserved (faint track) so the box height never jumps. ----
-    if (actReserve) {
+    if (actTrack) {   // the reserved slot : empty grey track when idle+placeholder, filled during a cast. Height (actH)
+                      // stays reserved on plrCast so the box never jumps ; the grey track is gone when idle + placeholder off.
         const float actTop = y + actOff;
         const float aby = snap(actTop + actNameSz + snap(3.0f * S)), abr = actBarH * 0.5f;
         color_state(dev);

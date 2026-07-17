@@ -235,6 +235,7 @@ void Hud::render(u32 dev) {
     party().refresh_hate();   // hate list : resolve tracked aggro mobs -> display rows (needs the fresh self pos + <t>)
     party().prune_skillchains();   // skillchains : drop resonance windows whose mob has died (so the box doesn't linger)
     party().zt_set_zone((int)state_.zone, zone_name((int)state_.zone));   // zone tracker : detect Dynamis/Abyssea + reset on change
+    party().ep_refresh(ui_config().epTrack);   // EmpyPop : resolve the tracked NM's pop chain (self-throttled 2 Hz ; rebuilds instantly on a key change)
     profile_autoload_tick();   // auto-switch profile when the character's Name/Main/Sub changes (login / job change)
 
     for (size_t i = 0; i < widgets_.size(); ++i) widgets_[i]->ensure(dev);
@@ -303,6 +304,12 @@ void Hud::render(u32 dev) {
             draw_pointwatch(f);                     // PointWatch box (XP/CP/ML + Merits) -- placed via //aio edit
             draw_grimoire(f);                       // Scholar grimoire (SCH only) -- placed via //aio edit
             draw_zonetracker(f);                    // Zone Tracker (Dynamis/Abyssea only) -- placed via //aio edit
+            // EmpyPop -- placed via //aio edit. SKIP the live draw while its own config section is being previewed :
+            // unlike ZoneTracker (zone-gated) / Timers (buff-gated), EmpyPop draws whenever epShow is on, so without
+            // this it ALSO paints at epX/epY and bleeds through the transparent preview hole -> a second, off-centre
+            // box next to the centred sample. pvActive reflects last frame's stage, cleared before edit-layout, so
+            // this never hides the box you are dragging in //aio edit.
+            if (!(pvActive && config_.section() == 12)) draw_empypop(f);
             draw_timers(f);                         // Timers box (self buff timers, exact) -- placed via //aio edit
             draw_ws_popup(f);                       // arcade WS popup, over the HUD but under the config overlay
         }
@@ -367,7 +374,8 @@ void Hud::draw_config_preview(const Frame& f) {
           case 5:  off = !CC.scShow;   break;  case 6:  off = !CC.tpShow;   break;
           case 7:  off = !CC.hlShow;   break;  case 8:  off = !CC.pwShow;   break;
           case 9:  off = !CC.grimShow; break;  case 10: off = !CC.ztShow;   break;
-          case 11: off = !CC.tmShow;   break;  default: break; }
+          case 11: off = !CC.tmShow;   break;  case 12: off = !CC.epShow;   break;
+          default: break; }
       if (off) { draw_hidden_note(); return; }
     }
 
@@ -506,6 +514,14 @@ void Hud::draw_config_preview(const Frame& f) {
         float scl = ui_config().tmScale; if (scl < 0.5f) scl = 0.5f; if (scl > 2.0f) scl = 2.0f;
         const float liveS = (screenH_ / 1000.0f) * scl;
         draw_timers(f, true, sx + sw * 0.5f, sy + sh * 0.5f, liveS);
+        return;
+    }
+    // EmpyPop module -> the built-in chloris sample chain at TRUE in-game size, centred in the preview stage (WYSIWYG).
+    if (config_.section() == 12) {
+        float sx = 0, sy = 0, sw = 0, sh = 0; config_.preview_rect(sx, sy, sw, sh);
+        float scl = ui_config().epScale; if (scl < 0.5f) scl = 0.5f; if (scl > 2.0f) scl = 2.0f;
+        const float liveS = (screenH_ / 1000.0f) * scl;
+        draw_empypop(f, true, sx + sw * 0.5f, sy + sh * 0.5f, liveS);
         return;
     }
 

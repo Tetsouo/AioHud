@@ -74,6 +74,10 @@ bool read_capacity_points(unsigned mainJob, unsigned& cp, unsigned& jp);
 struct PwMem { unsigned xpCur = 0, xpTnl = 0, epCur = 0, epTnml = 0, lpCur = 0; int merits = 0, maxMerits = 0, masterLevel = 0;
                bool xpOk = false, epOk = false, merOk = false, mlOk = false; };
 bool read_pointwatch(PwMem& out);
+u32 key_items_base();  // *(g + 0x4C) -- u8[0x2000] : ONE BYTE per key-item id (non-zero = owned), NOT a bitfield.
+                       // Sits immediately before items_root (base + 0x2000 == items_root). See game-data/key-items.md.
+bool owns_key_item(unsigned id);   // ki_base[id] != 0. false for id >= 0x2000 or an unmapped base. Prefer this
+                                   // over reading key_items_base() yourself -- the offset lives in game_mem only.
 u32 items_root();      // *(g + 0x50) -- the item-container root (get_items base : gil @+0x04, bags at root + bag*0xCA8)
 u32 equip_index_arr(); // *(g + 0x54) -- u8[16]  : inventory index per equip slot (0 = empty)
 u32 equip_bag_arr();   // *(g + 0x58) -- s32[16] : bag/container id per equip slot
@@ -112,6 +116,45 @@ bool read_player_gil(unsigned& gil);
 // (FUN_10074690 -> FUN_10094410). See docs/game-data/player-equipment.md.
 struct EquipSet { unsigned short id[16]; unsigned short count[16]; };
 bool read_equipment(EquipSet& out);
+
+// --- INVENTORY : "how many of item id X do I own, across all bags?" (see game-data/inventory.md) ---
+// The item container at items_root holds 18 BAGS of 81 entries each (bag stride 0xCA8 = 81 * 0x28) :
+// entry = items_root + bag*0xCA8 + slot*0x28 (id u16 @+0x00, count u32 @+0x04). Entry 0 of EVERY bag is a
+// reserved header (id 0xFFFF ; in bag 0 its count is the player's GIL) -- the usable slots are 1..80, which
+// is exactly the range Windower's own get_items() enumerates. Reversed 2026-07-17 from LuaCore get_items
+// (FUN_10074690 -> FUN_10093360 / FUN_100935c0).
+static const int ITEM_BAG_MAX   = 18;   // bags 0..17 : inventory safe storage temporary locker satchel sack case
+                                        //              wardrobe safe2 wardrobe2..8 recycle
+static const int ITEM_BAG_SLOTS = 80;   // usable slots per bag (1..80 ; entry 0 is the reserved header)
+
+const char* item_bag_name(int bag);     // "inventory" .. "recycle" ; "" if bag is out of range
+
+// per-bag metadata, three parallel u8[18] arrays the client keeps after the bag entries :
+// max @items_root+0x19500+bag (capacity, 80 for a real bag / 0 temporary / 10 recycle),
+// count @+0x19520+bag (occupied slots), enabled @+0x19540+bag (bag reachable right now : safe/storage/locker
+// read 0 away from a moogle -- their CONTENTS are still resident and counted). Answered from the snapshot.
+struct ItemBagInfo { unsigned char max, count, enabled; };
+bool item_bag_info(int bag, ItemBagInfo& out);
+
+// Take the inventory SNAPSHOT : ONE SEH-guarded block copy of the whole container (rule 5/6 -- never a
+// safe_read per slot : 18 bags x 80 slots would be ~1440 guarded reads). Call once per poll, then answer
+// as many ids as you like from the snapshot. false = container not mapped yet (zoning) -> readers no-op.
+bool refresh_items();
+
+// One slot out of the snapshot : bag 0..17, slot 1..80. id=0 -> empty slot (out stays 0/0). Reads the
+// SNAPSHOT, never live memory -- refresh_items() first. false = bad bag/slot or no snapshot.
+bool item_slot(int bag, int slot, unsigned& id, unsigned& count);
+
+// Total count of item id `id` across ALL 18 bags (a stack of 40 -> 40 ; the same item in several
+// slots/bags sums). 0 = not owned. Answered from the last refresh_items() ; auto-takes a snapshot if none
+// exists yet, so a one-shot caller (probe) works standalone -- but a POLLER must call refresh_items()
+// itself each cycle, else it re-reads a stale snapshot.
+unsigned count_item(unsigned id);
+bool     owns_item(unsigned id);        // count_item(id) != 0
+
+// Batch form : counts n ids in ONE pass over the snapshot (the EmpyPop tracker's ~5-30 ids at ~2 Hz).
+// out[i] pairs with ids[i]. Returns the number of ids with a non-zero count.
+int count_items(const unsigned* ids, int n, unsigned* out);
 
 // the 16 equipped item ids + their 24-byte EXTDATA (augment blob @ item+0x0D). On-demand (not per-frame) :
 // used at cast time to read the caster's live "Enhancing Magic eff. dur." gear/augments (see enh_dur.h).

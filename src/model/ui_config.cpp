@@ -125,6 +125,7 @@ static void save_config_to(const char* path) {
     fprintf(f, "uiColor=%d\n", c.uiColor);
     fprintf(f, "uiAccent=%08X\n", c.uiAccent);
     fprintf(f, "uiCursor=%d\n", c.uiCursor);
+    fprintf(f, "hidePeekMode=%d\n", c.hidePeekMode);
     fprintf(f, "cursorScale=%.4f\n", c.cursorScale);
     fprintf(f, "tgtBox=%d\n", c.tgtBox);
     fprintf(f, "tgtBoxAlpha=%.4f\n", c.tgtBoxAlpha);
@@ -140,9 +141,11 @@ static void save_config_to(const char* path) {
     fprintf(f, "tgtThIcon=%d\n", c.tgtThIcon);
     fprintf(f, "tgtRange=%d\n", c.tgtRange);
     fprintf(f, "tgtCast=%d\n", c.tgtCast);
+    fprintf(f, "tgtCastDemo=%d\n", c.tgtCastDemo);
     fprintf(f, "tgtSubPos=%d\n", c.tgtSubPos);
     fprintf(f, "tgtSub=%d\n", c.tgtSub);
     fprintf(f, "plrCast=%d\n", c.plrCast);
+    fprintf(f, "plrCastDemo=%d\n", c.plrCastDemo);
     fprintf(f, "tgtBuffMax=%d\n", c.tgtBuffMax);
     fprintf(f, "tgtDebuffs=%d\n", c.tgtDebuffs);
     fprintf(f, "tgtBuffPos=%d\n", c.tgtBuffPos);
@@ -195,7 +198,15 @@ static void save_config_to(const char* path) {
     fprintf(f, "tm=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%.4f,%.4f,%d,%d,%d,%.3f,%d,%d,%d,%.3f\n", c.tmShow, c.tmScale, c.tmX, c.tmY, c.tmMax, c.tmTitle, c.tmBox.on, c.tmMerged, c.tmRX, c.tmRY, c.tmDurMode, c.tmRecMode, c.tmOthers, c.tmIconScale, c.tmMine, c.tmBuffSrc, c.tmSpAlert, c.tmRowGap);   // Timers box (+ box.on/merge/recast-pos/display modes/others/icon-scale/buffs-on-allies/buff-source/SP-alert/row-spacing)
     {   // per-module box appearance (shared BoxStyle : frame / transparency / theme / hue / luminosity)
         auto sb = [&](const char* k, const BoxStyle& b) { fprintf(f, "%s=%d,%.4f,%d,%d,%.4f,%08X\n", k, b.on, b.alpha, b.themeCopy, b.theme, b.lum, b.hue); };
-        sb("scbox", c.scBox); sb("tpbox", c.tpBox); sb("hlbox", c.hlBox); sb("pwbox", c.pwBox); sb("ztbox", c.ztBox); sb("tmbox", c.tmBox); sb("mmbox", c.mmBox);
+        sb("scbox", c.scBox); sb("tpbox", c.tpBox); sb("hlbox", c.hlBox); sb("pwbox", c.pwBox); sb("ztbox", c.ztBox); sb("tmbox", c.tmBox); sb("mmbox", c.mmBox); sb("epbox", c.epBox);
+    }
+    fprintf(f, "ep=%d,%.3f,%.4f,%.4f,%d\n", c.epShow, c.epScale, c.epX, c.epY, c.epColl);   // EmpyPop box (+ collectable row)
+    fprintf(f, "eptrack=%s\n", c.epTrack);   // the tracked NM KEY -- its OWN line : keys contain spaces
+                                             // ("arch dynamis lord"), so it must never share a CSV line.
+    for (int i = 0; i < EP_TE_COUNT; ++i) {                                       // EmpyPop : per-element typography
+        const TextStyle& ts = c.epText[i];
+        int fl = (ts.bold ? 1 : 0) | (ts.italic ? 2 : 0) | (ts.upper ? 4 : 0) | (ts.colorOn ? 8 : 0);
+        fprintf(f, "epText%d=%d,%.4f,%.4f,%d,%08X\n", i, ts.face, ts.size, ts.outline, fl, ts.color);
     }
     for (int i = 0; i < ZT_TE_COUNT; ++i) {                                       // zone tracker : per-element typography
         const TextStyle& ts = c.ztText[i];
@@ -296,6 +307,46 @@ static void apply_rdm_uff_preset(UiConfig& c) {
     }
 }
 
+// EmpyPop's config lines, parsed OUT-OF-LINE. Not a style choice : load_config_from's else-if chain is one
+// expression whose nesting depth is its length, and it already sits AT MSVC's limit -- adding four branches
+// inline blew C1061 ("blocks nested too deeply") in the `zone=` parser at the far end of the chain. A handler
+// called with `continue` costs the chain ZERO depth. Do this for the next module too, rather than compacting
+// lines to buy a few levels. Returns true if `line` was consumed.
+static bool parse_ep_line(const char* line, UiConfig& c) {
+    int idx, v, v1; float fv, f1; unsigned uc;
+    if (strncmp(line, "ep=", 3) == 0) {
+        int sh = 0, cl = 1; float scl = 1.0f, x = 0.80f, y = 0.25f;
+        const int n = sscanf(line + 3, "%d,%f,%f,%f,%d", &sh, &scl, &x, &y, &cl);
+        if (n >= 1) { c.epShow = sh; if (n >= 2) c.epScale = scl; if (n >= 3) c.epX = x; if (n >= 4) c.epY = y; if (n >= 5) c.epColl = cl; }
+        return true;
+    }
+    if (strncmp(line, "eptrack=", 8) == 0) {
+        // Rest-of-line, NOT sscanf("%s") : an NM key may contain spaces ("arch dynamis lord"), which %s would
+        // truncate at the first one. fgets keeps the newline -> strip it, or the key never matches nm_by_key.
+        lstrcpynA(c.epTrack, line + 8, sizeof(c.epTrack));
+        size_t n = strlen(c.epTrack);
+        while (n && (c.epTrack[n-1] == '\n' || c.epTrack[n-1] == '\r')) c.epTrack[--n] = 0;
+        return true;
+    }
+    if (sscanf(line, "epText%d=%d,%f,%f,%d,%x", &idx, &v, &fv, &f1, &v1, &uc) == 6 && idx >= 0 && idx < EP_TE_COUNT) {
+        TextStyle& ts = c.epText[idx];
+        ts.face = v; ts.size = fv; ts.outline = f1; ts.color = uc;
+        ts.bold = (v1 & 1) != 0; ts.italic = (v1 & 2) != 0; ts.upper = (v1 & 4) != 0; ts.colorOn = (v1 & 8) != 0;
+        return true;
+    }
+    if (!strncmp(line, "epbox=", 6)) { parse_box(line + 6, c.epBox); return true; }
+    return false;
+}
+
+// Cast-placeholder lines, parsed OUT-OF-LINE (same reason as parse_ep_line : the else-if chain sits at MSVC's
+// C1061 nesting limit -- adding these two branches inline blew it). Consumed via `continue`, zero chain depth.
+static bool parse_cast_line(const char* line, UiConfig& c) {
+    int v;
+    if (sscanf(line, "tgtCastDemo=%d", &v) == 1) { c.tgtCastDemo = v; return true; }
+    if (sscanf(line, "plrCastDemo=%d", &v) == 1) { c.plrCastDemo = v; return true; }
+    return false;
+}
+
 static bool load_config_from(const char* path) {
     CNumLoc _cnl;   // dot decimals regardless of the OS locale
     FILE* f = fopen(path, "r"); if (!f) return false;
@@ -308,6 +359,8 @@ static bool load_config_from(const char* path) {
                              // A small buffer truncated it mid-line, so most tracked-spell keys were dropped on reload.
     while (fgets(line, sizeof(line), f)) {
         int v, v1, v2, ps, idx, b0, b1, b2, bc; float x, y, s, fv, f1, f2; unsigned uc;
+        if (parse_ep_line(line, c)) continue;   // out-of-line : keeps the chain below off MSVC's nesting limit
+        if (parse_cast_line(line, c)) continue; // out-of-line : cast-placeholder toggles (same nesting-limit reason)
         if      (sscanf(line, "partyShow=%d", &v) == 1) c.partyShow = v;
         else if (sscanf(line, "allyShow=%d", &v) == 1)  c.allyShow = v;
         else if (sscanf(line, "tgtShow=%d", &v) == 1)   c.tgtShow = v;
@@ -329,6 +382,7 @@ static bool load_config_from(const char* path) {
         else if (sscanf(line, "uiColor=%d", &v) == 1)    c.uiColor = v;
         else if (sscanf(line, "uiAccent=%x", &uc) == 1)  c.uiAccent = uc;
         else if (sscanf(line, "uiCursor=%d", &v) == 1)   c.uiCursor = v;
+        else if (sscanf(line, "hidePeekMode=%d", &v) == 1) c.hidePeekMode = v;
         else if (sscanf(line, "cursorScale=%f", &fv) == 1) c.cursorScale = fv;
         else if (sscanf(line, "tgtBox=%d", &v) == 1)     c.tgtBox = v;
         else if (sscanf(line, "tgtBoxAlpha=%f", &fv) == 1) c.tgtBoxAlpha = fv;
@@ -754,7 +808,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.buffScale != b.buffScale) return false;
     if (a.buffMax != b.buffMax) return false;
     if (a.buffRows != b.buffRows) return false;
-    if (a.uiStyle != b.uiStyle || a.uiColor != b.uiColor || a.uiAccent != b.uiAccent || a.uiCursor != b.uiCursor) return false;
+    if (a.uiStyle != b.uiStyle || a.uiColor != b.uiColor || a.uiAccent != b.uiAccent || a.uiCursor != b.uiCursor || a.hidePeekMode != b.hidePeekMode) return false;
     if (a.cursorScale != b.cursorScale) return false;
     for (int i = 0; i < 6; ++i) if (a.partyRef[i] != b.partyRef[i]) return false;
     if (a.partyBottomY != b.partyBottomY) return false;
@@ -792,7 +846,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.tgtBuffPos != b.tgtBuffPos) return false;
     if (a.tgtSpeed != b.tgtSpeed || a.tgtTH != b.tgtTH) return false;
     if (a.tgtSpeedIcon != b.tgtSpeedIcon || a.tgtThIcon != b.tgtThIcon) return false;
-    if (a.tgtRange != b.tgtRange || a.tgtCast != b.tgtCast || a.tgtSub != b.tgtSub || a.tgtSubPos != b.tgtSubPos) return false;
+    if (a.tgtRange != b.tgtRange || a.tgtCast != b.tgtCast || a.tgtCastDemo != b.tgtCastDemo || a.tgtSub != b.tgtSub || a.tgtSubPos != b.tgtSubPos) return false;
     if (a.tgtBuffMax != b.tgtBuffMax) return false;
     if (a.tgtBarH != b.tgtBarH || a.tgtBarW != b.tgtBarW || a.tgtIconSz != b.tgtIconSz) return false;
     if (a.tgtDetailIconSz != b.tgtDetailIconSz) return false;
@@ -806,7 +860,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.plrCenterH != b.plrCenterH || a.plrCenterV != b.plrCenterV) return false;
     if (a.plrEmblem != b.plrEmblem || a.plrName != b.plrName || a.plrLvl != b.plrLvl) return false;
     if (a.plrHp != b.plrHp || a.plrMp != b.plrMp || a.plrTp != b.plrTp) return false;
-    if (a.plrBuffs != b.plrBuffs || a.plrBuffMax != b.plrBuffMax || a.plrSpeed != b.plrSpeed || a.plrGil != b.plrGil || a.plrEquip != b.plrEquip || a.plrCast != b.plrCast) return false;
+    if (a.plrBuffs != b.plrBuffs || a.plrBuffMax != b.plrBuffMax || a.plrSpeed != b.plrSpeed || a.plrGil != b.plrGil || a.plrEquip != b.plrEquip || a.plrCast != b.plrCast || a.plrCastDemo != b.plrCastDemo) return false;
     if (a.plrEqCell != b.plrEqCell || a.plrEqThemeBorder != b.plrEqThemeBorder || a.plrEqColor != b.plrEqColor || a.plrEqPlace != b.plrEqPlace) return false;
     if (a.plrEqCellBgCustom != b.plrEqCellBgCustom || a.plrEqCellBg != b.plrEqCellBg) return false;
     if (a.plrEquipDetach != b.plrEquipDetach || a.plrEquipPosSet != b.plrEquipPosSet || a.plrEquipX != b.plrEquipX || a.plrEquipY != b.plrEquipY || a.plrEquipScale != b.plrEquipScale || a.plrEqGilPlace != b.plrEqGilPlace) return false;
@@ -842,6 +896,12 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
         const TextStyle& x = a.ztText[k], & y = b.ztText[k];
         if (x.face != y.face || x.size != y.size || x.outline != y.outline || x.bold != y.bold || x.italic != y.italic || x.upper != y.upper || x.colorOn != y.colorOn || x.color != y.color) return false;
     }
+    if (a.epShow != b.epShow || a.epScale != b.epScale || a.epX != b.epX || a.epY != b.epY || a.epColl != b.epColl) return false;
+    if (strcmp(a.epTrack, b.epTrack) != 0) return false;   // char[] : compare CONTENT, not the array address
+    for (int k = 0; k < EP_TE_COUNT; ++k) {
+        const TextStyle& x = a.epText[k], & y = b.epText[k];
+        if (x.face != y.face || x.size != y.size || x.outline != y.outline || x.bold != y.bold || x.italic != y.italic || x.upper != y.upper || x.colorOn != y.colorOn || x.color != y.color) return false;
+    }
     if (a.scTitle != b.scTitle || a.scTimer != b.scTimer || a.scStep != b.scStep || a.scProps != b.scProps || a.scList != b.scList || a.scListGap != b.scListGap) return false;
     for (int k = 0; k < SC_TE_COUNT; ++k) {
         const TextStyle& x = a.scText[k], & y = b.scText[k];
@@ -868,7 +928,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.tmShow != b.tmShow || a.tmScale != b.tmScale || a.tmX != b.tmX || a.tmY != b.tmY || a.tmMax != b.tmMax || a.tmTitle != b.tmTitle) return false;
     if (a.tmMerged != b.tmMerged || a.tmRX != b.tmRX || a.tmRY != b.tmRY || a.tmIconScale != b.tmIconScale || a.tmRowGap != b.tmRowGap) return false;
     // per-module box appearance (shared BoxStyle)
-    if (!box_eq(a.scBox, b.scBox) || !box_eq(a.tpBox, b.tpBox) || !box_eq(a.hlBox, b.hlBox) || !box_eq(a.pwBox, b.pwBox) || !box_eq(a.ztBox, b.ztBox) || !box_eq(a.tmBox, b.tmBox) || !box_eq(a.mmBox, b.mmBox)) return false;
+    if (!box_eq(a.scBox, b.scBox) || !box_eq(a.tpBox, b.tpBox) || !box_eq(a.hlBox, b.hlBox) || !box_eq(a.pwBox, b.pwBox) || !box_eq(a.ztBox, b.ztBox) || !box_eq(a.tmBox, b.tmBox) || !box_eq(a.mmBox, b.mmBox) || !box_eq(a.epBox, b.epBox)) return false;
     if (a.tmDurMode != b.tmDurMode || a.tmRecMode != b.tmRecMode || a.tmOthers != b.tmOthers || a.tmMine != b.tmMine || a.tmBuffSrc != b.tmBuffSrc || a.tmSpAlert != b.tmSpAlert) return false;
     if (a.tmAllyGroup != b.tmAllyGroup || a.tmPreset != b.tmPreset) return false;
     if (a.tmFocusWarn != b.tmFocusWarn || a.tmFocusHold != b.tmFocusHold) return false;
@@ -956,7 +1016,7 @@ void guide_push_out(int perm, float sw, float sh, float& ex, float& ey, float ew
 void reset_ui_config() {   // general Default : everything
     UiConfig& c = ui_config();
     c.partyShow = 1; c.allyShow = 1; c.tgtShow = 1; c.plrShow = 1;
-    c.skinTheme = 0; c.skinLum = 0.0f; c.skinHue = 0; c.skinBoxAlpha = 1.0f; c.fontFace = 0; c.buffScale = 0.92f; c.buffMax = 20; c.buffRows = 2; c.uiStyle = 0; c.uiColor = 0; c.uiAccent = 0; c.uiCursor = 0; c.cursorScale = 1.0f;
+    c.skinTheme = 0; c.skinLum = 0.0f; c.skinHue = 0; c.skinBoxAlpha = 1.0f; c.fontFace = 0; c.buffScale = 0.92f; c.buffMax = 20; c.buffRows = 2; c.uiStyle = 0; c.uiColor = 0; c.uiAccent = 0; c.uiCursor = 0; c.hidePeekMode = 0; c.cursorScale = 1.0f;
     c.allyThemeCopy = 1; c.allyTheme = 0; c.allyLum = 0.0f; c.allyHue = 0; c.allyBoxAlpha = 1.0f;
     for (int k = 0; k < 3; ++k) { c.barHeight[k] = 1.0f; c.barWidth[k] = 1.0f; c.badgeScale[k] = 1.0f; c.gaugeStyle[k] = 0; c.jobBadge[k] = 2; c.cast[k] = true; }
     c.dist[0] = c.dist[1] = c.dist[2] = true;
@@ -964,12 +1024,12 @@ void reset_ui_config() {   // general Default : everything
     c.animHP = c.animTP = true;
     for (int g = 0; g < 2; ++g) for (int k = 0; k < TE_COUNT; ++k) c.text[g][k] = TextStyle();   // typography back to defaults
     // Target module back to defaults (theme / sizes / typography / placement)
-    c.tgtBox = 1; c.tgtBoxAlpha = 1.0f; c.tgtThemeCopy = 0; c.tgtTheme = 0; c.tgtLum = 0.0f; c.tgtHue = 0; c.tgtScale = 1.0f; c.tgtNameHostile = 1; c.tgtSpeed = 1; c.tgtSpeedIcon = 0; c.tgtTH = 1; c.tgtThIcon = 0; c.tgtRange = 1; c.tgtCast = 1; c.tgtSub = 1; c.tgtDebuffs = 1; c.tgtBuffMax = 20; c.tgtBuffPos = 0; c.tgtTimers = 1;
+    c.tgtBox = 1; c.tgtBoxAlpha = 1.0f; c.tgtThemeCopy = 0; c.tgtTheme = 0; c.tgtLum = 0.0f; c.tgtHue = 0; c.tgtScale = 1.0f; c.tgtNameHostile = 1; c.tgtSpeed = 1; c.tgtSpeedIcon = 0; c.tgtTH = 1; c.tgtThIcon = 0; c.tgtRange = 1; c.tgtCast = 1; c.tgtCastDemo = 0; c.tgtSub = 1; c.tgtDebuffs = 1; c.tgtBuffMax = 20; c.tgtBuffPos = 0; c.tgtTimers = 1;
     c.tgtBarH = 1.0f; c.tgtBarW = 1.0f; c.tgtIconSz = 1.0f; c.tgtDetailIconSz = 1.6f; c.tgtRangeH = 1.0f;
     c.tgtPosSet = false; c.tgtX = 0.0f; c.tgtY = 0.0f; c.tgtCenterH = 0; c.tgtCenterV = 0;
     for (int k = 0; k < TGT_TE_COUNT; ++k) c.tgtText[k] = TextStyle();
     // Player Hub module back to defaults
-    c.plrBox = 1; c.plrBoxAlpha = 1.0f; c.plrThemeCopy = 1; c.plrTheme = 0; c.plrLum = 0.0f; c.plrHue = 0; c.plrScale = 1.0f; c.plrEmblem = 1; c.plrName = 1; c.plrLvl = 1; c.plrHp = 1; c.plrMp = 1; c.plrTp = 1; c.plrGil = 1; c.plrSpeed = 1; c.plrCast = 1; c.plrEquip = 1; c.plrEqCell = 1.0f; c.plrEqThemeBorder = 1; c.plrEqColor = 0xFF6699BBu; c.plrEqPlace = 0; c.plrEqCellBgCustom = 0; c.plrEqCellBg = 0xE0121620u; c.plrEquipDetach = 0; c.plrEquipPosSet = false; c.plrEquipX = 0.0f; c.plrEquipY = 0.0f; c.plrEquipScale = 1.0f; c.plrEqGilPlace = 0; c.mmShow = 1; c.mmPosSet = false; c.mmX = 0.0f; c.mmY = 0.0f; c.mmScale = 1.0f; c.mmZoom = 2.0f; c.mmShape = 0; c.mmFrame = 1; c.mmFrameColor = 0xFF6699BBu; c.mmBgAlpha = 0.0f; c.mmMarkerScale = 1.0f; c.mmPC = 1; c.mmNPC = 1; c.mmMob = 1; c.mmTgtLine = 1; c.mmTgtLineCol = 0xFFFF6A6Au; c.mmRing = 0; c.mmRingR = 20.0f; c.mmRingCol = 0xFF66E0FFu; c.mmClock = 1; c.mmClkTime = 1; c.mmClkDay = 1; c.mmClkMoon = 1; c.mmClkReal = 1; c.mmMapSize = 1.0f; c.wsShow = 1; c.wsScale = 1.0f; c.wsX = 0.5f; c.wsY = 0.36f; c.wsFont = 0; c.wsFx = 1; c.wsNameCol = 0xFFFFA518u; c.wsDmgCol1 = 0xFFFFF024u; c.wsDmgCol2 = 0xFFFF5A0Au; c.scShow = 1; c.scScale = 1.0f; c.scX = 0.78f; c.scY = 0.06f; c.scTitle = 1; c.scTimer = 1; c.scStep = 1; c.scProps = 1; c.scList = 1; c.scListGap = 1.0f; for (int k = 0; k < SC_TE_COUNT; ++k) c.scText[k] = TextStyle(); c.tpShow = 1; c.tpScale = 1.0f; c.tpX = 0.72f; c.tpY = 0.30f; c.tpCount = 10; c.tpIcon = 1; for (int k = 0; k < TP_TE_COUNT; ++k) c.tpText[k] = TextStyle(); c.plrBuffs = 1; c.plrBuffMax = 24; c.plrBarH = 1.0f; c.plrBarW = 1.0f; c.plrIconSz = 1.0f;
+    c.plrBox = 1; c.plrBoxAlpha = 1.0f; c.plrThemeCopy = 1; c.plrTheme = 0; c.plrLum = 0.0f; c.plrHue = 0; c.plrScale = 1.0f; c.plrEmblem = 1; c.plrName = 1; c.plrLvl = 1; c.plrHp = 1; c.plrMp = 1; c.plrTp = 1; c.plrGil = 1; c.plrSpeed = 1; c.plrCast = 1; c.plrCastDemo = 0; c.plrEquip = 1; c.plrEqCell = 1.0f; c.plrEqThemeBorder = 1; c.plrEqColor = 0xFF6699BBu; c.plrEqPlace = 0; c.plrEqCellBgCustom = 0; c.plrEqCellBg = 0xE0121620u; c.plrEquipDetach = 0; c.plrEquipPosSet = false; c.plrEquipX = 0.0f; c.plrEquipY = 0.0f; c.plrEquipScale = 1.0f; c.plrEqGilPlace = 0; c.mmShow = 1; c.mmPosSet = false; c.mmX = 0.0f; c.mmY = 0.0f; c.mmScale = 1.0f; c.mmZoom = 2.0f; c.mmShape = 0; c.mmFrame = 1; c.mmFrameColor = 0xFF6699BBu; c.mmBgAlpha = 0.0f; c.mmMarkerScale = 1.0f; c.mmPC = 1; c.mmNPC = 1; c.mmMob = 1; c.mmTgtLine = 1; c.mmTgtLineCol = 0xFFFF6A6Au; c.mmRing = 0; c.mmRingR = 20.0f; c.mmRingCol = 0xFF66E0FFu; c.mmClock = 1; c.mmClkTime = 1; c.mmClkDay = 1; c.mmClkMoon = 1; c.mmClkReal = 1; c.mmMapSize = 1.0f; c.wsShow = 1; c.wsScale = 1.0f; c.wsX = 0.5f; c.wsY = 0.36f; c.wsFont = 0; c.wsFx = 1; c.wsNameCol = 0xFFFFA518u; c.wsDmgCol1 = 0xFFFFF024u; c.wsDmgCol2 = 0xFFFF5A0Au; c.scShow = 1; c.scScale = 1.0f; c.scX = 0.78f; c.scY = 0.06f; c.scTitle = 1; c.scTimer = 1; c.scStep = 1; c.scProps = 1; c.scList = 1; c.scListGap = 1.0f; for (int k = 0; k < SC_TE_COUNT; ++k) c.scText[k] = TextStyle(); c.tpShow = 1; c.tpScale = 1.0f; c.tpX = 0.72f; c.tpY = 0.30f; c.tpCount = 10; c.tpIcon = 1; for (int k = 0; k < TP_TE_COUNT; ++k) c.tpText[k] = TextStyle(); c.plrBuffs = 1; c.plrBuffMax = 24; c.plrBarH = 1.0f; c.plrBarW = 1.0f; c.plrIconSz = 1.0f;
     c.plrBarGap = 1.0f; c.plrEmblemSz = 1.0f; c.plrPosSet = false; c.plrX = 0.0f; c.plrY = 0.0f; c.plrCenterH = 0; c.plrCenterV = 0;
     for (int k = 0; k < PLR_TE_COUNT; ++k) c.plrText[k] = TextStyle();
     for (int k = 0; k < MM_TE_COUNT; ++k) c.mmText[k] = TextStyle();
@@ -980,12 +1040,15 @@ void reset_ui_config() {   // general Default : everything
     c.pwShow = d.pwShow; c.pwScale = d.pwScale; c.pwX = d.pwX; c.pwY = d.pwY; c.pwMode = d.pwMode; c.pwLayout = d.pwLayout; c.pwDisplay = d.pwDisplay; c.pwRate = d.pwRate;
     c.grimShow = d.grimShow; c.grimScale = d.grimScale; c.grimX = d.grimX; c.grimY = d.grimY; c.grimArt = d.grimArt;
     c.ztShow = d.ztShow; c.ztScale = d.ztScale; c.ztX = d.ztX; c.ztY = d.ztY; c.ztVariant = d.ztVariant; c.ztHeader = d.ztHeader; c.ztSheolSeg = d.ztSheolSeg; c.ztSheolRes = d.ztSheolRes; c.ztSheolJoke = d.ztSheolJoke;
-    c.scBox = d.scBox; c.tpBox = d.tpBox; c.hlBox = d.hlBox; c.pwBox = d.pwBox; c.ztBox = d.ztBox; c.mmBox = d.mmBox;
+    c.epShow = d.epShow; c.epScale = d.epScale; c.epX = d.epX; c.epY = d.epY; c.epColl = d.epColl;
+    lstrcpynA(c.epTrack, d.epTrack, sizeof(c.epTrack));   // char[] : copy the CONTENT (plain '=' won't compile)
+    c.scBox = d.scBox; c.tpBox = d.tpBox; c.hlBox = d.hlBox; c.pwBox = d.pwBox; c.ztBox = d.ztBox; c.mmBox = d.mmBox; c.epBox = d.epBox;
     c.tgtSubPos = d.tgtSubPos; c.mmClockPos = d.mmClockPos; c.scNearby = d.scNearby;
     for (int k = 0; k < HL_TE_COUNT; ++k)   c.hlText[k]   = TextStyle();
     for (int k = 0; k < PW_TE_COUNT; ++k)   c.pwText[k]   = TextStyle();
     for (int k = 0; k < GRIM_TE_COUNT; ++k) c.grimText[k] = TextStyle();
     for (int k = 0; k < ZT_TE_COUNT; ++k)   c.ztText[k]   = TextStyle();
+    for (int k = 0; k < EP_TE_COUNT; ++k)   c.epText[k]   = TextStyle();
     reset_boxes();   // (also saves)
 }
 

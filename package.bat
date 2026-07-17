@@ -39,7 +39,13 @@ REM 5) the default box layout (positions/toggles) the plugin reads at startup.
 mkdir "%DATA%\design\exports" 2>nul
 copy /Y "%ROOT%design\exports\layout.json" "%DATA%\design\exports\layout.json" >nul
 
-REM 6) the updater companion addon  ->  addons\aioupdate\
+REM 6) third-party licence notice. The EmpyPop NM table (src\model\nms_gen.h) is BSD-3 data (c) 2020 Dean
+REM    James (Xurion of Bismarck) ; clause 2 REQUIRES the copyright notice be reproduced in binary
+REM    distributions -- so this ships with every zip. Do not drop it.
+copy /Y "%ROOT%NOTICE-EmpyPop.txt" "%DATA%\NOTICE-EmpyPop.txt" >nul
+if errorlevel 1 ( echo [package] NOTICE-EmpyPop.txt missing -- BSD-3 clause 2 requires it & exit /b 1 )
+
+REM 7) the updater companion addon  ->  addons\aioupdate\
 mkdir "%ADD%\aioupdate" 2>nul
 copy /Y "%ROOT%updater\aioupdate\aioupdate.lua" "%ADD%\aioupdate\aioupdate.lua" >nul
 

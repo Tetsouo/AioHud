@@ -17,6 +17,7 @@ u32 luacore_base()  { static u32 b = 0; if (!b) b = (u32)GetModuleHandleA("LuaCo
 u32 data_root()   { u32 lc = luacore_base(); u32 g = 0; return (lc && safe_read(lc + 0x1C8400, &g) && valid_ptr(g)) ? g : 0; }   // g = *(LuaCore+0x1C8400)
 u32 party_ptr()   { u32 g = data_root(); u32 pp = 0; return (g && safe_read(g + 0x248, &pp) && valid_ptr(pp)) ? pp : 0; }         // *(g+0x248) = &member[0]+4
 u32 entity_array(){ u32 g = data_root(); u32 e  = 0; return (g && safe_read(g + 0x24,  &e)  && valid_ptr(e))  ? e  : 0; }         // *(g+0x24) = entity array
+u32 key_items_base(){ u32 g = data_root(); u32 kb = 0; return (g && safe_read(g + 0x4C, &kb) && valid_ptr(kb)) ? kb : 0; }        // *(g+0x4C) = u8[0x2000], one BYTE per key-item id (game-data/key-items.md)
 u32 items_root()  { u32 g = data_root(); u32 ir = 0; return (g && safe_read(g + 0x50,  &ir) && valid_ptr(ir)) ? ir : 0; }         // *(g+0x50) = item-container root (gil @+0x04)
 u32 equip_index_arr(){ u32 g = data_root(); u32 a = 0; return (g && safe_read(g + 0x54, &a) && valid_ptr(a)) ? a : 0; }           // *(g+0x54) = u8[16] equip inventory index
 u32 equip_bag_arr()  { u32 g = data_root(); u32 a = 0; return (g && safe_read(g + 0x58, &a) && valid_ptr(a)) ? a : 0; }           // *(g+0x58) = s32[16] equip bag id
@@ -416,6 +417,104 @@ bool read_player_gil(unsigned& gil) {
     u32 v = 0; if (!safe_read(ir + 0x04, &v)) return false;
     gil = v;
     return true;
+}
+
+// ================================ INVENTORY (all 18 bags) ================================
+// ONE source of truth for the item-container layout (game-data/inventory.md). Reversed 2026-07-17 from
+// LuaCore's own get_items binding (FUN_10074690) : the no-arg path calls FUN_100935c0(L, *(g+0x50)) which
+// dumps bags 0..0x11 via FUN_10093360(L, bag), whose entry address is
+//     *(g+0x50) + (slot + bag*0x51) * 0x28        with slot looped 1..0x50
+// i.e. 81 entries per bag (0x51 * 0x28 = 0xCA8 -- the SAME stride read_equipment() already uses), entry 0
+// reserved (id 0xFFFF), slots 1..80 usable. FUN_100935c0 then publishes max_*/count_*/enabled_* from three
+// u8[18] arrays at +0x19500 / +0x19520 / +0x19540. Those bounds are Windower's own -> as safe to read as
+// get_items() itself.
+static const u32 ITEM_ENTRY_SZ   = 0x28;     // one item entry (id u16 @+0x00, count u32 @+0x04)
+static const u32 ITEM_BAG_ENTRIES= 0x51;     // 81 entries per bag (0 = reserved header, 1..80 = items)
+static const u32 ITEM_META_MAX   = 0x19500;  // u8[18] capacity per bag
+static const u32 ITEM_META_COUNT = 0x19520;  // u8[18] occupied slots per bag
+static const u32 ITEM_META_ENAB  = 0x19540;  // u8[18] bag currently reachable
+static const u32 ITEM_BLOCK_SZ   = 0x19552;  // bags + the three metadata arrays : the whole container, one copy
+
+static const char* const ITEM_BAG_NAMES[ITEM_BAG_MAX] = {
+    "inventory", "safe", "storage", "temporary", "locker", "satchel", "sack", "case",
+    "wardrobe", "safe2", "wardrobe2", "wardrobe3", "wardrobe4", "wardrobe5", "wardrobe6",
+    "wardrobe7", "wardrobe8", "recycle" };
+const char* item_bag_name(int bag) { return (bag >= 0 && bag < ITEM_BAG_MAX) ? ITEM_BAG_NAMES[bag] : ""; }
+
+// The snapshot : fixed-capacity static (no per-frame heap alloc), filled by ONE guarded block copy.
+static unsigned char s_items[ITEM_BLOCK_SZ];
+static bool          s_itemsOk = false;
+
+bool refresh_items() {
+    s_itemsOk = false;
+    u32 ir = items_root();
+    if (!ir) return false;                                   // container unmapped (zoning) -> no-op
+    __try { memcpy(s_items, (const void*)ir, sizeof(s_items)); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return false; }   // bad pointer degrades to a no-op, never a crash
+    s_itemsOk = true;
+    return true;
+}
+
+// address of one entry INSIDE the snapshot (never a live pointer)
+static inline const unsigned char* item_entry(int bag, int slot) {
+    return s_items + ((u32)slot + (u32)bag * ITEM_BAG_ENTRIES) * ITEM_ENTRY_SZ;
+}
+
+bool item_bag_info(int bag, ItemBagInfo& out) {
+    out.max = out.count = out.enabled = 0;
+    if (bag < 0 || bag >= ITEM_BAG_MAX) return false;
+    if (!s_itemsOk && !refresh_items()) return false;
+    out.max     = s_items[ITEM_META_MAX   + bag];
+    out.count   = s_items[ITEM_META_COUNT + bag];
+    out.enabled = s_items[ITEM_META_ENAB  + bag];
+    return true;
+}
+
+bool item_slot(int bag, int slot, unsigned& id, unsigned& count) {
+    id = 0; count = 0;
+    if (bag < 0 || bag >= ITEM_BAG_MAX || slot < 1 || slot > ITEM_BAG_SLOTS) return false;
+    if (!s_itemsOk && !refresh_items()) return false;
+    const unsigned char* e = item_entry(bag, slot);
+    const unsigned raw = (unsigned)e[0] | ((unsigned)e[1] << 8);
+    if (raw == 0xFFFF) return true;                          // reserved header value -> report as empty
+    id = raw;
+    if (id) count = *(const u32*)(e + 4);
+    return true;
+}
+
+int count_items(const unsigned* ids, int n, unsigned* out) {
+    for (int i = 0; i < n; ++i) out[i] = 0;
+    if (!ids || n <= 0 || !out) return 0;
+    if (!s_itemsOk && !refresh_items()) return 0;            // no snapshot -> everything reads 0
+    for (int b = 0; b < ITEM_BAG_MAX; ++b) {
+        if (s_items[ITEM_META_COUNT + b] == 0) continue;     // client says the bag is empty -> skip its 80 slots
+        for (int s = 1; s <= ITEM_BAG_SLOTS; ++s) {
+            const unsigned char* e = item_entry(b, s);
+            const unsigned id = (unsigned)e[0] | ((unsigned)e[1] << 8);
+            if (id == 0 || id == 0xFFFF) continue;           // empty slot / the reserved header
+            for (int i = 0; i < n; ++i)
+                if (ids[i] == id) { out[i] += *(const u32*)(e + 4); break; }
+        }
+    }
+    int hit = 0;
+    for (int i = 0; i < n; ++i) if (out[i]) ++hit;
+    return hit;
+}
+
+unsigned count_item(unsigned id) { unsigned c = 0; count_items(&id, 1, &c); return c; }
+bool     owns_item(unsigned id)  { return count_item(id) != 0; }
+
+// KEY ITEMS. The store is a FLAT u8[0x2000] -- one byte per id, non-zero = owned -- NOT the 0x055 packet's
+// bitfield, so there is no id/512 table arithmetic here (that scheme is packet-only ; game-data/key-items.md).
+// A caller only ever asks for a handful of ids (an NM's pop chain is <= 15), so a guarded read each beats
+// snapshotting 8 KB. safe_read pulls a u32 : at the top id (0x1FFF) that spills 3 bytes into items_root, which
+// sits at base+0x2000 and is mapped -- so it cannot fault. Mask to the byte we asked for.
+bool owns_key_item(unsigned id) {
+    if (id >= 0x2000) return false;                          // outside the array -> not owned, never a read
+    const u32 kb = key_items_base();
+    if (!kb) return false;                                   // unmapped (zoning / not in game) -> no-op
+    u32 b = 0;
+    return safe_read(kb + id, &b) && (b & 0xFF) != 0;        // BOOL array : test != 0, not == 1
 }
 
 // The 16 equipped items (Equipment Viewer). get_items('equipment') reads two parallel 16-entry arrays

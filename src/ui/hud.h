@@ -62,6 +62,7 @@ private:
     void draw_pointwatch(const Frame& f, bool preview = false, float ovX = 0.0f, float ovY = 0.0f, float ovS = 0.0f);   // PointWatch box (XP/CP/ML progress + Merits) ; preview shows a sample
     void draw_grimoire(const Frame& f, bool preview = false, float ovX = 0.0f, float ovY = 0.0f, float ovS = 0.0f);   // Scholar grimoire (book + charges/timer + Addendum aura) ; preview shows a sample
     void draw_zonetracker(const Frame& f, bool preview = false, float ovX = 0.0f, float ovY = 0.0f, float ovS = 0.0f);   // Zone Tracker (Dynamis KIs+timer / Abyssea lights+visitant) ; preview shows a sample
+    void draw_empypop(const Frame& f, bool preview = false, float ovX = 0.0f, float ovY = 0.0f, float ovS = 0.0f);   // EmpyPop (the tracked Abyssea NM's pop chain) ; preview shows the chloris demo chain
     void draw_timers(const Frame& f, bool preview = false, float ovX = 0.0f, float ovY = 0.0f, float ovS = 0.0f);   // Timers box (self buff timers, exact from 0x063 type-9 ; same buff-icon atlas) ; preview shows a sample
 
     GameState            state_;
