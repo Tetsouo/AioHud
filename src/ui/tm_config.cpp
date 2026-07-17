@@ -62,6 +62,11 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             float v01 = (c.tmIconScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Icon size", "Taille ic\xC3\xB4nes"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.tmIconScale = v < lo ? lo : (v > hi ? hi : v); }
         } ROW_NEXT(46.0f)
+        { ROW_BAND(46.0f)   // Row spacing : vertical gap between each timer line
+            const float lo = 0.60f, hi = 3.00f; char b[16]; sprintf(b, "%d%%", (int)(c.tmRowGap * 100.0f + 0.5f));
+            float v01 = (c.tmRowGap - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Row spacing", "Espacement lignes"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.tmRowGap = v < lo ? lo : (v > hi ? hi : v); save_ui_config(); }
+        } ROW_NEXT(46.0f)
         { ROW_BAND(52.0f)   // Duration display : Icon / Name / Both
             int m = (c.tmDurMode < 0 || c.tmDurMode > 2) ? 0 : c.tmDurMode;
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Duration: show", "Duration : afficher"), MODE[m])) { c.tmDurMode = wrap(m + d, 3); save_ui_config(); }

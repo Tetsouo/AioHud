@@ -61,13 +61,13 @@ void ConfigPage::draw_sc_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         SC_TOGGLE(CTRL_ID, tr("Step line", "Ligne Step"),                    c.scStep)
         SC_TOGGLE(CTRL_ID, tr("Property + elements", "Propri\xC3\xA9t\xC3\xA9 + \xC3\xA9l\xC3\xA9ments"), c.scProps)
         SC_TOGGLE(CTRL_ID, tr("Weaponskill list", "Liste weaponskills"),     c.scList)
-        if (c.scList) {
-        { ROW_BAND(46.0f)   // WS spacing : the vertical gap between each weaponskill in the list
+        // WS spacing : the vertical gap between each weaponskill in the continuation list. Always shown (it only
+        // has a visible effect while the list is on, but hiding it made it hard to find).
+        { ROW_BAND(46.0f)
             const float lo = 0.60f, hi = 3.00f; char b[16]; sprintf(b, "%d%%", (int)(c.scListGap * 100.0f + 0.5f));
             float v01 = (c.scListGap - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("WS spacing", "Espacement WS"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.scListGap = v < lo ? lo : (v > hi ? hi : v); save_ui_config(); }
         } ROW_NEXT(46.0f)
-        }
         #undef SC_TOGGLE
     }   // end Elements
 

@@ -446,7 +446,11 @@ void Hud::draw_config_preview(const Frame& f) {
     if (config_.section() == 5) {
         float sx = 0, sy = 0, sw = 0, sh = 0; config_.preview_rect(sx, sy, sw, sh);
         float scl = ui_config().scScale; if (scl < 0.5f) scl = 0.5f; if (scl > 2.0f) scl = 2.0f;
-        float fitS = (sh > 0.0f ? (sh / 360.0f) : 0.5f) * scl; if (fitS < 0.35f) fitS = 0.35f; if (fitS > 1.4f) fitS = 1.4f;
+        // Resolution-relative so the WHOLE 50-200% Size range stays visible (a fixed cap clamped early on tall
+        // preview stages -> the box looked frozen past ~75%). base = sh/700 -> at 200% fitS = sh/350, still below
+        // the "fills the stage" cap sh/330, so it never clamps inside the range.
+        const float fmax = (sh > 0.0f) ? (sh / 330.0f) : 2.5f;
+        float fitS = (sh > 0.0f ? (sh / 700.0f) : 0.5f) * scl; if (fitS < 0.30f) fitS = 0.30f; if (fitS > fmax) fitS = fmax;
         draw_skillchains(f, true, sx + sw * 0.5f, sy + sh * 0.5f, fitS);
         return;
     }

@@ -378,6 +378,8 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
     const float oN = tm_ow(TM_NAME, 1.0f) * S, oT = tm_ow(TM_TIMER, 1.0f) * S, oH = tm_ow(TM_HEADER, 1.0f) * S;
     float iscl = C.tmIconScale; if (iscl < 0.5f) iscl = 0.5f; if (iscl > 2.0f) iscl = 2.0f;
     const float icon = 20.0f * iscl * S, rowH = icon + 3.0f * S, headH = zH + 5.0f * S;
+    float tmrg = C.tmRowGap; if (tmrg < 0.6f) tmrg = 0.6f; if (tmrg > 3.0f) tmrg = 3.0f;
+    const float rowPit = rowH * tmrg;   // per-row PITCH (config: row spacing) ; content stays centred in rowH, extra gap below
     const bool showHdr = (C.tmTitle != 0);
     const float bau = (float)BUFF_CELL / (float)BUFF_ATLAS_W, bav = (float)BUFF_CELL / (float)BUFF_ATLAS_H;
     const int bcells = BUFF_COLS * (BUFF_ATLAS_H / BUFF_CELL);
@@ -434,7 +436,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         float boxW = pad * 2.0f;
         for (int c = 0; c < nc; ++c) { boxW += colW[c]; if (c) boxW += midGap; }
         const int bodyRows = rowsMax > 0 ? rowsMax : 1;
-        const float boxH = pad + (showHdr ? headH + gap : 0.0f) + bodyRows * rowH + pad;
+        const float boxH = pad + (showHdr ? headH + gap : 0.0f) + bodyRows * rowPit + pad;
         if (measureOnly) { measH = boxH; return boxW; }
 
         float px, py;
@@ -478,7 +480,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 else { tc = tm_col(TM_TIMER, white); if (r <= 10) tc = flash ? red : 0xFFFFC8C8u; else if (r <= 30) tc = orange; }   // duration : white -> orange (<30) -> flashing red (<10)
                 const float tw = fT->measure(tb, zT);
                 fT->begin(dev); fT->draw_lc(dev, cx + colW[c] - tw, cyy + rowH * 0.5f, tb, zT, tc, strk, oT);
-                cyy += rowH;
+                cyy += rowPit;
             }
             cx += colW[c] + midGap;
         }

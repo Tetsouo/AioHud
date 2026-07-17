@@ -250,6 +250,7 @@ struct UiConfig {
     int   tmRecMode = TMDISP_NAME;   // Recast   column display : name (default — the addon icon set isn't the real menu
                                      //            icons, so text reads cleaner) / icon / both
     float tmIconScale = 1.0f;        // Duration buff-icon size multiplier (0.5 .. 2.0 ; also grows the row height)
+    float tmRowGap    = 1.0f;        // vertical row-spacing multiplier between each timer line (0.6 .. 3.0)
     int   tmOthers  = 1;             // Duration : 1 = show ALL buff-timer entries (incl. dual-box / others') ; 0 = only the
                                      //            LOCAL player's own buffs (cross-checked vs the memory buff list)
                                      //            LEGACY : superseded by tmBuffSrc (kept for old-config migration on load)
