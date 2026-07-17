@@ -314,17 +314,17 @@ unsigned int aio_plugin_mouse(u32 eventtype, u32 /*x*/, u32 /*y*/, u32 delta, u3
 // and CONSUME the key (return 1) so the game never sees it ; otherwise the key passes straight through.
 static bool g_keyLog = false;   // //aio keylog -> dump every key event to aiohud_debug.log for diagnosing input bugs
 unsigned int aio_plugin_key(u32 key, u32 b, u32 c) {
-    // RE'd from a live capture (2026-07-17, //aio keylog) : `c` is the Win32 keystroke lParam flags -- its top
-    // byte follows the standard WM_KEY* semantics : bit 31 (0x80000000) = TRANSITION (1 = key released), bit 30
-    // (0x40000000) = previous state (1 = auto-repeat), bit 24 (0x01000000) = extended key. So press/release is
-    // bit 31 of c, and it is machine-INDEPENDENT.
-    //   The old heuristic `pressed = (b > 0xFFFF)` read press/release off b (a pointer-ish value on press, small
-    //   on release). It happens to work on most setups but NOT all : on some machines the RELEASE also carries a
-    //   large b -> the break was misread as a press -> every key fed TWICE (reported as doubled typing "gg" for
-    //   "g", only inside our fields since the game uses its own input path). c's transition bit fixes that.
-    //   `b` is still used below for the MODIFIER bits (its low byte), which was always reliable.
+    // Press/release lives in bit 0x40 of b's LOW BYTE (b's low byte = the key-state flags Windower passes ;
+    // 0x40 set = key DOWN / make, clear = key UP / break). RE'd from two live captures (2026-07-17, //aio keylog) :
+    // it holds identically on both a working setup and the one that doubled -- 39/39 and every event respectively.
+    //   History of the wrong turns : `pressed = (b > 0xFFFF)` read a pointer-ish high part of b -> broke where the
+    //   RELEASE also carried a large b. `pressed = (c & 0x80000000)` read c's WM_KEY* transition bit -- clean and
+    //   machine-independent on MY box, but a friend's Windower feeds GARBAGE in c (stack addresses : 001AEC00,
+    //   18BA0000, FFFFFF00...), so its bit 31 was 0 on BOTH make and break -> every key fed TWICE ("g" -> "gg").
+    //   b's 0x40 bit was the one signal stable across both machines -> that's the reliable press/release flag.
+    //   `b`'s low byte also carries the MODIFIER bits (0x01/0x04/0x08), read separately below.
     const int  dik     = (int)key & 0xFF;
-    const bool pressed = (c & 0x80000000u) == 0;   // bit 31 clear = key DOWN (make) ; set = key UP (break)
+    const bool pressed = (b & 0x40u) != 0;   // b low-byte bit 0x40 : set = key DOWN (make) ; clear = key UP (break)
     // Windower hands us a US-POSITIONAL scan code (built from the VK via the US layout), NOT the raw hardware
     // scan -> recover the real VK by mapping it back through the US layout, then translate that VK to a char
     // with the USER's layout (AZERTY / accents / any locale -- e.g. AZERTY 'a' arrives as US scan 0x1E).
