@@ -89,7 +89,7 @@ struct BuffSet { unsigned id = 0; int n = 0; unsigned short ids[32] = {}; };
 // remaining-time exists in the client -> ICONS ONLY (the packet's promising field was the animation,
 // not a duration). Entries self-expire after an APPROX base duration per status (debuff_base_ms) so the
 // icon clears roughly when the debuff wears -- Stun goes fast, DoTs linger. No countdown is ever shown.
-struct DebuffSet { unsigned id = 0; int n = 0; unsigned short ids[16] = {}; unsigned startMs[16] = {}; unsigned baseMs[16] = {}; unsigned char self[16] = {}; unsigned char th = 0; };   // baseMs[i] : the casting spell's base duration (tb_debuff_gen) ; self[i] : 1 = YOU cast it (exact wear-off + real timer), 0 = another caster (no wear-off -> kept as "???") ; th : Treasure Hunter level applied to this mob (0 = none)
+struct DebuffSet { unsigned id = 0; int n = 0; unsigned short ids[16] = {}; unsigned startMs[16] = {}; unsigned baseMs[16] = {}; unsigned char self[16] = {}; unsigned char th = 0; unsigned char lastHpp = 100; };   // lastHpp : last seen HP% of this mob -> detect death (0) / a fresh mob that RECYCLED this server id (near-dead -> near-full = new spawn) so Apex mobs never inherit a dead mob's debuffs   // baseMs[i] : the casting spell's base duration (tb_debuff_gen) ; self[i] : 1 = YOU cast it (exact wear-off + real timer), 0 = another caster (no wear-off -> kept as "???") ; th : Treasure Hunter level applied to this mob (0 = none)
 
 // POINTWATCH (module) : the XP / CP / ML progression bar + Merits, ported from AioHUD's pointwatch engine
 // (Byrthnoth's pwcore). 100% packet-fed : 0x061 (char stats : level / EXP / Master Level / Exemplar Points),
@@ -372,6 +372,8 @@ struct PartyState {
     // wear-off). Returns the count written.
     int  target_debuffs(unsigned id, unsigned short* out, int* remainSec, unsigned char* isSelf, int maxN) const;   // remainSec = -1 -> show "???"
     int  target_th(unsigned id) const;   // Treasure Hunter level applied to target `id` (0 = none / unknown)
+    void clear_debuffs(unsigned id);     // drop a mob's tracked debuffs (on its death) so a recycled server id starts clean
+    void note_mob_hp(unsigned id, int hpp);   // per-frame HP feed for a mob : clears its debuffs on death (hpp<=0) or when a fresh mob RECYCLED this id (was near-dead, now near-full)
     unsigned debuff_dur_ms(unsigned status) const;   // LEARNED real duration if observed, else the base estimate
     int  alliance_count(int tier) const;           // live member count for alliance box tier 1 / 2
     const PMember& alliance_member(int tier, int i) const;   // member i of alliance box tier 1 / 2

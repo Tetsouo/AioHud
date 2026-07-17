@@ -52,6 +52,7 @@ void PartyState::refresh_hate() {
         for (int q = 0; q < nq; ++q) {
             HateEntry& he = hate_[idx[q]];
             const EntityVitals& v = ev[q];
+            if (v.valid && v.hpp <= 0 && v.id) clear_debuffs(v.id);   // a tracked mob died -> drop its debuffs (covers AoE / mobs killed while not your <t>, before the id is recycled)
             const bool stale = (now - he.lastMs) > 3000u;
             if (stale) {   // prune only once idle > 3 s : gone / dead / not-a-mob / idle-status / > 50 yalms
                 if (!v.valid || v.hpp <= 0 || v.spawnType != 0x10 || v.status == 0) { he = HateEntry{}; continue; }

@@ -318,7 +318,13 @@ void PartyState::on_action(const unsigned char* p) {
             }
         }
     }
-    if (cat == 3 && actor == selfId_) {                    // MY WEAPONSKILL finish -> arcade "ULTRA COMBO" popup :
+    // MY WEAPONSKILL finish -> arcade "ULTRA COMBO" popup. GATE on a genuine weaponskill-finish MESSAGE (the same
+    // sc_is_finish_msg the skillchain block trusts) : some THF damage abilities (Mug id45, Despoil id228) also arrive
+    // as cat 3, and their action id COLLIDES with a WS id in the shared id space (ws_info(45)=Atonement,
+    // ws_info(228)=Final Paradise) -> without this, /ja Mug popped "Atonement". Their action message is NOT a finish
+    // message (that's why the skillchain box never fired for them), so this cleanly excludes them while keeping every
+    // real weaponskill (physical AND magical).
+    if (cat == 3 && actor == selfId_ && sc_is_finish_msg(getbits(p, 230, 10, size))) {
         const u32 wsid = getbits(p, 86, 16, size);         //   WS id = actor.param @bit 86 (like cat 4/6)
         const u32 dmg  = getbits(p, 213, 17, size);        //   damage = target[0].param @bit 213 (target base 150 + 63)
         const WSRow* w = ws_info(wsid); const char* nm = w ? w->en : "Weapon Skill";
@@ -773,6 +779,27 @@ int PartyState::target_th(unsigned id) const {
     if (!id) return 0;
     for (int s = 0; s < 8; ++s) if (tdebuffs_[s].id == id) return (int)tdebuffs_[s].th;
     return 0;
+}
+
+void PartyState::clear_debuffs(unsigned id) {
+    if (!id) return;
+    for (int s = 0; s < 8; ++s) if (tdebuffs_[s].id == id) { tdebuffs_[s] = DebuffSet{}; return; }   // reset the whole slot (id/n/th/lastHpp) -> the recycled id starts clean
+}
+// Per-frame HP feed for a mob (the current target). FFXI recycles a mob's SERVER id when it dies and another
+// spawns in the same entity slot, so a fresh Apex mob can inherit a corpse's debuffs. Detect the transition:
+//   hpp <= 0                    -> the mob DIED : drop its debuffs before the id is recycled.
+//   was near-dead, now near-full-> a NEW mob RECYCLED this id (a live mob never jumps ~0 -> ~full) : drop the stale set.
+// Either way each live mob keeps its OWN debuffs and nothing is purged from a mob that's simply still alive.
+void PartyState::note_mob_hp(unsigned id, int hpp) {
+    if (!id) return;
+    for (int s = 0; s < 8; ++s) {
+        if (tdebuffs_[s].id != id) continue;
+        DebuffSet& d = tdebuffs_[s];
+        if (hpp <= 0) { d = DebuffSet{}; return; }                       // death
+        if (d.lastHpp <= 40 && hpp >= 90) { d = DebuffSet{}; return; }   // recycled id -> fresh spawn
+        d.lastHpp = (unsigned char)(hpp > 100 ? 100 : hpp);
+        return;
+    }
 }
 
 int PartyState::target_debuffs(unsigned id, unsigned short* out, int* remainSec, unsigned char* isSelf, int maxN) const {

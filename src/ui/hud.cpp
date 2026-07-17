@@ -230,6 +230,8 @@ void Hud::render(u32 dev) {
     // get_party(); a freshly-summoned trust / new alliance member appears at once.
     party().load_from_memory();
     party().set_target_ctx(state_.target.id, state_.me.id);   // context for the debuff tracker (on_action attributes YOUR debuffs to the current target)
+    if (state_.target.valid && state_.target.spawnType == 0x10) party().note_mob_hp(state_.target.id, state_.target.hpp);   // debuff tracker : drop a mob's debuffs on death / when its server id gets recycled (Apex farming)
+    if (state_.hasSubTarget && state_.subTarget.valid && state_.subTarget.spawnType == 0x10) party().note_mob_hp(state_.subTarget.id, state_.subTarget.hpp);
     party().refresh_hate();   // hate list : resolve tracked aggro mobs -> display rows (needs the fresh self pos + <t>)
     party().prune_skillchains();   // skillchains : drop resonance windows whose mob has died (so the box doesn't linger)
     party().zt_set_zone((int)state_.zone, zone_name((int)state_.zone));   // zone tracker : detect Dynamis/Abyssea + reset on change
