@@ -393,7 +393,7 @@ void Target::draw(const Frame& f) {
     unsigned short dids[20]; int drem[20] = {0}; unsigned char dself[20] = {0}; int nd = 0;
     if (fake && ui_config().tgtDebuffs) {           // live-preview : a full 20-icon sample (yours=gold / others=white / "???")
         static const unsigned short DID[20] = { 2, 11, 6, 3, 4, 5, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21 };
-        static const int           DRM[20] = { 45, 28, -1, 120, 90, 15, 300, 5, 60, 180, 30, 8, -1, 240, 75, 100, 20, -1, 55, 12 };
+        static const int           DRM[20] = { 45, 28, -30, 120, 90, 15, 300, 5, 60, 180, 30, 8, -18, 240, 75, 100, 20, -95, 55, 12 };
         static const unsigned char DSF[20] = { 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1 };
         nd = 20; for (int i = 0; i < 20; ++i) { dids[i] = DID[i]; drem[i] = DRM[i]; dself[i] = DSF[i]; }
     } else if (present && ui_config().tgtDebuffs) nd = party().target_debuffs(g.target.id, dids, drem, dself, 20);
@@ -837,11 +837,11 @@ void Target::draw(const Frame& f) {
             const u32 tstk = mul_a(drawBox ? 0xDD000000u : 0xFF000000u, a);   // opaque stroke when floating (no box)
             const bool tCustom = ui_config().tgtText[TGT_TIMER].colorOn;   // a custom colour overrides the caster/expiry tint
             for (int i = 0; i < tn; ++i) {
-                char tb[8]; const int r = trem[i];
-                if (r < 0)        { tb[0] = tb[1] = tb[2] = '?'; tb[3] = 0; }   // timer hit 0 (or never learned) but still on -> "???"
+                char tb[12]; const int r = trem[i];
+                if (r < 0)        { int a2 = -r; if (a2 >= 60) sprintf(tb, "-%d:%02d", a2 / 60, a2 % 60); else sprintf(tb, "-0:%02d", a2); }   // past the estimate -> negative overage (-0:30)
                 else if (r >= 60) sprintf(tb, "%d:%02d", r / 60, r % 60);
                 else              sprintf(tb, "%d", r);
-                const u32 sem = (r < 0)  ? 0xFFAEB6C2u                                 // "???" -> grey (unknown / exceeded)
+                const u32 sem = (r < 0)  ? 0xFFAEB6C2u                                 // past estimate -> grey (overdue / uncertain)
                               : tsf[i]   ? ((r <= 5) ? 0xFFFF7A4Au : 0xFFF6C64Eu)      // YOURS -> gold (red about to wear off)
                                          : 0xFFD8DEE8u;                                // OTHERS -> white / grey
                 const u32 tc = mul_a(tCustom ? ui_config().tgtText[TGT_TIMER].color : sem, a);

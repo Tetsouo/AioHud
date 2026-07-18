@@ -48,7 +48,7 @@ void debuffs_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS,
             { 13,   90, 0 },   // Slow      -- other caster (white)
             { 3,     8, 1 },   // Poison    -- yours (gold)
             { 6,     4, 1 },   // Silence   -- yours, about to wear off (red)
-            { 4,    -1, 0 },   // Paralysis -- unknown "???" (grey : exceeded / not learned)
+            { 4,   -30, 0 },   // Paralysis -- past the estimate (grey : counting negative -0:30)
             { 11,  300, 0 },   // Bind      -- other caster (white)
         };
         mobName = "Apademak";
@@ -89,7 +89,7 @@ void debuffs_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS,
 
     char tb[16];
     auto fmt = [&](int r) -> const char* {
-        if (r < 0)        strcpy(tb, "???");                        // hit 0 / never learned but still on -> "???"
+        if (r < 0)        { int a = -r; if (a >= 60) sprintf(tb, "-%d:%02d", a / 60, a % 60); else sprintf(tb, "-0:%02d", a); }   // past the estimate -> negative overage (-0:30)
         else if (r >= 60) sprintf(tb, "%d:%02d", r / 60, r % 60);
         else              sprintf(tb, "%d", r);
         return tb;

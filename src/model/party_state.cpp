@@ -83,6 +83,8 @@ static bool is_wearoff_msg(unsigned m) {
 static int s_dbfTrace = 0;
 #define DBFTRACE(...) do { if (s_dbfTrace > 0) { --s_dbfTrace; windower::debug::log(__VA_ARGS__); } } while (0)
 
+static inline bool is_sleep_status(unsigned s) { return s == 2 || s == 19 || s == 193; }   // Sleep, Sleep II, Lullaby (song sleep)
+
 static void record_debuff(DebuffSet* tds, unsigned tid, unsigned short st, unsigned baseMs, bool bySelf) {
     const unsigned now = GetTickCount();
     const unsigned char sf = bySelf ? 1 : 0;
@@ -585,8 +587,15 @@ void PartyState::on_action(const unsigned char* p) {
             const int base = 150 + (int)i * 123;
             if (base + 32 > size * 8) break;               // past the packet
             const u32 tid = getbits(p, base, 32, size);
-            if (tid && (tid >> 24) == 0x01)                // a real server id (top byte 0x01)
+            if (tid && (tid >> 24) == 0x01) {              // a real server id (top byte 0x01)
+                const u32 amsg = getbits(p, base + 80, 10, size);   // per-target action message (target 0 -> bit 230)
+                DBFTRACE("DBF cat4-tgt tid=%08X msg=%u effect=%u self=%u", tid, amsg, de->effect, bySelf ? 1u : 0u);
+                // "No effect" (msg 75, reversed via //aio dbflog : land = 236, no-effect = 75) : the cast did NOT
+                // (re)apply -- the target resisted or already has it -> do NOT add or refresh its timer. Without
+                // this, recasting Sleep/Lullaby on an already-slept mob wrongly reset the countdown to full.
+                if (amsg == 75) continue;
                 record_debuff(tdebuffs_, tid, de->effect, de->durSec * 1000u, bySelf);
+            }
         }
         return;
     }
@@ -597,12 +606,19 @@ void PartyState::on_action(const unsigned char* p) {
         // exists on the 0x028, so we gate on damage alone -- a miss has param 0 and correctly does NOT wake sleep.
         const u32 tid = getbits(p, 150, 32, size);
         const u32 st  = getbits(p, 150 + 63, 17, size);    // param : >0 means damage was dealt (not a miss/shadow)
+        if (s_dbfTrace > 0 && tid && (tid >> 24) == 0x01) {   // DIAGNOSTIC : log every cat 1/2 hit that lands on a mob we track WITH a sleep, even dmg=0 (reveals a bad damage read / missed wake)
+            for (int s = 0; s < DEBUFF_SLOTS; ++s) if (tdebuffs_[s].id == tid) {
+                bool slept = false; for (int i = 0; i < tdebuffs_[s].n; ++i) if (is_sleep_status(tdebuffs_[s].ids[i])) slept = true;
+                if (slept) DBFTRACE("DBF hit-on-slept tid=%08X cat=%u dmg=%u", tid, cat, st);
+                break;
+            }
+        }
         if (tid && (tid >> 24) == 0x01 && st > 0) {
             for (int s = 0; s < DEBUFF_SLOTS; ++s) if (tdebuffs_[s].id == tid) {
                 DebuffSet& d = tdebuffs_[s];
                 for (int i = 0; i < d.n; ) {
                     unsigned short id = d.ids[i];
-                    if (id == 2 || id == 19 || id == 193) {    // Sleep, Sleep II, Lullaby (song sleep)
+                    if (is_sleep_status(id)) {                 // Sleep, Sleep II, Lullaby (song sleep)
                         DBFTRACE("DBF wake-remove tid=%08X st=%u dmg=%u (n was %d)", tid, id, st, d.n);
                         for (int j = i; j < d.n - 1; ++j) { d.ids[j] = d.ids[j + 1]; d.startMs[j] = d.startMs[j + 1]; d.baseMs[j] = d.baseMs[j + 1]; d.self[j] = d.self[j + 1]; }
                         --d.n;
@@ -645,6 +661,10 @@ void PartyState::on_029(const unsigned char* p) {
     int size = (int)((hdr >> 9) & 0x7F) * 4;
     if (size < 0x1C) return;                               // need up to the message id @0x18
     u32 msg = ((u32)p[0x18] | ((u32)p[0x19] << 8)) & 0x7FFF;
+    if (s_dbfTrace > 0) {                                  // DIAGNOSTIC : log EVERY 0x029 landing on a mob we track -> catch the "<mob> is no longer asleep" message id (any wake cause)
+        u32 dt = pkt_u32(p, 0x08);
+        if (dt && (dt >> 24) == 0x01) for (int s = 0; s < DEBUFF_SLOTS; ++s) if (tdebuffs_[s].id == dt) { DBFTRACE("DBF 029 msg=%u tid=%08X p0C=%u p10=%u", msg, dt, pkt_u32(p, 0x0C), pkt_u32(p, 0x10)); break; }
+    }
     if (!is_wearoff_msg(msg)) return;                      // only "wore off / recovered from" messages
     u32 tid = pkt_u32(p, 0x08);                               // target server id (reliable on 0x029)
     u32 st  = pkt_u32(p, 0x0C);                               // param = the status id that wore off
@@ -652,12 +672,18 @@ void PartyState::on_029(const unsigned char* p) {
     for (int s = 0; s < DEBUFF_SLOTS; ++s) {
         if (tdebuffs_[s].id != tid) continue;
         DebuffSet& d = tdebuffs_[s];
-        for (int i = 0; i < d.n; ++i) if (d.ids[i] == st) {
-            const unsigned life = GetTickCount() - d.startMs[i];         // LEARN the real duration (keep the longest = the unresisted full duration)
-            if (st < 256 && life >= 2000 && life <= 1800000 && life > learnedMs_[st]) learnedMs_[st] = life;
-            for (int j = i; j < d.n - 1; ++j) { d.ids[j] = d.ids[j + 1]; d.startMs[j] = d.startMs[j + 1]; d.baseMs[j] = d.baseMs[j + 1]; d.self[j] = d.self[j + 1]; }
-            --d.n;                                         // remove the entry (compact)
-            break;
+        for (int i = 0; i < d.n; ) {
+            const unsigned cur = d.ids[i];
+            // Remove the exact status that wore off, OR -- when the game reports the generic "<mob> is no longer
+            // asleep" (msg 204, param 2, reversed via //aio dbflog) -- EVERY sleep variant : a Lullaby'd mob wakes
+            // with param 2 though we track it as 193, so an exact match missed it (coup / DoT / natural wake alike).
+            if (cur == st || (is_sleep_status(st) && is_sleep_status(cur))) {
+                const unsigned life = GetTickCount() - d.startMs[i];       // LEARN the real duration (keep the longest = the unresisted full duration)
+                if (cur < 256 && life >= 2000 && life <= 1800000 && life > learnedMs_[cur]) learnedMs_[cur] = life;
+                DBFTRACE("DBF 029-remove tid=%08X st=%u (msg=%u param=%u)", tid, cur, msg, st);
+                for (int j = i; j < d.n - 1; ++j) { d.ids[j] = d.ids[j + 1]; d.startMs[j] = d.startMs[j + 1]; d.baseMs[j] = d.baseMs[j + 1]; d.self[j] = d.self[j + 1]; }
+                --d.n;                                     // remove the entry (compact)
+            } else ++i;
         }
         break;
     }
@@ -829,7 +855,7 @@ int PartyState::target_debuffs(unsigned id, unsigned short* out, int* remainSec,
         // countdown duration : a LEARNED real lifetime (from your 0x029 wear-offs) wins ; else this cast's base
         // duration (the spell table value stored when recorded) ; else the coarse per-status fallback.
         unsigned dur = (st < 256 && learnedMs_[st]) ? learnedMs_[st] : (d->baseMs[i] ? d->baseMs[i] : debuff_dur_ms(st));
-        if (remainSec) remainSec[n] = (el < dur) ? (int)((dur - el + 999) / 1000) : -1;   // countdown -> "???" once it exceeds the duration (icon kept)
+        if (remainSec) remainSec[n] = (el < dur) ? (int)((dur - el + 999) / 1000) : -(int)((el - dur + 999) / 1000);   // countdown ; past the estimate -> NEGATIVE (-0:30 = 30 s over the estimate), icon kept
         if (isSelf) isSelf[n] = self ? 1 : 0;
         out[n] = (unsigned short)st;
         ++n;
