@@ -51,10 +51,13 @@ static void poll_mouse(MouseState& m, float coordW, float coordH, HWND gameHw) {
     POINT p;
     if (!GetCursorPos(&p)) { m.clicked = false; m.down = false; return; }
     HWND fg = GetForegroundWindow();
-    // Only act when the GAME window is the OS foreground. If the user alt-tabbed / clicked into a
-    // browser, the cursor + button belong to THAT window -> ignore them (no phantom config clicks),
-    // and flag the frame as unfocused so we hide our drawn cursor. The click that RE-focuses the game
-    // is left for Windows to consume (see aio_plugin_mouse) so the window activates like any app.
+    // Two SEPARATE questions, deliberately not merged (they used to be, and that was the double-cursor bug) :
+    //   focused  -> may we ACT on input ? Only when the game is the OS foreground, else a click meant for the
+    //               browser would register here.
+    //   overGame -> do we OWN the pointer ? True whenever it is physically over the game window, focus or not,
+    //               because the game holds mouse capture and keeps reading the mouse while unfocused.
+    // Position follows overGame (so our pointer can be drawn while another window has focus) ; the BUTTON
+    // follows focused. See aio_plugin_mouse for the input side.
     m.focused = (gameHw != nullptr && fg == gameHw);
     // Is the pointer over the GAME window, foreground or not ? GA_ROOT so a child/render window still
     // resolves to the top-level game window. This drives who OWNS the pointer, independently of focus.

@@ -297,8 +297,9 @@ void aio_plugin_text_in(const char* original, char* /*modified*/, int* mode)
 // mouse while the config overlay is up (cursor is read separately via Win32 GetCursorPos).
 unsigned int aio_plugin_mouse(u32 eventtype, u32 /*x*/, u32 /*y*/, u32 delta, u32 blocked)   // x/y unused : cursor read via GetCursorPos
 {
-    // Only capture the mouse when the GAME window is the OS foreground. Otherwise a click coming back
-    // INTO the game (from a browser / the desktop) must reach Windows so it re-activates the window.
+    // Capture the mouse whenever the overlay OWNS the pointer -- that is, the pointer is over the game window,
+    // focused or not. Gating this on focus alone was the double-cursor bug : the game holds mouse capture, so
+    // losing focus never stopped it reading the mouse, and it lit up its own in-engine pointer again.
     const bool focused = g_gameHwnd && (HWND)g_gameHwnd == GetForegroundWindow();
     const bool overlay = (g_hud.config().is_open() || aio::ui_config().editLayout);
     const bool active  = focused && overlay;
