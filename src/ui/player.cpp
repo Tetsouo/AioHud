@@ -158,6 +158,19 @@ void Player::preview_footprint(float& w, float& h, float& l, float& t, float& r,
     }
 }
 
+// Config-preview footprint of the STANDALONE (detached) equipment box : the 4x4 grid plus a bounding reserve
+// for the gil (below/above -> extra height ; left/right -> extra width), at the equipment's own live scale.
+void Player::equip_footprint(float& w, float& h) const {
+    const UiConfig& c = ui_config();
+    const float S = scale_ * clampf(c.plrEquipScale, 0.5f, 2.0f);
+    const float gridW = 4.0f * snap(28.0f * S * clampf(c.plrEqCell, 0.5f, 2.0f));
+    w = gridW; h = gridW;
+    if (c.plrGil) {
+        const float gilB = snap(24.0f * S), gilRW = snap(80.0f * S);
+        switch (c.plrEqGilPlace) { case 2: case 3: w += gilRW; break; default: h += gilB; break; }   // 1 above / 0 below both add height
+    }
+}
+
 void Player::ensure(u32 dev) {
     if (!valid_ptr(dev)) return;
     vials_->ensure(dev);
@@ -491,7 +504,7 @@ void Player::draw(const Frame& f) {
     // ---- equipment viewer : 4x4 grid of the 16 equipped items, each with its real gear icon (bundled 32x32
     //      BMP named by item id, loaded on demand + cached per slot). Slot -> grid position via EQ_DPOS
     //      (the addon's player_equip layout). Missing-icon slots fall back to the item-id text. ----
-    if (showEquip && !(detachEq && demo_) && (c.plrShow || detachEq)) {   // draws when the Hub is shown (docked or standalone) OR whenever detached (independent of plrShow) ; skipped only in the config PREVIEW when detached
+    if (showEquip && !(detachEq && demo_ && !pvEq_) && (c.plrShow || detachEq || pvEq_)) {   // draws when the Hub is shown (docked or standalone) OR whenever detached ; in the config PREVIEW only when pvEq_ forces it (Player page shows the detached grid as a group with the Hub)
         // DOCKED uses the Hub's scale ; STANDALONE uses its own (plrEquipScale) -> shadow S / eqCell for the whole block.
         const float S = detachEq ? (scale_ * clampf(c.plrEquipScale, 0.5f, 2.0f)) : (scale_ * clampf(c.plrScale, 0.5f, 2.0f));
         const float eqCell = snap(28.0f * S * clampf(c.plrEqCell, 0.5f, 2.0f));
@@ -535,7 +548,13 @@ void Player::draw(const Frame& f) {
             const float gilB = (showGil && c.plrEqGilPlace == 0) ? snap(24.0f * S) : 0.0f;   // gil below -> taller hit rect
             const float gilR = (showGil && c.plrEqGilPlace == 3) ? snap(80.0f * S) : 0.0f;   // gil right -> wider hit rect
             const float ew = gridW + gilR, eh = gridW + gilB;   // above/left draw outside the -x/-y edge ; the grid stays the grab target
-            if (!demo_ && c.plrEquipPosSet && f.screenW > 0.0f && f.screenH > 0.0f) {
+            if (pvEq_) {
+                // CONFIG PREVIEW : pvEqX_/Y_ is the footprint top-left in the stage ; push the grid past an
+                // above/left gil so the whole box stays inside the group (matches equip_footprint's reserve).
+                float ox = 0.0f, oy = 0.0f;
+                if (showGil) { if (c.plrEqGilPlace == 2) ox = snap(80.0f * S); else if (c.plrEqGilPlace == 1) oy = snap(24.0f * S); }
+                gx0 = pvEqX_ + ox; gy0 = pvEqY_ + oy;
+            } else if (!demo_ && c.plrEquipPosSet && f.screenW > 0.0f && f.screenH > 0.0f) {
                 gx0 = c.plrEquipX * f.screenW; gy0 = c.plrEquipY * f.screenH;
             } else { gx0 = px + W + snap(12.0f * S); gy0 = py; }   // first time : just right of the Hub
             if (c.editLayout && !demo_) {

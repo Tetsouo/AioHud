@@ -78,26 +78,34 @@ static unsigned debuff_fallback_ms(unsigned s) {
 static bool is_wearoff_msg(unsigned m) {
     switch (m) { case 64: case 204: case 206: case 321: case 322: case 350: case 531: return true; default: return false; }
 }
+// //aio dbflog : a countdown of target-debuff mutations still to trace to aiohud_debug.log (0 = off). File-scope
+// so the static record_* helpers can log too. Each traced line decrements it, so a capture self-limits.
+static int s_dbfTrace = 0;
+#define DBFTRACE(...) do { if (s_dbfTrace > 0) { --s_dbfTrace; windower::debug::log(__VA_ARGS__); } } while (0)
+
 static void record_debuff(DebuffSet* tds, unsigned tid, unsigned short st, unsigned baseMs, bool bySelf) {
     const unsigned now = GetTickCount();
     const unsigned char sf = bySelf ? 1 : 0;
     if (!baseMs) baseMs = debuff_fallback_ms(st);
-    int slot = -1, freeS = -1;
-    for (int s = 0; s < 8; ++s) { if (tds[s].id == tid) { slot = s; break; } if (!tds[s].id && freeS < 0) freeS = s; }
-    if (slot < 0) slot = (freeS >= 0) ? freeS : 0;         // all slots taken (fighting >8 mobs) -> reuse slot 0
+    int slot = -1, freeS = -1, oldest = 0;
+    for (int s = 0; s < DEBUFF_SLOTS; ++s) { if (tds[s].id == tid) { slot = s; break; } if (!tds[s].id && freeS < 0) freeS = s; if (tds[s].touchMs < tds[oldest].touchMs) oldest = s; }
+    if (slot < 0) slot = (freeS >= 0) ? freeS : oldest;    // all slots taken -> evict the OLDEST set, never an actively-debuffed target (was slot 0 -> a pack AoE collapsed two mobs into it)
     DebuffSet& d = tds[slot];
-    if (d.id != tid) { d.id = tid; d.n = 0; d.th = 0; }    // switched onto a new mob in this slot -> reset (incl. TH)
-    for (int i = 0; i < d.n; ++i) if (d.ids[i] == st) { d.startMs[i] = now; d.baseMs[i] = baseMs; d.self[i] = sf; return; }   // already present -> refresh + caster
+    if (d.id != tid) { if (d.n > 0) DBFTRACE("DBF rec-RESET slot id=%08X (n=%d) -> new tid=%08X st=%u", d.id, d.n, tid, st); d.id = tid; d.n = 0; d.th = 0; d.lastHpp = 0; }    // switched onto a new mob in this slot -> reset (incl. TH + HP watermark, else the recycle check inherits the old mob's HP)
+    d.touchMs = now;
+    for (int i = 0; i < d.n; ++i) if (d.ids[i] == st) { d.startMs[i] = now; d.baseMs[i] = baseMs; d.self[i] = sf; DBFTRACE("DBF rec-refresh tid=%08X st=%u self=%u n=%d", tid, st, sf, d.n); return; }   // already present -> refresh + caster
     if (d.n < 16) { d.ids[d.n] = st; d.startMs[d.n] = now; d.baseMs[d.n] = baseMs; d.self[d.n] = sf; ++d.n; }
     else { int o = 0; for (int i = 1; i < 16; ++i) if (d.startMs[i] < d.startMs[o]) o = i; d.ids[o] = st; d.startMs[o] = now; d.baseMs[o] = baseMs; d.self[o] = sf; }
+    DBFTRACE("DBF rec-ADD tid=%08X st=%u self=%u n=%d", tid, st, sf, d.n);
 }
 // Treasure Hunter proc on `tid` : find/create the mob's slot and raise its TH level (TH only ever increases on a mob).
 static void record_th(DebuffSet* tds, unsigned tid, unsigned char lvl) {
-    int slot = -1, freeS = -1;
-    for (int s = 0; s < 8; ++s) { if (tds[s].id == tid) { slot = s; break; } if (!tds[s].id && freeS < 0) freeS = s; }
-    if (slot < 0) slot = (freeS >= 0) ? freeS : 0;
+    int slot = -1, freeS = -1, oldest = 0;
+    for (int s = 0; s < DEBUFF_SLOTS; ++s) { if (tds[s].id == tid) { slot = s; break; } if (!tds[s].id && freeS < 0) freeS = s; if (tds[s].touchMs < tds[oldest].touchMs) oldest = s; }
+    if (slot < 0) slot = (freeS >= 0) ? freeS : oldest;
     DebuffSet& d = tds[slot];
-    if (d.id != tid) { d.id = tid; d.n = 0; d.th = 0; }
+    if (d.id != tid) { d.id = tid; d.n = 0; d.th = 0; d.lastHpp = 0; }
+    d.touchMs = GetTickCount();
     if (lvl > d.th) d.th = lvl;
 }
 
@@ -569,6 +577,7 @@ void PartyState::on_action(const unsigned char* p) {
         const bool bySelf = (actor == selfId_);
         const u32 spellId = getbits(p, 86, 16, size);                // actor.param = the cast spell id (258=Bind, 59=Silence)
         const SpellDebuff* de = spell_debuff(spellId);
+        DBFTRACE("DBF cast cat4 actor=%08X spell=%u self=%u -> effect=%d", actor, spellId, bySelf ? 1u : 0u, de ? (int)de->effect : -1);
         if (!de) return;                                             // spell lands no trackable debuff (nuke / cure / buff)
         u32 tcount = getbits(p, 72, 6, size);
         if (tcount < 1) tcount = 1; if (tcount > 16) tcount = 16;
@@ -589,11 +598,12 @@ void PartyState::on_action(const unsigned char* p) {
         const u32 tid = getbits(p, 150, 32, size);
         const u32 st  = getbits(p, 150 + 63, 17, size);    // param : >0 means damage was dealt (not a miss/shadow)
         if (tid && (tid >> 24) == 0x01 && st > 0) {
-            for (int s = 0; s < 8; ++s) if (tdebuffs_[s].id == tid) {
+            for (int s = 0; s < DEBUFF_SLOTS; ++s) if (tdebuffs_[s].id == tid) {
                 DebuffSet& d = tdebuffs_[s];
                 for (int i = 0; i < d.n; ) {
                     unsigned short id = d.ids[i];
                     if (id == 2 || id == 19 || id == 193) {    // Sleep, Sleep II, Lullaby (song sleep)
+                        DBFTRACE("DBF wake-remove tid=%08X st=%u dmg=%u (n was %d)", tid, id, st, d.n);
                         for (int j = i; j < d.n - 1; ++j) { d.ids[j] = d.ids[j + 1]; d.startMs[j] = d.startMs[j + 1]; d.baseMs[j] = d.baseMs[j + 1]; d.self[j] = d.self[j + 1]; }
                         --d.n;
                     } else ++i;
@@ -639,7 +649,7 @@ void PartyState::on_029(const unsigned char* p) {
     u32 tid = pkt_u32(p, 0x08);                               // target server id (reliable on 0x029)
     u32 st  = pkt_u32(p, 0x0C);                               // param = the status id that wore off
     if (!tid || !st) return;
-    for (int s = 0; s < 8; ++s) {
+    for (int s = 0; s < DEBUFF_SLOTS; ++s) {
         if (tdebuffs_[s].id != tid) continue;
         DebuffSet& d = tdebuffs_[s];
         for (int i = 0; i < d.n; ++i) if (d.ids[i] == st) {
@@ -777,13 +787,15 @@ void PartyState::prune_other_buffs_worn() {
 
 int PartyState::target_th(unsigned id) const {
     if (!id) return 0;
-    for (int s = 0; s < 8; ++s) if (tdebuffs_[s].id == id) return (int)tdebuffs_[s].th;
+    for (int s = 0; s < DEBUFF_SLOTS; ++s) if (tdebuffs_[s].id == id) return (int)tdebuffs_[s].th;
     return 0;
 }
 
+void PartyState::set_debuff_trace(int n) { s_dbfTrace = n; }   // //aio dbflog
+
 void PartyState::clear_debuffs(unsigned id) {
     if (!id) return;
-    for (int s = 0; s < 8; ++s) if (tdebuffs_[s].id == id) { tdebuffs_[s] = DebuffSet{}; return; }   // reset the whole slot (id/n/th/lastHpp) -> the recycled id starts clean
+    for (int s = 0; s < DEBUFF_SLOTS; ++s) if (tdebuffs_[s].id == id) { if (tdebuffs_[s].n > 0) DBFTRACE("DBF CLEAR (death via hate) id=%08X n=%d", id, tdebuffs_[s].n); tdebuffs_[s] = DebuffSet{}; return; }   // reset the whole slot (id/n/th/lastHpp) -> the recycled id starts clean
 }
 // Per-frame HP feed for a mob (the current target). FFXI recycles a mob's SERVER id when it dies and another
 // spawns in the same entity slot, so a fresh Apex mob can inherit a corpse's debuffs. Detect the transition:
@@ -792,11 +804,11 @@ void PartyState::clear_debuffs(unsigned id) {
 // Either way each live mob keeps its OWN debuffs and nothing is purged from a mob that's simply still alive.
 void PartyState::note_mob_hp(unsigned id, int hpp) {
     if (!id) return;
-    for (int s = 0; s < 8; ++s) {
+    for (int s = 0; s < DEBUFF_SLOTS; ++s) {
         if (tdebuffs_[s].id != id) continue;
         DebuffSet& d = tdebuffs_[s];
-        if (hpp <= 0) { d = DebuffSet{}; return; }                       // death
-        if (d.lastHpp <= 40 && hpp >= 90) { d = DebuffSet{}; return; }   // recycled id -> fresh spawn
+        if (hpp <= 0) { if (d.n > 0) DBFTRACE("DBF hp-DEATH id=%08X hpp=%d n=%d", id, hpp, d.n); d = DebuffSet{}; return; }                       // death
+        if (d.lastHpp > 0 && d.lastHpp <= 40 && hpp >= 90) { if (d.n > 0) DBFTRACE("DBF hp-RECYCLE id=%08X last=%d hpp=%d -> n was %d", id, d.lastHpp, hpp, d.n); d = DebuffSet{}; return; }   // recycled id -> fresh spawn (lastHpp>0 : a never-observed slot defaults to 0 and must NOT count as near-death, else a debuff on a high-HP mob is wiped next frame)
         d.lastHpp = (unsigned char)(hpp > 100 ? 100 : hpp);
         return;
     }
@@ -805,7 +817,7 @@ void PartyState::note_mob_hp(unsigned id, int hpp) {
 int PartyState::target_debuffs(unsigned id, unsigned short* out, int* remainSec, unsigned char* isSelf, int maxN) const {
     if (!id || !out || maxN <= 0) return 0;
     const DebuffSet* d = 0;
-    for (int s = 0; s < 8; ++s) if (tdebuffs_[s].id == id) { d = &tdebuffs_[s]; break; }
+    for (int s = 0; s < DEBUFF_SLOTS; ++s) if (tdebuffs_[s].id == id) { d = &tdebuffs_[s]; break; }
     if (!d) return 0;
     const unsigned now = GetTickCount();
     static const unsigned SAFETY_MS = 1200000;                            // 20 min : YOUR debuff self-clears on this cap only if its wear-off packet was missed (out of range)

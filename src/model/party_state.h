@@ -89,7 +89,12 @@ struct BuffSet { unsigned id = 0; int n = 0; unsigned short ids[32] = {}; };
 // remaining-time exists in the client -> ICONS ONLY (the packet's promising field was the animation,
 // not a duration). Entries self-expire after an APPROX base duration per status (debuff_base_ms) so the
 // icon clears roughly when the debuff wears -- Stun goes fast, DoTs linger. No countdown is ever shown.
-struct DebuffSet { unsigned id = 0; int n = 0; unsigned short ids[16] = {}; unsigned startMs[16] = {}; unsigned baseMs[16] = {}; unsigned char self[16] = {}; unsigned char th = 0; unsigned char lastHpp = 100; };   // lastHpp : last seen HP% of this mob -> detect death (0) / a fresh mob that RECYCLED this server id (near-dead -> near-full = new spawn) so Apex mobs never inherit a dead mob's debuffs   // baseMs[i] : the casting spell's base duration (tb_debuff_gen) ; self[i] : 1 = YOU cast it (exact wear-off + real timer), 0 = another caster (no wear-off -> kept as "???") ; th : Treasure Hunter level applied to this mob (0 = none)
+// Per-target debuff tracking : one DebuffSet per live mob id. Sized for AoE content -- a -ga / Horde song can
+// debuff a whole same-name pack in one cast, and each mob needs its OWN slot ; too few slots made packs collapse
+// into slot 0, so two mobs "shared" it and each recast wiped the other (the ping-pong depop). touchMs = last time
+// this set was updated -> on overflow we evict the OLDEST set, never an actively-debuffed target.
+static const int DEBUFF_SLOTS = 32;
+struct DebuffSet { unsigned id = 0; int n = 0; unsigned short ids[16] = {}; unsigned startMs[16] = {}; unsigned baseMs[16] = {}; unsigned char self[16] = {}; unsigned char th = 0; unsigned char lastHpp = 100; unsigned touchMs = 0; };   // lastHpp : last seen HP% of this mob -> detect death (0) / a fresh mob that RECYCLED this server id (near-dead -> near-full = new spawn) so Apex mobs never inherit a dead mob's debuffs   // baseMs[i] : the casting spell's base duration (tb_debuff_gen) ; self[i] : 1 = YOU cast it (exact wear-off + real timer), 0 = another caster (no wear-off -> kept as "???") ; th : Treasure Hunter level applied to this mob (0 = none)
 
 // POINTWATCH (module) : the XP / CP / ML progression bar + Merits, ported from AioHUD's pointwatch engine
 // (Byrthnoth's pwcore). 100% packet-fed : 0x061 (char stats : level / EXP / Master Level / Exemplar Points),
@@ -391,7 +396,7 @@ struct PartyState {
     int party_order(unsigned id) const;             // roster position (0..5 party, 6..17 alliance ; 99 unknown) -> sort order
     void on_exp_msg(const unsigned char* p, unsigned id);   // 0x029 / 0x02D : live gains (Param1) + X/h rate
     BuffSet  buffs_[18];
-    DebuffSet tdebuffs_[8];               // debuffs per tracked target id (small : you fight few mobs at once)
+    DebuffSet tdebuffs_[DEBUFF_SLOTS];    // debuffs per tracked target id (roomy : AoE/-ga/Horde songs debuff a whole same-name pack at once)
     unsigned  curTarget_ = 0, selfId_ = 0;   // context for on_action : the mob you're on + your own id
     float     selfX_ = 0.0f, selfZ_ = 0.0f;  // the player's own horizontal position (entity X@+0x04 / Z@+0x0C) -> target distance
     unsigned  encumber_ = 0;              // 0x01B 'Encumbrance Flags' (bit sid = equip slot sid is locked) -> equipment viewer cross
@@ -427,6 +432,7 @@ struct PartyState {
     int  target_debuffs(unsigned id, unsigned short* out, int* remainSec, unsigned char* isSelf, int maxN) const;   // remainSec = -1 -> show "???"
     int  target_th(unsigned id) const;   // Treasure Hunter level applied to target `id` (0 = none / unknown)
     void clear_debuffs(unsigned id);     // drop a mob's tracked debuffs (on its death) so a recycled server id starts clean
+    void set_debuff_trace(int n);        // //aio dbflog : log the next N target-debuff mutations (add/reset/wipe/wake) to aiohud_debug.log
     void note_mob_hp(unsigned id, int hpp);   // per-frame HP feed for a mob : clears its debuffs on death (hpp<=0) or when a fresh mob RECYCLED this id (was near-dead, now near-full)
     unsigned debuff_dur_ms(unsigned status) const;   // LEARNED real duration if observed, else the base estimate
     int  alliance_count(int tier) const;           // live member count for alliance box tier 1 / 2

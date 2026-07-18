@@ -2276,6 +2276,10 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
 // jargon. UPDATE this with each release. `*bold*` markup works (draw_wrapped colours it brighter).
 struct ChangeLine { const char* en; const char* fr; };
 static const ChangeLine CHANGELOG[] = {
+    { "Fixed target debuffs vanishing when you AoE a pack of same-name mobs -- the tracker ran out of room and two mobs ended up sharing one slot, so each cast wiped the other's box. It now holds a whole pack, and each mob keeps its own debuffs.",
+      "Corrig\xC3\xA9 les d\xC3\xA9""buffs de cible qui disparaissaient en AoE sur un pack de mobs du m\xC3\xAAme nom -- le suivi manquait de place et deux mobs partageaient un emplacement, donc chaque cast effa\xC3\xA7""ait la box de l'autre. Il encaisse maintenant un pack entier, chaque mob garde ses propres d\xC3\xA9""buffs." },
+    { "The detached Equipment grid (and its gil) now shows in the Player config Live Preview, stacked under the Hub like the detached debuffs under the target.",
+      "La grille d'\xC3\xA9quipement d\xC3\xA9tach\xC3\xA9""e (et ses gils) appara\xC3\xAet maintenant dans l'aper\xC3\xA7u de la config Player, empil\xC3\xA9""e sous le Hub comme les d\xC3\xA9""buffs d\xC3\xA9tach\xC3\xA9s sous la cible." },
     { "Fixed for real the doubled typing inside AioHud's fields on some keyboards -- the earlier fix relied on a value that a few Windower builds fill with garbage ; press/release is now read from a signal that holds on every setup.",
       "Corrig\xC3\xA9 pour de bon la saisie doubl\xC3\xA9""e dans les champs d'AioHud sur certains claviers -- l'ancien correctif se fiait \xC3\xA0 une valeur que quelques versions de Windower remplissent de d\xC3\xA9""chet ; l'appui/rel\xC3\xA2""chement est d\xC3\xA9sormais lu sur un signal fiable partout." },
     { "*Target debuffs* can now be DETACHED into their own list (Target > Debuffs > Standalone) -- a mob-name header then icon / name / timer rows, your debuffs in gold, others' in white. Icon / Name / Icon+Name display, place it with //aio edit.",

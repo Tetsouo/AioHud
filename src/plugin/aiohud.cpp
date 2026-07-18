@@ -690,6 +690,11 @@ void aio_plugin_command(const char* cmd)
                                         : ">>> AioHud : key log OFF <<<");
         return;
     }
+    if (strstr(buf, "dbflog")) {   // //aio dbflog -> trace the next N target-debuff mutations to aiohud_debug.log (debuff-box diagnosis)
+        aio::party().set_debuff_trace(400);
+        g_host.console().print(">>> AioHud : debuff log ARMED (cast a debuff on a mob, melee/sleep it, then send Windower\\plugins\\aiohud_debug.log ; look for DBF lines) <<<");
+        return;
+    }
     if (strstr(buf, "config")) {
         // In edit layout the config flag is kept "open" (toolbar + mouse capture) -> a bare //aio config
         // must act like the "Done" button : leave edit mode (persisting positions/sizes) AND close, not

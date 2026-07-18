@@ -434,6 +434,24 @@ void Hud::draw_config_preview(const Frame& f) {
         // REAL footprint (incl. in-box equipment grid) + docked-grid margins -> position so nothing spills the preview.
         float tw = 0.0f, th = 0.0f, ml = 0.0f, mt = 0.0f, mr = 0.0f, mb = 0.0f;
         pl->preview_footprint(tw, th, ml, mt, mr, mb);
+        // DETACHED equipment -> show the Hub + the standalone grid as a centred GROUP, stacked VERTICALLY
+        // (Hub on top, grid below), like the Target page stacks the detached debuffs under the target. One
+        // draw() paints both (the grid at the forced pvEq spot).
+        if (ui_config().plrEquip && ui_config().plrEquipDetach) {
+            float ew = 0.0f, eh = 0.0f; pl->equip_footprint(ew, eh);
+            const float gap = 16.0f, groupW = (tw > ew ? tw : ew), groupH = th + gap + eh;
+            float gx = sx + (sw - groupW) * 0.5f; if (gx < sx + 6.0f) gx = sx + 6.0f;
+            float gy = sy + (sh - groupH) * 0.5f; if (gy < sy + 6.0f) gy = sy + 6.0f;
+            const float hubX = gx + (groupW - tw) * 0.5f, eqX = gx + (groupW - ew) * 0.5f, eqY = gy + th + gap;
+            pl->set_origin((float)(int)(hubX + 0.5f), (float)(int)(gy + 0.5f));
+            pl->set_eq_preview(true, (float)(int)(eqX + 0.5f), (float)(int)(eqY + 0.5f));
+            pl->set_demo(true);
+            pl->draw(f);
+            pl->set_demo(false);
+            pl->set_eq_preview(false);
+            pl->set_origin(osx, osy);
+            return;
+        }
         // ALWAYS centred in the stage, within the docked-grid margins so a side equipment grid never spills.
         const float bx = sx + ml + (sw - ml - mr - tw) * 0.5f;
         const float by = sy + mt + (sh - mt - mb - th) * 0.5f;

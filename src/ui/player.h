@@ -32,6 +32,11 @@ public:
 
     // config preview : force the demo player so the box shows in the config stage even when out of game.
     void set_demo(bool on) { demo_ = on; }
+    // config preview : the STANDALONE (detached) equipment box's footprint (grid + gil), at the live scale.
+    void equip_footprint(float& w, float& h) const;
+    // config preview : draw the DETACHED equipment box at a forced footprint top-left inside the stage (so the
+    // Player preview can show the hub + the detached grid as a centred group, like Target + detached debuffs).
+    void set_eq_preview(bool on, float x = 0.0f, float y = 0.0f) { pvEq_ = on; pvEqX_ = x; pvEqY_ = y; }
     // the embedded fiole widget -> the HUD registers it as the shared vial_provider (party/target borrow it).
     LiquidBars* provider() { return vials_; }
 
@@ -39,6 +44,7 @@ private:
     const GameState* state_;
     LiquidBars* vials_ = nullptr;    // embedded : draws the 3 fioles + is the shared vial provider
     bool  demo_ = false;
+    bool  pvEq_ = false; float pvEqX_ = 0.0f, pvEqY_ = 0.0f;   // config-preview override for the DETACHED equipment box
 
     u32   jobicon_tex_ = 0; bool jobicon_tried_ = false;
     u32   buff_tex_    = 0; bool buff_tried_ = false;
