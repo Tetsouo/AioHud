@@ -228,7 +228,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     const float bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f, pw = snap(58.0f), pxs = coX + ctrlW - pw;
                     flat(dev, pxs, bty, pw, bbh, F | 0xFF000000u); outline(dev, pxs, bty, pw, bbh, C_BORDER);
                 } ROW_NEXT(52.0f)
-                CFG_COLOR_PICKER(&F)
+                CFG_COLOR_PICKER_I(&F, zi)   // per-item uids : all three expand on THIS line, see the macro
             }
         }
         { ROW_BAND(52.0f)   // Border : the box frame (+ the floating Cost box)

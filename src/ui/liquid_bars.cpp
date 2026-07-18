@@ -657,6 +657,10 @@ void LiquidBars::draw_vial_scaled(u32 dev, float t, float x, float y, float w, f
     // end the rounded clip (stencil off) -> the fiole is a clean liquid capsule : round ends, transparent
     // corners, no black.
     rrect_clip_end(dev);
+    // surface_glow above left DESTBLEND = ONE and rrect_clip_end only touches stencil/colour-write, so this
+    // function used to RETURN additive : the target's damage trail, drawn right after, rendered as a glowing
+    // streak instead of a solid band. Restore the normal blend here rather than relying on each caller.
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
 }
 
 } // namespace aio

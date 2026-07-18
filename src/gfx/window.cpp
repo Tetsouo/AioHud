@@ -79,11 +79,14 @@ const char* window_theme_name(int i) {
 
 bool WindowSkin::load(u32 dev, const char* themeName) {
     if (!valid_ptr(dev) || !themeName) return false;
+    // ASSET_BASE() can legitimately return 259 chars (plugin_path caps at 260), and each build appends ~12 more.
+    // sprintf here was unbounded -> a deep install path (Program Files + a long user folder, the exact shape that
+    // has bitten the NA tester before) would smash this stack buffer at load time and on every theme change.
     char p[260];
-    sprintf(p, "%s\\%s\\corner.raw", ASSET_BASE(), themeName); corner = load_raw_texture(dev, p, 32, 32);
-    sprintf(p, "%s\\%s\\hframe.raw", ASSET_BASE(), themeName); hframe = load_raw_texture(dev, p, 32, 32);
-    sprintf(p, "%s\\%s\\vframe.raw", ASSET_BASE(), themeName); vframe = load_raw_texture(dev, p, 32, 32);
-    sprintf(p, "%s\\%s\\bg.raw",     ASSET_BASE(), themeName); bg     = load_raw_texture(dev, p, 128, 128);
+    _snprintf(p, sizeof(p), "%s\\%s\\corner.raw", ASSET_BASE(), themeName); p[sizeof(p) - 1] = 0; corner = load_raw_texture(dev, p, 32, 32);
+    _snprintf(p, sizeof(p), "%s\\%s\\hframe.raw", ASSET_BASE(), themeName); p[sizeof(p) - 1] = 0; hframe = load_raw_texture(dev, p, 32, 32);
+    _snprintf(p, sizeof(p), "%s\\%s\\vframe.raw", ASSET_BASE(), themeName); p[sizeof(p) - 1] = 0; vframe = load_raw_texture(dev, p, 32, 32);
+    _snprintf(p, sizeof(p), "%s\\%s\\bg.raw",     ASSET_BASE(), themeName); p[sizeof(p) - 1] = 0; bg     = load_raw_texture(dev, p, 128, 128);
     borderColor = border_from_bg(p);     // derive the border colour from this theme's bg
     return ready();
 }

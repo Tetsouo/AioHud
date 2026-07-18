@@ -23,8 +23,15 @@
 // an HSV colour-picker row (SV square + hue bar + swatch), TOP-aligned in its tall band (ROW_BAND would
 // centre it as 40px content). Portable across every panel : needs the ROW_BAND contract vars PLUS
 // dev/mo/coX/ctrlW from the panel signature. USV/UHUE = two UNIQUE drag uids ; FIELDPTR = &u32 colour.
-#define CFG_COLOR_PICKER(FIELDPTR) \
+#define CFG_COLOR_PICKER(FIELDPTR) CFG_COLOR_PICKER_I(FIELDPTR, 0)
+
+// LOOP variant. CTRL_ID is a file:LINE hash, so a picker expanded inside a `for` gives EVERY iteration the
+// SAME uid -- the pickers then share one drag/hover slot and dragging one moves the others (this shipped: the
+// Close / Normal / Far distance colours in party_config.cpp). Pass the loop index and each item gets its own
+// pair of uids, mixed through ctrl_uid_i so they scatter instead of landing on a neighbour's id.
+#define CFG_COLOR_PICKER_I(FIELDPTR, IDX) \
     { row_band(dev, bandX, ry, bandW, snap(color_picker_height()), (ri & 1) != 0, 0.0f); \
       float ap_ = stagger(anim_, ri); g_fade = e * ap_; \
-      color_picker(dev, fo, mo, CTRL_ID, CTRL_ID + 1, coX, ry + (1.0f - ap_) * snap(14.0f) + snap(6.0f), ctrlW, FIELDPTR); } \
+      color_picker(dev, fo, mo, ::aio::ctrl_uid_i(CTRL_ID, (IDX) * 2), ::aio::ctrl_uid_i(CTRL_ID, (IDX) * 2 + 1), \
+                   coX, ry + (1.0f - ap_) * snap(14.0f) + snap(6.0f), ctrlW, FIELDPTR); } \
     ROW_NEXT(color_picker_height())

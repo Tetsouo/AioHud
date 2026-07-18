@@ -57,6 +57,10 @@ static const char* hl_fit(Font* fo, const char* s, float sz, float maxW, char* b
     buf[0] = s[0]; buf[1] = 0; return buf;
 }
 
+// A representative 15-character name (the client's hard cap) : one capital + average-width lowercase.
+// Used ONLY to reserve the target column's width, never drawn.
+static const char* const HL_NAME_SAMPLE = "Naaaaaaaaaaaaaa";
+
 // The mobs that have aggro on you / your party, one HP bar (fiole) per mob : "[dist]  name .... HP%  >> PC".
 // Rows come from party().hate_rows() (fed by the 0x028 enmity tracker), sorted by HP ascending ; the row you're
 // TARGETING is framed gold (red when the mob is claimed). A sample list in preview / edit. Placed via //aio edit
@@ -120,12 +124,23 @@ void hatelist_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS
     const float rowH = barH + 3.0f * S;                   // css : .haterow + .haterow { margin-top: 3px }
     const float arrowW = zPc * 0.72f;
 
-    // ---- measure the side columns (each with its own font + CAPS) ----
+    // ---- side columns : RESERVE the worst case, never measure the current rows ----
+    // Sizing these on the live content made the whole box breathe every time a mob switched target or a distance
+    // ticked : an FFXI name is 3..15 characters, so "Gab" -> "Gabvanstronger" moved the right column by ~90px --
+    // and since the box is CENTRE-anchored (px = X*screenW - boxW*0.5), the LEFT edge jumped too. Reserving the
+    // maximum up front makes the frame fixed: content changes inside it, the box itself never moves.
+    // 15 = the client's hard cap on a character name ; the distance field is at most "999.9".
     char db[8], nb[24], pb[6], cb[20];
     float wDist = 0, wTgt = 0;
-    for (int i = 0; i < nrows; ++i) {
-        if (shDist) { float a = fDist->measure(hl_up(HL_DIST, rows[i].dist, db, 8), zDist); if (a > wDist) wDist = a; }
-        if (shTgt && rows[i].pc[0]) { float a = arrowW + gap * 0.6f + fPc->measure(hl_up(HL_TARGET, rows[i].pc, cb, 20), zPc); if (a > wTgt) wTgt = a; }
+    if (shDist) wDist = fDist->measure(hl_up(HL_DIST, "999.9", db, 8), zDist);
+    if (shTgt) {
+        bool anyTgt = false;
+        for (int i = 0; i < nrows && !anyTgt; ++i) anyTgt = (rows[i].pc[0] != 0);
+        // 15 chars of "Mm" would be the true worst case, but M/m are the widest glyphs in the face and that
+        // over-reserves by roughly a third -- visibly empty space next to an 11-char name. Reserve a
+        // REALISTIC 15-char name instead, and ellipsize anything wider at draw time (below) so a name made
+        // of wide glyphs cannot spill past the reservation. Fixed width either way : the box never moves.
+        if (anyTgt) wTgt = arrowW + gap * 0.6f + fPc->measure(hl_up(HL_TARGET, HL_NAME_SAMPLE, cb, 20), zPc);
     }
     const float contentW = (shDist ? wDist + gap : 0.0f) + barW + (wTgt > 0 ? gap + wTgt : 0.0f);
     const float boxW = contentW + 2.0f * pad;
@@ -186,7 +201,9 @@ void hatelist_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS
             dColorQuadState(dev);
             float x = xTgt;
             x += hl_dblarrow(dev, x, cy, zPc, R.red ? red : gold) + gap * 0.6f;
-            const char* pc = hl_up(HL_TARGET, R.pc, cb, 20);
+            // clamp to what the column reserved, so a wide-glyph name cannot run past it into the bar
+            const float pcMaxW = wTgt - arrowW - gap * 0.6f;
+            const char* pc = hl_fit(fPc, hl_up(HL_TARGET, R.pc, cb, 20), zPc, pcMaxW, fitb, 24);
             fPc->begin(dev); fPc->draw_lc(dev, x, cy, pc, zPc, pcCol, strk, oPc);
         }
         rowTop += rowH;

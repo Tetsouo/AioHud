@@ -523,10 +523,14 @@ void Hud::draw_timers(const Frame& f, bool preview, float ovX, float ovY, float 
 }
 
 // The Help sample owns its own copy of the buff-icon atlas (lazy) so it can draw Duration icons without a Hud.
+// File-scope, NOT function-local : Hud::render's dev-change block forgets the member handles, and a
+// function-local static is unreachable from it. After a device recreate (zoning / alt-tab) the stale
+// handle would go to SetTexture with its owning device destroyed. timers_help_forget() clears it from that block.
+static u32 g_tmHelpTex = 0; static bool g_tmHelpTried = false;
+void timers_help_forget() { g_tmHelpTex = 0; g_tmHelpTried = false; }
 static u32 timers_help_atlas(u32 dev) {
-    static u32 tex = 0; static bool tried = false;
-    if (!tried) { tex = load_raw_texture(dev, buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H); tried = true; }
-    return tex;
+    if (!g_tmHelpTried) { g_tmHelpTex = load_raw_texture(dev, buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H); g_tmHelpTried = true; }
+    return g_tmHelpTex;
 }
 
 // Help sample : the REAL Timers box(es) in preview mode (config-aware), centred at (cx,cy) at scale `s`.

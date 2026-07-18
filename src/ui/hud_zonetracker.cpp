@@ -213,7 +213,10 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         // ---- resistances of the current target (cached by name ; recomputed only when the target changes) ----
         static ResData rd; static char rdName[24] = {0};
         bool haveRes = false;
-        if (preview || editing) { haveRes = (C.ztSheolRes != 0) && compute_resistances("Tiger", 2, rd); }
+        // The preview writes the SAMPLE mob into the shared `rd`. It must also invalidate `rdName`, or the live
+        // path (which recomputes only when the target NAME changes) keeps drawing the sample's resistances on
+        // the real box until you target something differently named -- opening the config page poisons it.
+        if (preview || editing) { haveRes = (C.ztSheolRes != 0) && compute_resistances("Tiger", 2, rd); rdName[0] = 0; }
         else if (C.ztSheolRes && f.game && f.game->target.valid && f.game->target.spawnType == 0x10 && !lastRun) {
             const char* tn = f.game->target.name;
             if (strcmp(tn, rdName) != 0) { compute_resistances(tn, sheol, rd); int k = 0; for (; tn[k] && k < 23; ++k) rdName[k] = tn[k]; rdName[k] = 0; }
@@ -402,6 +405,9 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         if (curW > contentW) contentW = curW;
         if (hasRun && fR->measure(runLine, zR) > contentW) contentW = fR->measure(runLine, zR);
         if (hasChip && chipRowW > contentW) contentW = chipRowW;
+        // The gauge caption is drawn INSIDE a gauge that the user can narrow to 40% while enlarging this very
+        // text element -- measure it too, or it spills out through the box frame with nothing clipping it.
+        if (pctLine[0] && fG->measure(pctLine, zG) > contentW) contentW = fG->measure(pctLine, zG);
         if (contentW < 130.0f * S) contentW = 130.0f * S;
         const float boxW = contentW + 2.0f * pad;
         const float boxH = pad + (showHdr ? headH + gap : 0.0f) + (hasName ? lineH : 0.0f)
@@ -609,10 +615,14 @@ void Hud::draw_zonetracker(const Frame& f, bool preview, float ovX, float ovY, f
 }
 
 // The Help sample owns its own copy of the Odyssey weapon-icons sheet (lazy) so it can draw without a Hud.
+// File-scope, NOT function-local : Hud::render's dev-change block forgets the member handles, and a
+// function-local static is unreachable from it. After a device recreate (zoning / alt-tab) the stale
+// handle would go to SetTexture with its owning device destroyed. zonetracker_help_forget() clears it from that block.
+static u32 g_ztHelpTex = 0; static bool g_ztHelpTried = false;
+void zonetracker_help_forget() { g_ztHelpTex = 0; g_ztHelpTried = false; }
 static u32 zonetracker_help_weapons(u32 dev) {
-    static u32 tex = 0; static bool tried = false;
-    if (!tried) { tex = load_raw_texture(dev, WEAPON_ICONS_PATH(), 96, 32); tried = true; }
-    return tex;
+    if (!g_ztHelpTried) { g_ztHelpTex = load_raw_texture(dev, WEAPON_ICONS_PATH(), 96, 32); g_ztHelpTried = true; }
+    return g_ztHelpTex;
 }
 
 // Help sample : the REAL Zone Tracker box in preview mode for a FORCED content `variant` (config-aware), centred.

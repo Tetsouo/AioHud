@@ -1170,6 +1170,19 @@ void reset_ui_config() {   // general Default : everything
     c.ztOmObj = d.ztOmObj; c.ztOmCount = d.ztOmCount; c.ztOmRows = d.ztOmRows;
     c.ztNyFloor = d.ztNyFloor; c.ztNyTime = d.ztNyTime; c.ztNyObj = d.ztNyObj; c.ztNyRestr = d.ztNyRestr; c.ztNyComp = d.ztNyComp; c.ztNyRate = d.ztNyRate; c.ztNyTok = d.ztNyTok;
     c.ztShFam = d.ztShFam; c.ztShIcon = d.ztShIcon; c.ztShDot = d.ztShDot;
+    // TIMERS -- the whole module was missing from this reset : "Reset all" left the box position, scale, fused
+    // mode, typography AND the per-job tracking blacklist standing. That last one is the painful part : a job
+    // preset can hold ~200 keys, so a user resetting to escape a bad tracking config could not.
+    c.tmShow = d.tmShow; c.tmScale = d.tmScale; c.tmX = d.tmX; c.tmY = d.tmY; c.tmMax = d.tmMax; c.tmTitle = d.tmTitle;
+    c.tmMerged = d.tmMerged; c.tmRX = d.tmRX; c.tmRY = d.tmRY; c.tmDurMode = d.tmDurMode; c.tmRecMode = d.tmRecMode;
+    c.tmIconScale = d.tmIconScale; c.tmRowGap = d.tmRowGap; c.tmOthers = d.tmOthers; c.tmBuffSrc = d.tmBuffSrc;
+    c.tmSpAlert = d.tmSpAlert; c.tmMine = d.tmMine; c.tmAllyGroup = d.tmAllyGroup;
+    c.tmFocusWarn = d.tmFocusWarn; c.tmFocusHold = d.tmFocusHold; c.tmPreset = d.tmPreset; c.tmBox = d.tmBox;
+    for (int k = 0; k < TM_TE_COUNT; ++k) c.tmText[k] = TextStyle();
+    for (int j = 0; j < 24; ++j) c.tmTrackOffN[j] = 0;   // clearing the COUNT empties each job's blacklist
+    // Stragglers : the draggable Zones-panel corner. `lang` is deliberately NOT reset -- a language reset would
+    // leave the user reading a UI they may not understand, with the setting to fix it also in that language.
+    c.zonePanelX = d.zonePanelX; c.zonePanelY = d.zonePanelY;
     c.epShow = d.epShow; c.epScale = d.epScale; c.epX = d.epX; c.epY = d.epY; c.epColl = d.epColl;
     lstrcpynA(c.epTrack, d.epTrack, sizeof(c.epTrack));   // char[] : copy the CONTENT (plain '=' won't compile)
     c.scBox = d.scBox; c.tpBox = d.tpBox; c.hlBox = d.hlBox; c.pwBox = d.pwBox; c.ztBox = d.ztBox; c.mmBox = d.mmBox; c.epBox = d.epBox; c.dbBox = d.dbBox; c.plrEqBox = d.plrEqBox;

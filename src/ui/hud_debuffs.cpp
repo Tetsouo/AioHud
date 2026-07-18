@@ -176,10 +176,14 @@ void Hud::draw_debuffs(const Frame& f, bool preview, float ovX, float ovY, float
 }
 
 // The Help sample owns its own copy of the buff-icon atlas (lazy) so it can draw debuff icons without a Hud.
+// File-scope, NOT function-local : Hud::render's dev-change block forgets the member handles, and a
+// function-local static is unreachable from it. After a device recreate (zoning / alt-tab) the stale
+// handle would go to SetTexture with its owning device destroyed. debuffs_help_forget() clears it from that block.
+static u32 g_dbHelpTex = 0; static bool g_dbHelpTried = false;
+void debuffs_help_forget() { g_dbHelpTex = 0; g_dbHelpTried = false; }
 static u32 debuffs_help_atlas(u32 dev) {
-    static u32 tex = 0; static bool tried = false;
-    if (!tried) { tex = load_raw_texture(dev, buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H); tried = true; }
-    return tex;
+    if (!g_dbHelpTried) { g_dbHelpTex = load_raw_texture(dev, buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H); g_dbHelpTried = true; }
+    return g_dbHelpTex;
 }
 
 // Help sample : the REAL Debuffs box in preview mode (config-aware), centred at (cx,cy) at scale s.
