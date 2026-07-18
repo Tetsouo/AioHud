@@ -84,6 +84,15 @@ static int s_dbfTrace = 0;
 #define DBFTRACE(...) do { if (s_dbfTrace > 0) { --s_dbfTrace; windower::debug::log(__VA_ARGS__); } } while (0)
 
 static inline bool is_sleep_status(unsigned s) { return s == 2 || s == 19 || s == 193; }   // Sleep, Sleep II, Lullaby (song sleep)
+// Statuses that PREVENT a mob from acting : sleep-family + Petrification (7), Stun (10), Terror (28). If the mob
+// ACTS, it is no longer under ANY of them -> drop them. (NOT Bind / Silence / Amnesia / Charm : a mob still acts.)
+static inline bool is_incapacitate_status(unsigned s) { return is_sleep_status(s) || s == 7 || s == 10 || s == 28; }
+// The only magic-block a MOB can carry is Silence (6) : nothing we can do Mutes a mob (Mute is mob->player only),
+// and Omerta is a player event status. So a mob casting a spell clears exactly Silence.
+static inline bool is_magic_block_status(unsigned s) { return s == 6; }
+// Damage-over-time statuses (each tick deals HP damage -> wakes a slept mob) : Poison (3), Kaustra (23),
+// Burn/Frost/Choke/Rasp/Shock/Drown (128-133), Dia (134), Bio (135), Helix (186), Requiem (192).
+static inline bool is_dot_status(unsigned s) { return s == 3 || s == 23 || (s >= 128 && s <= 135) || s == 186 || s == 192; }
 
 static void record_debuff(DebuffSet* tds, unsigned tid, unsigned short st, unsigned baseMs, bool bySelf) {
     const unsigned now = GetTickCount();
@@ -95,6 +104,12 @@ static void record_debuff(DebuffSet* tds, unsigned tid, unsigned short st, unsig
     DebuffSet& d = tds[slot];
     if (d.id != tid) { if (d.n > 0) DBFTRACE("DBF rec-RESET slot id=%08X (n=%d) -> new tid=%08X st=%u", d.id, d.n, tid, st); d.id = tid; d.n = 0; d.th = 0; d.lastHpp = 0; }    // switched onto a new mob in this slot -> reset (incl. TH + HP watermark, else the recycle check inherits the old mob's HP)
     d.touchMs = now;
+    // DoT <-> sleep are mutually exclusive on a mob : a DoT tick wakes the sleep. Our OWN wakes come through the
+    // game's "no longer asleep" message (on_029) exactly, but we do NOT receive that message when ANOTHER player's
+    // DoT/hit wakes the mob -> enforce it from what we DO track (every caster's debuffs) : any DoT drops any sleep,
+    // and a sleep landing on a DoT'd mob is a no-op. (Hits from anyone are handled by the cat 1/2 wake path.)
+    if (is_sleep_status(st)) { for (int i = 0; i < d.n; ++i) if (is_dot_status(d.ids[i])) { DBFTRACE("DBF sleep-skip (DoT %u up) tid=%08X st=%u", d.ids[i], tid, st); return; } }
+    else if (is_dot_status(st)) { for (int i = 0; i < d.n; ) { if (is_sleep_status(d.ids[i])) { DBFTRACE("DBF sleep-drop (DoT %u) tid=%08X st=%u", st, tid, d.ids[i]); for (int j = i; j < d.n - 1; ++j) { d.ids[j] = d.ids[j + 1]; d.startMs[j] = d.startMs[j + 1]; d.baseMs[j] = d.baseMs[j + 1]; d.self[j] = d.self[j + 1]; } --d.n; } else ++i; } }
     for (int i = 0; i < d.n; ++i) if (d.ids[i] == st) { d.startMs[i] = now; d.baseMs[i] = baseMs; d.self[i] = sf; DBFTRACE("DBF rec-refresh tid=%08X st=%u self=%u n=%d", tid, st, sf, d.n); return; }   // already present -> refresh + caster
     if (d.n < 16) { d.ids[d.n] = st; d.startMs[d.n] = now; d.baseMs[d.n] = baseMs; d.self[d.n] = sf; ++d.n; }
     else { int o = 0; for (int i = 1; i < 16; ++i) if (d.startMs[i] < d.startMs[o]) o = i; d.ids[o] = st; d.startMs[o] = now; d.baseMs[o] = baseMs; d.self[o] = sf; }
@@ -250,6 +265,25 @@ void PartyState::on_action(const unsigned char* p) {
     if (size < 30) return;                                 // begin-cast needs the action block (bit 213 -> byte 26..)
     u32 cat = getbits(p, 82, 4, size);
     u32 actor = getbits(p, 40, 32, size);
+
+    // ---- SLEEP WAKE BY ACTION : a slept mob that ACTS (it's the ACTOR of an action -- melee / readies a TP move /
+    // begins or finishes a spell or job ability) has clearly woken -> drop its sleep. Catches wakes we get no
+    // "no longer asleep" message for (someone else woke it), from the mob's OWN broadcast action ; the actor id
+    // names the exact mob, so several mobs acting at once are disambiguated cleanly. ----
+    if (actor && (actor >> 24) == 0x01 &&
+        (cat == 1 || cat == 2 || cat == 3 || cat == 4 || cat == 6 || cat == 7 || cat == 8 || cat == 11)) {
+        for (int s = 0; s < DEBUFF_SLOTS; ++s) if (tdebuffs_[s].id == actor) {
+            DebuffSet& d = tdebuffs_[s];
+            const bool magicCast = (cat == 4 || cat == 8);   // the mob cast a spell -> not Silenced. Melee / TP move / ability do NOT clear Silence.
+            for (int i = 0; i < d.n; ) {
+                const unsigned cur = d.ids[i];
+                if (is_incapacitate_status(cur) || (magicCast && is_magic_block_status(cur))) { DBFTRACE("DBF actor-wake tid=%08X cat=%u st=%u", actor, cat, cur);
+                    for (int j = i; j < d.n - 1; ++j) { d.ids[j] = d.ids[j + 1]; d.startMs[j] = d.startMs[j + 1]; d.baseMs[j] = d.baseMs[j + 1]; d.self[j] = d.self[j + 1]; } --d.n; }
+                else ++i;
+            }
+            break;
+        }
+    }
 
     // ---- TREASURE HUNTER : detected EXACTLY like the reference addons on RETAIL (Krizz's THTracker + Ariel's easyTH,
     // web-verified 2026-07-10) : a TH proc is an ADD-EFFECT with **animation 7** and **message 603**, and the tier is

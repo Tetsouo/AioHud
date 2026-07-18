@@ -2276,6 +2276,8 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
 // jargon. UPDATE this with each release. `*bold*` markup works (draw_wrapped colours it brighter).
 struct ChangeLine { const char* en; const char* fr; };
 static const ChangeLine CHANGELOG[] = {
+    { "Crowd-control debuffs now clear from what the mob DOES : any DoT or hit from anyone wakes Sleep ; the mob taking an action clears Sleep / Petrification / Stun / Terror ; and casting a spell clears Silence. So a mob you can see act no longer keeps a stale icon.",
+      "Les d\xC3\xA9""buffs de contr\xC3\xB4le se retirent d\xC3\xA9sormais selon ce que FAIT le mob : un DoT ou un coup de n'importe qui r\xC3\xA9veille le Sleep ; le mob qui agit enl\xC3\xA8ve Sleep / P\xC3\xA9trification / Stun / Terror ; et lancer un sort enl\xC3\xA8ve Silence. Un mob qu'on voit agir ne garde plus d'ic\xC3\xB4ne p\xC3\xA9rim\xC3\xA9""e." },
     { "Sleep debuffs (Sleep / Lullaby) now clear the instant the mob wakes -- hit, DoT (Requiem / Dia), or a natural wear-off -- read from the game's own \"no longer asleep\" message. And recasting a sleep that has No Effect no longer resets its timer to full.",
       "Les d\xC3\xA9""buffs de sommeil (Sleep / Lullaby) dispara\xC3\xAEssent d\xC3\xA9sormais d\xC3\xA8s que le mob se r\xC3\xA9veille -- coup, DoT (Requiem / Dia) ou expiration naturelle -- lu depuis le message \xC2\xAB no longer asleep \xC2\xBB du jeu. Et relancer un sommeil sans effet ne remet plus son timer \xC3\xA0 fond." },
     { "A debuff timer past its estimate now counts NEGATIVE (-0:30) instead of showing \"???\", so you see how far over it is.",
