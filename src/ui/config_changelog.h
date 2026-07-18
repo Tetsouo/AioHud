@@ -1,0 +1,91 @@
+// config_changelog.h -- the per-version Update-tab changelog, split out of config_page.cpp (PURE MOVE).
+//
+// This block grows by one CL_<ver> group EVERY release by design, so keeping it here means the release
+// ritual stops touching the biggest file in the repo. Data only. Included ONCE, by config_page.cpp.
+// NOTE: included from INSIDE `namespace aio` in config_page.cpp, so this file must NOT open the
+// namespace itself (that would nest it as aio::aio::).
+#pragma once
+
+        }
+}
+
+// A short, user-facing "what changed" list for THIS build -- shown under the Update controls so a player knows
+// what the version they run (or just updated to) actually fixes / adds. PLAIN language, what not how ; no dev
+// jargon. UPDATE this with each release. `*bold*` markup works (draw_wrapped colours it brighter).
+struct ChangeLine { const char* en; const char* fr; };
+
+// Per-version change lines. Grouped BY VERSION so the Update tab can show the newest release expanded and the
+// older ones as collapsible headers. `*bold*` markup works (draw_wrapped colours it brighter).
+static const ChangeLine CL_28[] = {
+    { "*Limbus* joins the Zone Tracker. In Apollyon or Temenos the box shows the area and its level, the floor you are on with its progress gauge, your Temenos and Apollyon units, what the run has banked so far, and how many data collections you have left this week.",
+      "*Limbus* rejoint le Suivi de zone. Dans Apollyon ou Temenos, le cadre affiche la zone et son niveau, l'étage où tu es avec sa jauge de progression, tes units Temenos et Apollyon, ce que le run a rapporté jusque-là, et le nombre de collectes de données qu'il te reste cette semaine." },
+    { "Limbus coffers get a row of dots, one per quadrant : dim when you have not opened it, red for a 3k, green for a 5k. Reopening a quadrant updates its dot, and finding a 5k clears the others while keeping the green one — so you can see at a glance where the good one was. The row is kept per zone and survives restarts.",
+      "Les coffres Limbus ont une rangée de pastilles, une par quadrant : éteinte tant que tu ne l'as pas ouvert, rouge pour un 3k, verte pour un 5k. Rouvrir un quadrant met sa pastille à jour, et trouver un 5k efface les autres en gardant la verte — tu vois d'un coup d'œil où était le bon. La rangée est gardée par zone et survit aux redémarrages." },
+    { "The whole Zone Tracker is now yours to arrange : for every zone (Dynamis, Abyssea, Omen, Nyzul, Sheol, Limbus) each line can be hidden on its own, each piece of text has its own font, size, outline and colour, and the bars, dots and icons can be resized. Pick the zone with *Content* at the top of the panel — it drives both the preview and the options shown below.",
+      "Le Suivi de zone s'arrange entièrement : pour chaque zone (Dynamis, Abyssea, Omen, Nyzul, Sheol, Limbus) chaque ligne se masque séparément, chaque texte a sa police, sa taille, son contour et sa couleur, et les barres, pastilles et icônes se redimensionnent. Choisis la zone avec *Contenu* en haut du panneau — il pilote l'aperçu et les options affichées en dessous." },
+    { "Party members can be coloured by distance (close / normal / far), and the detached equipment box can have its own frame.",
+      "Les membres du groupe peuvent être colorés selon la distance (proche / normale / loin), et la box d'équipement détachée peut avoir son propre cadre." },
+    { "Note for those who had styled the Zone Tracker : its rows now each carry their own text style instead of sharing *Body*, so a custom *Body* setting falls back to the default once on those lines.",
+      "Note pour ceux qui avaient stylisé le Suivi de zone : ses lignes ont désormais chacune leur propre style de texte au lieu de partager *Corps*, donc un réglage *Corps* personnalisé revient une fois au défaut sur ces lignes." },
+};
+static const ChangeLine CL_27[] = {
+    { "Fixed the version headers in this changelog spilling over the update card (and the footer) while scrolling.",
+      "Corrig\xC3\xA9 les en-t\xC3\xAAtes de version de ce changelog qui d\xC3\xA9""bordaient sur la carte de mise \xC3\xA0 jour (et le pied de page) pendant le d\xC3\xA9""filement." },
+};
+static const ChangeLine CL_26[] = {
+    { "Minimap gains four options : a copper-bezel width slider, a cardinal-marks size slider, a No-bezel toggle (just the round lens), and a square-frame border width (which now grows OUTWARD). The target line on the minimap is coloured like the target's own marker.",
+      "La minimap gagne quatre options : un curseur de largeur de l'anneau cuivre, un curseur de taille des points cardinaux, un bouton Sans-anneau (juste la lentille ronde), et une largeur de bordure du cadre carr\xC3\xA9 (qui grandit vers l'EXT\xC3\x89RIEUR). Le trait vers la cible prend la couleur de la puce de la cible." },
+    { "Target debuffs : the detached box lays out in two columns past 16, the in-box list goes up to 32, and the Max is reflected live in the config preview.",
+      "D\xC3\xA9""buffs de cible : la box d\xC3\xA9tach\xC3\xA9""e passe en deux colonnes au-del\xC3\xA0 de 16, la liste dans la cible monte jusqu'\xC3\xA0 32, et le Max se refl\xC3\xA8te en direct dans l'aper\xC3\xA7u." },
+    { "Party fixes: HP turns yellow below 75% like the game; the member buff strip no longer overflows the config preview when Max Buffs is high; the Gil toggle now lives in Content (or Equipment when the gear is detached); Speed keeps its own row when Name/Level are hidden; the minimap retries loading on a zone-in; and the Treasure Pool clears on a zone change.",
+      "Corrections Party : les PV passent au jaune sous 75 % comme le jeu ; le bandeau de buffs des membres ne d\xC3\xA9""borde plus de l'aper\xC3\xA7u quand Max Buffs est haut ; le bouton Gil est d\xC3\xA9sormais dans Contenu (ou \xC3\x89quipement si l'\xC3\xA9quipement est d\xC3\xA9tach\xC3\xA9) ; Speed garde sa propre ligne quand Nom/Niveau sont masqu\xC3\xA9s ; la minimap r\xC3\xA9""essaie de charger au changement de zone ; et le Treasure Pool se vide au changement de zone." },
+    { "Removed the vestigial Cursor option ; and the game's native cursor no longer reappears on top of AioHud's own pointer when you move the mouse back into the window with the config open.",
+      "Retir\xC3\xA9 l'option Curseur devenue inutile ; et le curseur natif du jeu ne r\xC3\xA9""appara\xC3\xAet plus par-dessus le pointeur d'AioHud quand tu ram\xC3\xA8nes la souris dans la fen\xC3\xAAtre avec la config ouverte." },
+};
+static const ChangeLine CL_25[] = {
+    { "Crowd-control debuffs now clear from what the mob DOES : any DoT or hit from anyone wakes Sleep ; the mob taking an action clears Sleep / Petrification / Stun / Terror ; and casting a spell clears Silence. So a mob you can see act no longer keeps a stale icon.",
+      "Les d\xC3\xA9""buffs de contr\xC3\xB4le se retirent d\xC3\xA9sormais selon ce que FAIT le mob : un DoT ou un coup de n'importe qui r\xC3\xA9veille le Sleep ; le mob qui agit enl\xC3\xA8ve Sleep / P\xC3\xA9trification / Stun / Terror ; et lancer un sort enl\xC3\xA8ve Silence. Un mob qu'on voit agir ne garde plus d'ic\xC3\xB4ne p\xC3\xA9rim\xC3\xA9""e." },
+};
+static const ChangeLine CL_24[] = {
+    { "Sleep debuffs (Sleep / Lullaby) now clear the instant the mob wakes -- hit, DoT (Requiem / Dia), or a natural wear-off -- read from the game's own \"no longer asleep\" message. And recasting a sleep that has No Effect no longer resets its timer to full.",
+      "Les d\xC3\xA9""buffs de sommeil (Sleep / Lullaby) dispara\xC3\xAEssent d\xC3\xA9sormais d\xC3\xA8s que le mob se r\xC3\xA9veille -- coup, DoT (Requiem / Dia) ou expiration naturelle -- lu depuis le message \xC2\xAB no longer asleep \xC2\xBB du jeu. Et relancer un sommeil sans effet ne remet plus son timer \xC3\xA0 fond." },
+    { "A debuff timer past its estimate now counts NEGATIVE (-0:30) instead of showing \"???\", so you see how far over it is.",
+      "Un timer de d\xC3\xA9""buff au-del\xC3\xA0 de son estimation compte maintenant en N\xC3\x89GATIF (-0:30) au lieu d'afficher \xC2\xAB ??? \xC2\xBB, pour voir de combien il d\xC3\xA9""passe." },
+};
+static const ChangeLine CL_23[] = {
+    { "Fixed target debuffs vanishing when you AoE a pack of same-name mobs -- the tracker ran out of room and two mobs ended up sharing one slot, so each cast wiped the other's box. It now holds a whole pack, and each mob keeps its own debuffs.",
+      "Corrig\xC3\xA9 les d\xC3\xA9""buffs de cible qui disparaissaient en AoE sur un pack de mobs du m\xC3\xAAme nom -- le suivi manquait de place et deux mobs partageaient un emplacement, donc chaque cast effa\xC3\xA7""ait la box de l'autre. Il encaisse maintenant un pack entier, chaque mob garde ses propres d\xC3\xA9""buffs." },
+    { "The detached Equipment grid (and its gil) now shows in the Player config Live Preview, stacked under the Hub like the detached debuffs under the target.",
+      "La grille d'\xC3\xA9quipement d\xC3\xA9tach\xC3\xA9""e (et ses gils) appara\xC3\xAet maintenant dans l'aper\xC3\xA7u de la config Player, empil\xC3\xA9""e sous le Hub comme les d\xC3\xA9""buffs d\xC3\xA9tach\xC3\xA9s sous la cible." },
+};
+static const ChangeLine CL_22[] = {
+    { "Fixed for real the doubled typing inside AioHud's fields on some keyboards -- the earlier fix relied on a value that a few Windower builds fill with garbage ; press/release is now read from a signal that holds on every setup.",
+      "Corrig\xC3\xA9 pour de bon la saisie doubl\xC3\xA9""e dans les champs d'AioHud sur certains claviers -- l'ancien correctif se fiait \xC3\xA0 une valeur que quelques versions de Windower remplissent de d\xC3\xA9""chet ; l'appui/rel\xC3\xA2""chement est d\xC3\xA9sormais lu sur un signal fiable partout." },
+};
+static const ChangeLine CL_21[] = {
+    { "*Target debuffs* can now be DETACHED into their own list (Target > Debuffs > Standalone) -- a mob-name header then icon / name / timer rows, your debuffs in gold, others' in white. Icon / Name / Icon+Name display, place it with //aio edit.",
+      "*Les d\xC3\xA9""buffs de la cible* peuvent \xC3\xAAtre D\xC3\x89TACH\xC3\x89S dans leur propre liste (Target > Debuffs > Autonome) -- nom du mob puis lignes ic\xC3\xB4ne / nom / timer, tes d\xC3\xA9""buffs en or, ceux des autres en blanc. Affichage Ic\xC3\xB4ne / Nom / Ic\xC3\xB4ne+Nom, place-la avec //aio edit." },
+    { "*Border On/Off* : every box can now hide its frame border while keeping the background (config > any module > Box > Border).",
+      "*Bordure On/Off* : chaque cadre peut masquer son contour tout en gardant le fond (config > un module > Cadre > Bordure)." },
+    { "*Target distance* : a new Minimal display -- just the number, coloured by its range zone -- next to Speed / TH, instead of the full gauge.",
+      "*Distance de la cible* : un nouvel affichage Minimal -- juste le nombre, color\xC3\xA9 selon sa zone de port\xC3\xA9""e -- \xC3\xA0 c\xC3\xB4t\xC3\xA9 de Speed / TH, au lieu de la jauge compl\xC3\xA8te." },
+    { "The game no longer sees the mouse OR the numpad-End key while the config is open, and the Hide key is now the dedicated End only.",
+      "Le jeu ne re\xC3\xA7oit plus la souris NI la touche Fin du pav\xC3\xA9 num\xC3\xA9rique quand la config est ouverte, et la touche masquer est d\xC3\xA9sormais la touche Fin d\xC3\xA9""di\xC3\xA9""e uniquement." },
+    { "Fixed : the mouse wheel now resizes every floating box in //aio edit (it did nothing before).",
+      "Corrig\xC3\xA9 : la molette redimensionne maintenant chaque cadre flottant dans //aio edit (elle ne faisait rien avant)." },
+};
+
+// One entry per released version, NEWEST FIRST. The Update tab renders each as a collapsible header ; the newest
+// (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
+struct Release { const char* version; const ChangeLine* lines; int n; };
+static const Release RELEASES[] = {
+    { "1.0.28", CL_28, (int)(sizeof(CL_28) / sizeof(CL_28[0])) },
+    { "1.0.27", CL_27, (int)(sizeof(CL_27) / sizeof(CL_27[0])) },
+    { "1.0.26", CL_26, (int)(sizeof(CL_26) / sizeof(CL_26[0])) },
+    { "1.0.25", CL_25, (int)(sizeof(CL_25) / sizeof(CL_25[0])) },
+    { "1.0.24", CL_24, (int)(sizeof(CL_24) / sizeof(CL_24[0])) },
+    { "1.0.23", CL_23, (int)(sizeof(CL_23) / sizeof(CL_23[0])) },
+    { "1.0.22", CL_22, (int)(sizeof(CL_22) / sizeof(CL_22[0])) },
+    { "1.0.21", CL_21, (int)(sizeof(CL_21) / sizeof(CL_21[0])) },
+};
+static const int RELEASES_N = (int)(sizeof(RELEASES) / sizeof(RELEASES[0]));
