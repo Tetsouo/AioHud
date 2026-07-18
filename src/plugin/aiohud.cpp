@@ -160,17 +160,64 @@ void aio_plugin_render() {}   // slot 5 : unused (we draw on slot 6, like FFXIDB
 static u32 g_gameHwnd = 0;
 
 
+
+// ---- WM_SETCURSOR subclass : the only thing that actually stops the game re-showing its pointer ----
+// Two weaker attempts failed first, and each failure narrowed it down : a per-frame SetCursor(NULL) LOSES the
+// race (the game re-shows on every WM_SETCURSOR, so both cursors flicker), and nulling the window CLASS cursor
+// does nothing either -- which proves the game does not rely on DefWindowProc for it but calls SetCursor from
+// its own WndProc. So we have to answer the message BEFORE the game sees it.
+//
+// The subclass is installed ONCE and left in place, rather than toggled with the overlay : repeatedly swapping
+// WndProc risks breaking the chain if another addon subclasses between our install and uninstall. The overlay
+// test lives INSIDE the proc, so while the config is closed we are a pure pass-through.
+// It MUST be removed on unload -- leaving a WndProc pointing into a freed DLL crashes the client on the next
+// message.
+static WNDPROC g_oldWndProc = NULL;
+static HWND    g_subclassed = NULL;
+
+static LRESULT CALLBACK aio_wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
+{
+    // Only the CLIENT area, and only while our overlay owns the pointer : the frame/resize cursors on the window
+    // border must keep working, and outside the overlay the game owns its cursor completely.
+    if (msg == WM_SETCURSOR && LOWORD(lp) == HTCLIENT &&
+        (g_hud.config().is_open() || aio::ui_config().editLayout)) {
+        SetCursor(NULL);
+        return TRUE;            // handled -> the game's WndProc never runs its own SetCursor for this message
+    }
+    return CallWindowProcA(g_oldWndProc, h, msg, wp, lp);
+}
+
+static void aio_subclass_install(HWND hw)
+{
+    if (g_oldWndProc || !hw || !IsWindow(hw)) return;
+    g_oldWndProc = (WNDPROC)(LONG_PTR)SetWindowLongA(hw, GWL_WNDPROC, (LONG)(LONG_PTR)aio_wndproc);
+    if (g_oldWndProc) { g_subclassed = hw; windower::debug::log("cursor: WndProc subclassed on %08X", (unsigned)(LONG_PTR)hw); }
+}
+
+static void aio_subclass_remove()
+{
+    if (!g_oldWndProc || !g_subclassed) return;
+    if (IsWindow(g_subclassed)) SetWindowLongA(g_subclassed, GWL_WNDPROC, (LONG)(LONG_PTR)g_oldWndProc);
+    g_oldWndProc = NULL; g_subclassed = NULL;
+}
+
 void aio_plugin_render6()
 {
     u32 dev = g_host.service_raw(2);   // host vtbl[2] = D3D8 device
     if (valid_ptr(dev)) g_gameHwnd = aio::dFocusWindow(dev);
+    if (g_gameHwnd) aio_subclass_install((HWND)g_gameHwnd);   // once the device gives us the window
     g_hud.render(dev);
     // Config/edit overlay up + game focused : force-hide the OS cursor each frame (last SetCursor of the frame ->
     // wins). The game re-shows its NATIVE cursor on WM_SETCURSOR (e.g. when the mouse RE-ENTERS the window), a
     // WINDOW message our DirectInput mouse hook can't swallow -> without this it reappears on top of AioHud's own
     // pointer (the "two cursors" bug). AioHud draws its own pointer, so hiding the native one leaves exactly one.
-    if ((g_hud.config().is_open() || aio::ui_config().editLayout) && g_gameHwnd && (HWND)g_gameHwnd == GetForegroundWindow())
-        SetCursor(NULL);
+    // ---- Own the pointer while the overlay is up ----
+    if (g_gameHwnd) {
+        POINT cp; HWND under = NULL;
+        if (GetCursorPos(&cp)) under = WindowFromPoint(cp);
+        const bool overGame = under && GetAncestor(under, GA_ROOT) == (HWND)g_gameHwnd;
+        if (overGame && (g_hud.config().is_open() || aio::ui_config().editLayout)) SetCursor(NULL);   // belt and braces
+    }
 }
 
 // SEH-guarded packet dispatch. The parsers read FIXED offsets off `b` ; a SHORT/truncated packet would
@@ -253,7 +300,16 @@ unsigned int aio_plugin_mouse(u32 eventtype, u32 /*x*/, u32 /*y*/, u32 delta, u3
     // Only capture the mouse when the GAME window is the OS foreground. Otherwise a click coming back
     // INTO the game (from a browser / the desktop) must reach Windows so it re-activates the window.
     const bool focused = g_gameHwnd && (HWND)g_gameHwnd == GetForegroundWindow();
-    const bool active  = focused && (g_hud.config().is_open() || aio::ui_config().editLayout);
+    const bool overlay = (g_hud.config().is_open() || aio::ui_config().editLayout);
+    const bool active  = focused && overlay;
+    // Is the pointer physically over the game window ? The game holds mouse CAPTURE, so it keeps receiving mouse
+    // events even while another app is foreground -- being unfocused is NOT enough to know it should ignore them.
+    bool overGame = false;
+    if (g_gameHwnd) {
+        POINT cp; HWND under = NULL;
+        if (GetCursorPos(&cp)) under = WindowFromPoint(cp);
+        overGame = under && GetAncestor(under, GA_ROOT) == (HWND)g_gameHwnd;
+    }
 
     // A left-click is treated as ONE gesture (down -> moves -> up) with a SINGLE decision locked at the
     // down : either we swallow the whole gesture, or we pass it. Deciding once (not per-event) is what
@@ -273,7 +329,15 @@ unsigned int aio_plugin_mouse(u32 eventtype, u32 /*x*/, u32 /*y*/, u32 delta, u3
     //     avatar : a refocus up got swallowed while its down had already reached the game.)
     if (eventtype == 1) {                 // L down -- lock the fate
         inGesture = true;
-        blockGest = active;               // overlay up + focused -> swallow the whole gesture ; else pass it whole
+        // Swallow the whole gesture whenever the overlay owns the pointer -- focused OR not. Passing the
+        // "refocus" click was what let the game light up its own in-engine cursor again the moment you clicked
+        // back in (same root cause as the moves fixed above : being unfocused does not stop the game reading
+        // the mouse, it holds capture). The gesture LOCK is untouched : the fate is still decided once, here,
+        // and applied verbatim to the up -- so the game can never see a down without its up (stuck avatar).
+        // Windows still activates a clicked window on its own (WM_MOUSEACTIVATE), independently of this hook ;
+        // we nudge it explicitly as a belt-and-braces so a swallowed click cannot leave the window inactive.
+        blockGest = overlay && (overGame || focused);
+        if (blockGest && !focused && g_gameHwnd) SetForegroundWindow((HWND)g_gameHwnd);
         return blockGest ? 1u : blocked;
     }
     if (eventtype == 2) {                 // L up -- SAME fate as its down, whatever changed since
@@ -283,6 +347,27 @@ unsigned int aio_plugin_mouse(u32 eventtype, u32 /*x*/, u32 /*y*/, u32 delta, u3
     }
     if (inGesture) return 1u;             // mid-gesture move : always swallow -> a passed refocus click stays a
                                           // STATIONARY click (down+up, no moves) -> refocus without mouselook/walk
+
+    // 1b) THE CURSOR FIX. Measured (//aio curlog) : with the overlay open and the game NOT foreground, the FFXi
+    //     window still received 184 WM_MOUSEMOVE and 195 WM_SETCURSOR while the pointer sat over another app --
+    //     it holds mouse capture. Those moves are what make the game draw its OWN in-engine cursor, which no
+    //     amount of SetCursor / class-cursor / WM_SETCURSOR interception can hide (three attempts proved that).
+    //     What actually suppresses it when focused is THIS hook swallowing the events -- but it was gated on
+    //     `focused`, so the moment you alt-tabbed the game started seeing the mouse again and its cursor came
+    //     back, blinking against ours. Gate on "overlay open AND pointer over the game window" instead.
+    //     Left down/up are deliberately NOT included : they are handled above under the gesture lock, so the
+    //     refocus click still reaches Windows and cannot be split into a down without its up (the stuck-avatar
+    //     bug a previous "swallow everything" shortcut reintroduced).
+    //     The RIGHT button (measured : et=4 down / et=5 up) is a gesture too, so it gets the SAME lock as the
+    //     left one -- decided at the down, applied verbatim to the up. Without it, moving the pointer off the
+    //     game window mid-drag would swallow the down and pass the up (or vice versa), which is the stuck-input
+    //     bug this file already documents for the left button, transposed to mouselook.
+    static bool inRGest = false, blockRGest = false;
+    if (eventtype == 4) { inRGest = true;  blockRGest = overlay && (overGame || focused); return blockRGest ? 1u : blocked; }
+    if (eventtype == 5) { const bool b = blockRGest; inRGest = false; blockRGest = false; return b ? 1u : blocked; }
+    if (inRGest) return blockRGest ? 1u : blocked;   // mid-right-drag : same fate as its down, never split
+
+    if (overlay && overGame && eventtype != 1 && eventtype != 2) return 1u;
 
     // 2) No left gesture in progress. Wheel : edit box-resize / Help scroll while the overlay is up ; else the
     //    minimap zoom when the cursor is over it. Consume it so the game camera never zooms underneath.
@@ -410,6 +495,8 @@ unsigned int aio_plugin_key(u32 key, u32 b, u32 c) {
 
 void aio_plugin_unload()
 {
+    aio_subclass_remove();   // MUST come first : a WndProc pointing into a freed DLL crashes the client
+
     g_hud.dispose();
 }
 

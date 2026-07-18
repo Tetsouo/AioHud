@@ -117,7 +117,9 @@ static void tab_icon(u32 dev, int kind, float cx, float cy, float s, u32 col, Fo
 // used to be gated on the "Cursor" option, which only mattered back when the game still received the pointer ;
 // that option is now redundant.) Skip when the game isn't foreground : another window owns the pointer then.
 static void draw_ui_cursor(u32 dev, const MouseState* mo) {
-    if (!mo || !mo->focused) return;
+    // Draw whenever the pointer is over the game window -- NOT only when the game is foreground. Hiding the
+    // native cursor and drawing ours must switch together, or the game's cursor reappears in the gap.
+    if (!mo || !(mo->focused || mo->overGame)) return;
     const float x = snap(mo->x), y = snap(mo->y), s = snap(1.0f);
     const float cx[3] = { x, x, x + 11.0f * s };
     const float cy[3] = { y, y + 16.0f * s, y + 11.0f * s };

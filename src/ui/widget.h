@@ -19,7 +19,12 @@ namespace aio {
 
 // cursor state for the frame, in the HUD coord space (polled via Win32, not the game). `clicked`
 // is the press EDGE (down this frame, up last frame) -> a one-shot left-click.
-struct MouseState { float x = 0.0f, y = 0.0f; bool down = false; bool clicked = false; bool focused = true; };   // focused = the GAME window is the OS foreground (else ignore input + hide our cursor)
+// focused  = the GAME window is the OS foreground -> we may ACT on input.
+// overGame = the pointer is physically over the game window, focused or not -> we must OWN the pointer there.
+// The two are deliberately separate : while the game is not foreground but the mouse sits over it, the old code
+// stopped drawing our pointer AND stopped hiding the native one at the same instant, so the game's cursor came
+// back and flickered with every WM_SETCURSOR. Input still requires `focused` ; only the drawing follows overGame.
+struct MouseState { float x = 0.0f, y = 0.0f; bool down = false; bool clicked = false; bool focused = true; bool overGame = false; };
 
 // per-frame context handed to every widget. Everything is drawn in DIRECT D3D8 inside
 // the HUD's render block: graphics via gfx/draw.h, text via the shared `font` atlas

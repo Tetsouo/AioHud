@@ -56,13 +56,23 @@ static void poll_mouse(MouseState& m, float coordW, float coordH, HWND gameHw) {
     // and flag the frame as unfocused so we hide our drawn cursor. The click that RE-focuses the game
     // is left for Windows to consume (see aio_plugin_mouse) so the window activates like any app.
     m.focused = (gameHw != nullptr && fg == gameHw);
-    if (!m.focused) { m.clicked = false; m.down = false; return; }
-    POINT cp = p; ScreenToClient(fg, &cp);
+    // Is the pointer over the GAME window, foreground or not ? GA_ROOT so a child/render window still
+    // resolves to the top-level game window. This drives who OWNS the pointer, independently of focus.
+    HWND under = WindowFromPoint(p);
+    m.overGame = (gameHw != nullptr && under != nullptr && GetAncestor(under, GA_ROOT) == gameHw);
+    if (!m.focused && !m.overGame) { m.clicked = false; m.down = false; return; }
+    // Map through the GAME window, never through `fg` : when the game is not foreground, `fg` is the OTHER
+    // app, and mapping into ITS client rect put our drawn pointer in the wrong place entirely.
+    POINT cp = p; ScreenToClient(gameHw, &cp);
     RECT rc;
-    if (GetClientRect(fg, &rc)) {
+    if (GetClientRect(gameHw, &rc)) {
         float ww = (float)(rc.right - rc.left), wh = (float)(rc.bottom - rc.top);
         if (ww > 1.0f && wh > 1.0f) { m.x = (float)cp.x * coordW / ww; m.y = (float)cp.y * coordH / wh; }
     }
+    // POSITION is tracked whenever the pointer is over the game (so our pointer can be drawn while another app
+    // has focus) but the BUTTON is only ever read when the game is focused -- otherwise a click meant for the
+    // other application would register as a config click here.
+    if (!m.focused) { m.clicked = false; m.down = false; return; }
     bool down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
     m.clicked = down && !m.down;   // press edge = one-shot click
     m.down    = down;
