@@ -6,9 +6,6 @@
 // namespace itself (that would nest it as aio::aio::).
 #pragma once
 
-        }
-}
-
 // A short, user-facing "what changed" list for THIS build -- shown under the Update controls so a player knows
 // what the version they run (or just updated to) actually fixes / adds. PLAIN language, what not how ; no dev
 // jargon. UPDATE this with each release. `*bold*` markup works (draw_wrapped colours it brighter).
@@ -16,6 +13,18 @@ struct ChangeLine { const char* en; const char* fr; };
 
 // Per-version change lines. Grouped BY VERSION so the Update tab can show the newest release expanded and the
 // older ones as collapsible headers. `*bold*` markup works (draw_wrapped colours it brighter).
+static const ChangeLine CL_29[] = {
+    { "The game's own mouse pointer no longer appears next to AioHud's over the config window when you come back from another application — it used to show up and flicker as soon as the mouse touched the game, even before clicking. AioHud's pointer now also follows the mouse over the game window while another window has focus.",
+      "Le pointeur du jeu n'apparaît plus à côté de celui d'AioHud sur la fenêtre de config quand tu reviens d'une autre application — il se montrait et clignotait dès que la souris touchait le jeu, avant même de cliquer. Le pointeur d'AioHud suit désormais aussi la souris au-dessus du jeu pendant qu'une autre fenêtre a le focus." },
+    { "*Party distance colours* : the Close / Normal / Far pickers each control their own colour again. Changing one used to drag the others with it.",
+      "*Couleurs de distance Party* : les sélecteurs Proche / Normale / Loin pilotent à nouveau chacun leur couleur. Modifier l'un entraînait les autres." },
+    { "*Hate List* no longer jiggles : the box now reserves room for the longest possible name from the start, so a mob switching target — or a distance ticking — cannot resize it and shift its left edge.",
+      "*Liste de haine* ne saute plus : le cadre réserve d'emblée la place du nom le plus long possible, donc un mob qui change de cible — ou une distance qui varie — ne peut plus le redimensionner ni décaler son bord gauche." },
+    { "*Reset all settings* now really resets everything : the Timers module was skipped entirely, so its position, size, fused mode, typography and per-job tracking lists survived a factory reset.",
+      "*Réinitialiser tous les réglages* remet vraiment tout à zéro : le module Timers était entièrement oublié, donc sa position, sa taille, son mode fusionné, sa typographie et ses listes de suivi par job survivaient à une remise à zéro." },
+    { "Several fixes you should never notice, found by a full code audit : a crash that could hit the game when reopening the Help tab after changing zone, the Sheol box showing the sample monster's resistances after opening the config, the target's damage trail glowing instead of staying solid, and the Limbus gauge caption spilling outside its frame.",
+      "Plusieurs corrections que tu ne devrais jamais remarquer, issues d'un audit complet du code : un plantage possible du jeu en rouvrant l'aide après un changement de zone, la box Sheol affichant les résistances du monstre d'exemple après ouverture de la config, la traînée de dégâts de la cible qui brillait au lieu de rester nette, et la légende de la jauge Limbus qui débordait de son cadre." },
+};
 static const ChangeLine CL_28[] = {
     { "*Limbus* joins the Zone Tracker. In Apollyon or Temenos the box shows the area and its level, the floor you are on with its progress gauge, your Temenos and Apollyon units, what the run has banked so far, and how many data collections you have left this week.",
       "*Limbus* rejoint le Suivi de zone. Dans Apollyon ou Temenos, le cadre affiche la zone et son niveau, l'étage où tu es avec sa jauge de progression, tes units Temenos et Apollyon, ce que le run a rapporté jusque-là, et le nombre de collectes de données qu'il te reste cette semaine." },
@@ -79,6 +88,7 @@ static const ChangeLine CL_21[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.29", CL_29, (int)(sizeof(CL_29) / sizeof(CL_29[0])) },
     { "1.0.28", CL_28, (int)(sizeof(CL_28) / sizeof(CL_28[0])) },
     { "1.0.27", CL_27, (int)(sizeof(CL_27) / sizeof(CL_27[0])) },
     { "1.0.26", CL_26, (int)(sizeof(CL_26) / sizeof(CL_26[0])) },

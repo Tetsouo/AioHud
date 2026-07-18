@@ -1597,6 +1597,9 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
             flat(dev, sbX, top, snap(3.0f), bot - top, 0x22FFFFFF);
             const float thH = (bot - top) * (viewH / contentH), thY = top + (bot - top - thH) * (helpScroll_ / maxScroll);
             flat(dev, sbX, thY, snap(3.0f), thH, lerpc(C_ACCENT, C_ACCENTHI, pulse));
+        }
+}
+
 #include "ui/config_changelog.h"   // CL_<ver> groups + RELEASES[] (data only -- see the header)
 
 // ---- Update tab (tab_ == 4) : version + release check + one-click update (top), then a "What's new" changelog
