@@ -148,8 +148,8 @@ void hatelist_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS
 
     // ---- position (+ edit drag) : hlX = horizontal centre, hlY = top ----
     float px, py;
-    if (ovS > 0.0f) { px = ovX - boxW * 0.5f; py = ovY - boxH * 0.5f; }
-    else            { px = C.hlX * screenW - boxW * 0.5f; py = C.hlY * screenH; }
+    if (ovS > 0.0f) { px = hud_snap((ovX - boxW * 0.5f)); py = hud_snap((ovY - boxH * 0.5f)); }
+    else            { px = hud_snap(C.hlX * screenW - boxW * 0.5f); py = hud_snap(C.hlY * screenH); }
     if (editing) { static EditBox g_hlEdit; box_edit(f, g_hlEdit, EDITBOX_HATE, px, py, boxW, boxH, ui_config().hlScale, ui_config().hlX, ui_config().hlY, 1); }
 
     // ---- box chrome ----

@@ -1324,6 +1324,10 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
         const HelpModule& mod = HELP_MODULES[helpSel_];
         const float hx = ix + sbW + snap(30.0f);
         float hw = (ix + iw) - hx - snap(40.0f);
+        // Prose is capped for READABILITY -- a 2000px line is miserable to read. Live SAMPLES are not prose :
+        // they are boxes laid side by side, and inheriting the reading cap made them wrap while the panel still
+        // had room to the right. Keep both widths : hw for text, hwWide for sample grids.
+        const float hwWide = hw;
         const float hwMax = snap(1180.0f); if (hw > hwMax) hw = hwMax;   // cap line length for readability
         const float top = bodyY + snap(8.0f), bot = pageBot - snap(4.0f);
         if (ui_config().wheel != 0) {   // clamp against LAST frame's limit immediately -> no overscroll bounce at the bottom
@@ -1553,10 +1557,12 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
                 static const int ZV[6] = { 0, 1, 2, 3, 4, 5 };   // Dynamis / Abyssea / Omen / Nyzul / Odyssey / Limbus
                 const float sc = 1.05f, colGap = snap(16.0f);   // small : several fit per row (scale factor, not a pixel value)
                 float gx = hx, rowTop = y, rowMaxH = 0.0f;
+                const float gw = hwWide;   // sample grid : the panel's real width, not the prose cap
                 for (int zi = 0; zi < 6; ++zi) {
                     float bw1 = 0.0f, bh1 = 0.0f; zonetracker_help_measure(f, ZV[zi], bw1, bh1);
                     const float bw = bw1 * sc, bh = bh1 * sc;
-                    if (gx > hx && gx + bw > hx + hw) { rowTop += rowMaxH + snap(14.0f); gx = hx; rowMaxH = 0.0f; }   // wrap
+                    const bool wrapped = (gx > hx && gx + bw > hx + gw);
+                    if (wrapped) { rowTop += rowMaxH + snap(14.0f); gx = hx; rowMaxH = 0.0f; }   // wrap
                     if (rowTop >= top && rowTop + bh <= bot) { cs(dev); zonetracker_help_box(f, gx + bw * 0.5f, rowTop + bh * 0.5f, sc, ZV[zi]); cs(dev); }
                     gx += bw + colGap;
                     if (bh > rowMaxH) rowMaxH = bh;
