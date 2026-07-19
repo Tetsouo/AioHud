@@ -13,6 +13,14 @@ struct ChangeLine { const char* en; const char* fr; };
 
 // Per-version change lines. Grouped BY VERSION so the Update tab can show the newest release expanded and the
 // older ones as collapsible headers. `*bold*` markup works (draw_wrapped colours it brighter).
+static const ChangeLine CL_31[] = {
+    { "Truncated text now ends with \"...\" everywhere. The Hate List used two dots while the party name and spell used three.",
+      "Le texte tronqué se termine partout par « ... ». La liste de haine en utilisait deux, alors que le nom et le sort du groupe en utilisaient trois." },
+    { "Removed the *Cursor* option, which did nothing : AioHud's pointer was always drawn regardless. Since the config window now hides the game's own pointer, turning the option off would have left you with no cursor at all.",
+      "Retiré l'option *Curseur*, qui ne faisait rien : le pointeur d'AioHud était dessiné dans tous les cas. Comme la fenêtre de config masque désormais le pointeur du jeu, désactiver l'option n'aurait laissé aucun curseur." },
+    { "Housekeeping with no visible effect : several drawing helpers existed in four to seven copies that had started to disagree with each other, and are now single shared ones. Icon edges also stop picking up a stray coloured fringe from the box frame behind them.",
+      "Rangement sans effet visible : plusieurs fonctions de dessin existaient en quatre à sept exemplaires qui commençaient à diverger, et n'en font plus qu'une. Les bords d'icônes cessent aussi d'attraper un liseré coloré parasite venu du cadre derrière elles." },
+};
 static const ChangeLine CL_30[] = {
     { "In *Help > Zone Tracker*, the six zone examples stayed on one row again : the last one dropped to a second line after visiting another Help page. They were being laid out against the width reserved for reading text rather than the panel's real width, leaving them 16 pixels from wrapping.",
       "Dans *Aide > Suivi de zone*, les six exemples de zones tiennent à nouveau sur une seule rangée : le dernier passait à la ligne après un passage sur une autre rubrique. Ils étaient disposés selon la largeur réservée à la lecture du texte plutôt que celle du panneau, à 16 pixels du basculement." },
@@ -94,6 +102,7 @@ static const ChangeLine CL_21[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.31", CL_31, (int)(sizeof(CL_31) / sizeof(CL_31[0])) },
     { "1.0.30", CL_30, (int)(sizeof(CL_30) / sizeof(CL_30[0])) },
     { "1.0.29", CL_29, (int)(sizeof(CL_29) / sizeof(CL_29[0])) },
     { "1.0.28", CL_28, (int)(sizeof(CL_28) / sizeof(CL_28[0])) },
