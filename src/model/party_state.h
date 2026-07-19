@@ -216,12 +216,19 @@ struct LimbusCoffers {
     unsigned char slotK[4] = {0};     // [quadrant] payout in thousands : 0 none, 3 = red, >=5 = green
     int           bigAmt = 0;         // last cycle-ending payout
     char          bigAt[8] = {0};     // and the quadrant it was found in
+    unsigned char prevK[4] = {0};     // the slots as they were BEFORE the last cycle-ending payout. The 5k
+                                      // threshold has never actually been observed (extrapolated from one 3000
+                                      // coffer), so the wipe must not be able to destroy a week of history on a
+                                      // guess : keep the previous row so it can be restored if the threshold is
+                                      // ever found to be wrong.
     int           weekSeen = -1;      // last "collect data N more times" -> N going UP means a new week
 };
 // Quadrant labels per area, in slot order. Index 0 = Apollyon, 1 = Temenos.
 inline const char* limbus_slot_label(int area, int slot) {
     static const char* A[4] = { "NW5", "SW4", "NE5", "SE4" };
-    static const char* T[4] = { "N7",  "W7",  "E7",  "C4"  };
+    // Temenos floor counts corrected 2026-07-19 (per the player): Northern / Western / Eastern towers have 4
+    // floors, Central has 3. They read 7/7/7/4 before, which was simply wrong.
+    static const char* T[4] = { "N4",  "W4",  "E4",  "C3"  };
     if (slot < 0 || slot > 3) return "";
     return (area == 1) ? T[slot] : A[slot];
 }
@@ -230,10 +237,22 @@ inline int limbus_slot_of(int area, const char* quad) {
     if (!quad || !quad[0]) return -1;
     static const char* A[4] = { "NW", "SW", "NE", "SE" };
     static const char* T[4] = { "N",  "W",  "E",  "C"  };
+    // Temenos' 0x075 bar label spells the side out -- "North_Tower_F1", "West_Tower_F3" (captured 2026-07-19) --
+    // while the game itself calls them "Northern/Western/Eastern/Central Tower". The old exact match against the
+    // single letters left every Temenos coffer at slot -1 (silently dropped). Temenos' four initials N/W/E/C are
+    // unique, so match by PREFIX: that accepts "N", "North" AND "Northern" without guessing which form a given
+    // patch or label uses. Apollyon keeps the exact match -- its quads are two letters and share initials.
+    // (Layout, per the player: Northern / Western / Eastern towers have 4 floors, Central has 3.)
     for (int i = 0; i < 4; ++i) {
-        const char* k = (area == 1) ? T[i] : A[i];
-        int j = 0; while (k[j] && quad[j] == k[j]) ++j;
-        if (!k[j] && (quad[j] == 0 || quad[j] == '_' || quad[j] == ' ')) return i;
+        if (area == 1) {
+            const char* k = T[i];
+            int j = 0; while (k[j] && quad[j] == k[j]) ++j;
+            if (!k[j]) return i;                            // key fully consumed = prefix hit, whatever follows
+        } else {
+            const char* k = A[i];
+            int j = 0; while (k[j] && quad[j] == k[j]) ++j;
+            if (!k[j] && (quad[j] == 0 || quad[j] == '_' || quad[j] == ' ')) return i;
+        }
     }
     return -1;
 }

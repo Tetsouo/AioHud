@@ -5,7 +5,8 @@
 #include "model/party_state.h"
 #include "model/party_state_internal.h"   // pkt_u16 / pkt_u32 (shared packet readers)
 #include "model/paths.h"                  // plugin_path (the zone-cache path)
-#include "model/game_mem.h"               // key_items_base (Limbus run baseline : the run's KIs)
+#include "model/game_mem.h"               // key_items_base (Limbus run baseline : the run's KIs) + entity_name_by_index
+#include "windower_debug.h"               // warn when a >=1k award's source entity is not recognised as a coffer
 #include <stdio.h>                        // snprintf (floor tags)
 #include <windows.h>                       // GetTickCount / CreateFileA / ReadFile / WriteFile
 #include <string.h>                        // strstr
@@ -26,7 +27,9 @@ static const int LIMBUS_KI_FIRST = 9956, LIMBUS_KI_LAST = 9998;
 static void limbus_floor_tag(const ZoneTracker& zt, char* out, int cap) {
     out[0] = 0;
     if (zt.limbusFloor < 0) return;
-    if (zt.limbusQuad[0]) snprintf(out, cap, "%.3s #%d", zt.limbusQuad, zt.limbusFloor);
+    // %.7s, not %.3s : Apollyon's quads are 2 letters ("SW") but Temenos spells its sides out ("North", "West"),
+    // which used to render as "Nor #1".
+    if (zt.limbusQuad[0]) snprintf(out, cap, "%.7s #%d", zt.limbusQuad, zt.limbusFloor);
     else                  snprintf(out, cap, "#%d", zt.limbusFloor);
 }
 
@@ -49,6 +52,7 @@ bool PartyState::limbus_add_chip(int area, const char* quad, int amtK) {
     if (slot < 0 || amtK <= 0) return false;
     LimbusCoffers& lc = lc_[a];
     if (amtK >= (LIMBUS_BIG_MIN / 1000)) {                 // a 5k ends the cycle, hand-seeded or not
+        for (int i = 0; i < 4; ++i) lc.prevK[i] = lc.slotK[i];   // archive first (see prevK in party_state.h)
         for (int i = 0; i < 4; ++i) lc.slotK[i] = 0;
         lc.bigAmt = amtK * 1000;
         int b = 0; for (; quad[b] && b < 7; ++b) lc.bigAt[b] = quad[b]; lc.bigAt[b] = 0;
@@ -364,10 +368,16 @@ void PartyState::on_limbus_075(const unsigned char* p) {    // 0x075 : battlefie
             zt_.limbusLevel = lvl; hit = true;
             continue;
         }
-        // "<Quad>_Floor_#<N>" (e.g. "SW_Floor_#3") -> quadrant + floor number, and THIS bar's progress is the gauge
+        // The floor bar -- THIS bar's progress is the gauge. TWO label formats, one per wing :
+        //   Apollyon : "<Quad>_Floor_#<N>"   e.g. "SW_Floor_#3"
+        //   Temenos  : "<Side>_Tower_F<N>"   e.g. "North_Tower_F1", "West_Tower_F3"   (captured 2026-07-19)
+        // Only "Floor" was matched, so in Temenos NO bar ever matched and limbusProgress stayed -1 -> no gauge drawn,
+        // while the "<Area>_Lv<NNN>" bar still matched and the wing name showed. That is exactly the reported
+        // "Temenos shows the name but never a progress bar". Match either keyword.
         int fpos = -1;
         for (int k = 0; k + 5 <= n; ++k)
-            if (lbl[k]=='F' && lbl[k+1]=='l' && lbl[k+2]=='o' && lbl[k+3]=='o' && lbl[k+4]=='r') { fpos = k; break; }
+            if ((lbl[k]=='F' && lbl[k+1]=='l' && lbl[k+2]=='o' && lbl[k+3]=='o' && lbl[k+4]=='r') ||
+                (lbl[k]=='T' && lbl[k+1]=='o' && lbl[k+2]=='w' && lbl[k+3]=='e' && lbl[k+4]=='r')) { fpos = k; break; }
         if (fpos < 0) continue;
         int q = 0;                                         // everything before "Floor", minus the separator
         for (; q < fpos && q < 7; ++q) { char c = lbl[q]; if (c == '_' || c == ' ') break; zt_.limbusQuad[q] = c; }
@@ -418,17 +428,44 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
         const unsigned m = pkt_u16(p, 0x1A) & 0x3FFFu;
         const int p1 = (int)pkt_u32(p, 0x08), p3 = (int)pkt_u32(p, 0x10), p4 = (int)pkt_u32(p, 0x14);
         char at[12]; limbus_floor_tag(zt_, at, sizeof(at));
-        if (m == 7247) {                                   // units acquired (per kill ~40-110, coffer 3000/5000)
+        // Units acquired (per kill ~40-110, coffer/point-of-interest 3000/5000). The id keys on the WING, SETTLED
+        // 2026-07-19 : Apollyon 7247 / Temenos 7239, proven by Apollyon-coffer == Apollyon-point-of-interest == 7247
+        // while Temenos-point-of-interest == 7239. So the id can NOT tell a coffer from a point of interest.
+        //
+        // The SOURCE comes from the packet's target ENTITY instead : bytes 0x18-0x19 are an entity INDEX (0x1A-0x1B
+        // are the message id -- reading the four as one u32 is why the first captures came back unresolved), and its
+        // name is 'Temenos Coffer #4' for a coffer, '???' for a point of interest. That is the ONLY reliable
+        // discriminant : a point of interest grants the Code only ONCE PER WEEK, so the accompanying 7069/7070 item
+        // message is absent the rest of the time and cannot be used (verified dead end -- do not rebuild on it).
+        if (m == 7247 || m == 7239) {
+            // Is this award a real coffer ? Name-based, so a client in another language degrades to "not a coffer"
+            // (a missed chip, visible) rather than a false one (silent corruption of the quadrant row).
+            char src[28] = { 0 };
+            const unsigned tidx = (unsigned)p[0x18] | ((unsigned)p[0x19] << 8);
+            entity_name_by_index(tidx, src, sizeof(src));
+            bool isCoffer = false;
+            for (const char* c = src; *c && !isCoffer; ++c)
+                if (((c[0]|32)=='c' && (c[1]|32)=='o' && (c[2]|32)=='f' && (c[3]|32)=='f' && (c[4]|32)=='e' && (c[5]|32)=='r') ||
+                    ((c[0]|32)=='c' && (c[1]|32)=='o' && (c[2]|32)=='f' && (c[3]|32)=='f' && (c[4]|32)=='r' && (c[5]|32)=='e'))
+                    isCoffer = true;   // "Coffer" (EN) / "Coffre" (FR)
             zt_.limbusUnits = p3; zt_.limbusUnitsCap = p4;
             if (zt_.limbusUnitBase < 0) zt_.limbusUnitBase = p3 - p1;   // total BEFORE this (first-seen) payout
             zt_.limbusRunUnits = (p3 > zt_.limbusUnitBase) ? (p3 - zt_.limbusUnitBase) : 0;
-            if (p1 >= LIMBUS_COFFER_MIN) {                 // a coffer, not a floor payout : record it
+            // A big award whose source we could not name is the one case that silently loses a chip (a client in a
+            // language whose coffer is neither "Coffer" nor "Coffre", or an entity slot we failed to read). Say so,
+            // rather than letting it look like the coffer simply never happened.
+            if (p1 >= LIMBUS_COFFER_MIN && !isCoffer)
+                windower::debug::log("LIMBUS: %d-unit award from entity '%s' not recognised as a coffer -> NO chip recorded"
+                                     " (point of interest = expected ; otherwise the name test needs this language)",
+                                     p1, src[0] ? src : "<unresolved>");
+            if (p1 >= LIMBUS_COFFER_MIN && isCoffer) {     // a REAL coffer (named entity), not a point of interest
                 zt_.limbusCofferAmt = p1;
                 int w = 0; for (; at[w] && w < 11; ++w) zt_.limbusCofferAt[w] = at[w]; zt_.limbusCofferAt[w] = 0;
                 const int area = (zt_.curZone == 37) ? 1 : 0;               // 38 Apollyon / 37 Temenos, tracked apart
                 LimbusCoffers& lc = lc_[area];
                 const int slot = limbus_slot_of(area, zt_.limbusQuad);
                 if (p1 >= LIMBUS_BIG_MIN) {                                 // the 5k ends the cycle : the other slots
+                    for (int i = 0; i < 4; ++i) lc.prevK[i] = lc.slotK[i];  // archive first -- the threshold is a guess
                     for (int i = 0; i < 4; ++i) lc.slotK[i] = 0;            // clear, but the 5k itself stays GREEN so
                     lc.bigAmt = p1;                                          // the row still shows where it was found
                     int b = 0; for (; zt_.limbusQuad[b] && b < 7; ++b) lc.bigAt[b] = zt_.limbusQuad[b]; lc.bigAt[b] = 0;
@@ -437,7 +474,10 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
                 lc_save();
             }
             zt_save();
-        } else if (m == 7288) {                            // weekly allowance : "you may collect data N more times"
+        } else if (m == 7280 || m == 7288) {               // weekly allowance : "you may collect data N more times"
+            // 7280 is the CAPTURED id (2026-07-19, from the 'Temenos Operator' entity, p1 = the count). 7288 was the
+            // previously assumed value and never matched anything, so this counter was simply never filled. Both are
+            // kept : these ids are zone-relative and drift across patches, and the payload shape is identical.
             zt_.limbusWeekLeft = p1;
             // NOTE: no weekly wipe. The row is not a per-week checklist -- it is the last known payout of each
             // quadrant, and it self-corrects because reopening a coffer overwrites its slot (a 5k slot reopened

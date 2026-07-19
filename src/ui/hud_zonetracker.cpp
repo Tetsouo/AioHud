@@ -331,7 +331,12 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
             int q = 0; for (; zt.limbusQuad[q] && q < 7; ++q) quad[q] = zt.limbusQuad[q]; quad[q] = 0;
             level = zt.limbusLevel; progress = zt.limbusProgress; floor = zt.limbusFloor;
             tem = zt.limbusTemenos; apo = zt.limbusApollyon;
-            if (zt.limbusUnits >= 0) apo = zt.limbusUnits;                 // live total from 0x02A beats the stale 0x118
+            // Live total from 0x02A beats the (possibly absent) 0x118. It belongs to the wing you are STANDING in --
+            // it used to be written to `apo` unconditionally, so a Temenos total was displayed on the Apollyon row
+            // while the Temenos row kept whatever 0x118 had left. On a client where 0x118 never arrives (nothing
+            // reads these from memory -- the packet is the only source) that left the Temenos row permanently empty
+            // no matter how much Temenos was run. Route it by zone : 37 = Temenos, 38 = Apollyon.
+            if (zt.limbusUnits >= 0) { if (zt.curZone == 37) tem = zt.limbusUnits; else apo = zt.limbusUnits; }
             runUnits = zt.limbusRunUnits; weekLeft = zt.limbusWeekLeft;
             areaIdx = (zt.curZone == 37) ? 1 : 0;                                        // Apollyon / Temenos kept apart
             const LimbusCoffers& lc = party().limbus_coffers(areaIdx);

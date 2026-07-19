@@ -13,6 +13,18 @@ struct ChangeLine { const char* en; const char* fr; };
 
 // Per-version change lines. Grouped BY VERSION so the Update tab can show the newest release expanded and the
 // older ones as collapsible headers. `*bold*` markup works (draw_wrapped colours it brighter).
+static const ChangeLine CL_34[] = {
+    { "*Temenos now shows its progress bar.* It never appeared : the floor gauge is labelled differently in Temenos than in Apollyon, and only the Apollyon wording was recognised — so the area name showed while the bar stayed missing.",
+      "*Temenos affiche enfin sa barre de progression.* Elle n'apparaissait jamais : la jauge d'étage est nommée autrement en Temenos qu'en Apollyon, et seule la formulation d'Apollyon était reconnue — d'où le nom de la zone affiché mais la barre absente." },
+    { "*Temenos units were shown on the Apollyon line.* The live total always went to the Apollyon row whatever wing you stood in. If your client never sends the currency packet, your Temenos total could stay empty no matter how much Temenos you ran.",
+      "*Les unités Temenos s'affichaient sur la ligne Apollyon.* Le total en direct partait toujours sur la ligne Apollyon quelle que soit l'aile. Si votre client n'envoie pas le paquet de monnaies, votre total Temenos pouvait rester vide quel que soit le nombre de runs Temenos." },
+    { "*Coffers are no longer confused with points of interest.* Both award units with the same message, so checking a point of interest was recorded as if you had opened a coffer. The chest itself is now identified, so only real coffers count.",
+      "*Les coffres ne sont plus confondus avec les points d'intérêt.* Les deux donnent des unités avec le même message, donc checker un point d'intérêt était enregistré comme l'ouverture d'un coffre. Le coffre lui-même est désormais identifié, et seuls les vrais coffres comptent." },
+    { "Temenos coffers were never recorded at all — the tower name in the game's data did not match what was expected, so every Temenos coffer was silently dropped.",
+      "Les coffres de Temenos n'étaient jamais enregistrés — le nom de la tour dans les données du jeu ne correspondait pas à ce qui était attendu, donc chaque coffre Temenos était ignoré en silence." },
+    { "Temenos tower labels corrected to *N4 W4 E4 C3* (they read N7 W7 E7 C4), the floor is no longer cut to three letters (\"Nor #1\" -> \"North #1\"), and the weekly \"you may collect data N more times\" counter is now read.",
+      "Libellés des tours de Temenos corrigés en *N4 W4 E4 C3* (ils affichaient N7 W7 E7 C4), l'étage n'est plus tronqué à trois lettres (« Nor #1 » -> « North #1 »), et le compteur hebdomadaire « you may collect data N more times » est désormais lu." },
+};
 static const ChangeLine CL_33[] = {
     { "*Equipment showing item numbers instead of icons is fixed.* When a piece wasn't among the icons shipped with AioHud, it was rebuilt from the game's own files — and that worked. But the rebuilt icon was then saved for next time, and *if that save failed, the icon was thrown away* and its number shown instead. Saving fails on installs where the folder is write-protected, typically FFXI under Program Files. The icon is now displayed first and saved afterwards ; a failed save just means it gets rebuilt next session.",
       "*L'équipement qui affichait des numéros au lieu des icônes est corrigé.* Quand une pièce ne faisait pas partie des icônes livrées avec AioHud, elle était reconstruite depuis les fichiers du jeu — et ça fonctionnait. Mais l'icône reconstruite était ensuite enregistrée pour la fois suivante, et *si cet enregistrement échouait, l'icône était jetée* et son numéro affiché à la place. L'enregistrement échoue sur les installations où le dossier est protégé en écriture, typiquement FFXI sous Program Files. L'icône est désormais affichée d'abord et enregistrée ensuite ; un enregistrement raté signifie simplement qu'elle sera reconstruite à la prochaine session." },
@@ -120,6 +132,7 @@ static const ChangeLine CL_21[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.34", CL_34, (int)(sizeof(CL_34) / sizeof(CL_34[0])) },
     { "1.0.33", CL_33, (int)(sizeof(CL_33) / sizeof(CL_33[0])) },
     { "1.0.32", CL_32, (int)(sizeof(CL_32) / sizeof(CL_32[0])) },
     { "1.0.31", CL_31, (int)(sizeof(CL_31) / sizeof(CL_31[0])) },

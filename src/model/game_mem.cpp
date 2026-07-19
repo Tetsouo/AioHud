@@ -275,6 +275,49 @@ unsigned entity_id_by_index(unsigned index) {
     return id;
 }
 
+// server id -> entity NAME (ENT_NAME_OFF, ASCII up to 0x18). The reverse of entity_id_by_index : a linear scan,
+// since ids are not an index. Used to tell a Limbus COFFER from a POINT OF INTEREST, which the award message id
+// cannot (it keys on the wing) : a point of interest is the unnamed '???', a coffer is 'Apollyon Coffer #4'.
+// SEH-guarded per read ; false (and out[0]=0) when the id isn't in the array.
+bool entity_name_by_id(unsigned id, char* out, int sz) {
+    if (out && sz > 0) out[0] = 0;
+    if (!id || !out || sz <= 0) return false;
+    u32 ent = entity_array();
+    if (!ent) return false;
+    for (unsigned i = 1; i < 0x900; ++i) {
+        u32 p = 0; if (!safe_read(ent + i * 4, &p) || !valid_ptr(p)) continue;
+        u32 eid = 0; if (!safe_read(p + ENT_ID_OFF, &eid) || eid != id) continue;
+        int j = 0;
+        for (; j < sz - 1; ++j) {
+            u32 c = 0; if (!safe_read(p + ENT_NAME_OFF + j, &c)) break;
+            const char ch = (char)(c & 0xFF); if (!ch) break;
+            out[j] = ch;
+        }
+        out[j] = 0;
+        return true;
+    }
+    return false;
+}
+
+// entity INDEX -> name. Packets carry a target INDEX (a slot in the entity array), not a server id -- reading
+// the 0x02A "target" field as an id is what made the first coffer/point-of-interest capture come back
+// <unresolved>. One indexed read, no scan. SEH-guarded ; false (out[0]=0) if the slot is empty.
+bool entity_name_by_index(unsigned index, char* out, int sz) {
+    if (out && sz > 0) out[0] = 0;
+    if (!out || sz <= 0 || index == 0 || index >= 0x900) return false;
+    u32 ent = entity_array();
+    if (!ent) return false;
+    u32 p = 0; if (!safe_read(ent + index * 4, &p) || !valid_ptr(p)) return false;
+    int j = 0;
+    for (; j < sz - 1; ++j) {
+        u32 c = 0; if (!safe_read(p + ENT_NAME_OFF + j, &c)) break;
+        const char ch = (char)(c & 0xFF); if (!ch) break;
+        out[j] = ch;
+    }
+    out[j] = 0;
+    return j > 0;
+}
+
 // The client map-info record for (zone, submap). Linear scan of the table at *(g+0x10) : 14-byte records,
 // key (zone u16 @+0x00, submap u8 @+0x02). Returns false (valid=false) when the zone/submap has no record
 // (e.g. a zone with no map). SEH-guarded per read. See docs/game-data/map-system.md.

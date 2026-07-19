@@ -30,6 +30,8 @@ unsigned zone_id();    // current zone id (*(g+0x40)+0x02) -- matches the zones 
 // 512px native map. Reversed + live-confirmed 2026-07-06 (see docs/game-data/map-system.md).
 struct MapRecord { unsigned zone = 0, fileIdx = 0, flags = 0, fileId = 0; int scale = 0, offX = 0, offY = 0; bool valid = false; };
 bool read_map_record(unsigned zone, int submap, MapRecord& out);   // fileId = (flags&1 ? 0xD02F : 0x14C0) + fileIdx
+bool entity_name_by_id(unsigned id, char* out, int sz);      // server id -> entity name ('???' = unnamed) ; false if not found
+bool entity_name_by_index(unsigned index, char* out, int sz);// entity INDEX (what packets carry) -> name ; false if the slot is empty
 int  current_submap();   // current FLOOR index (multi-level zones) via the client position->floor routine ; 0 if mapless/ground
 int  read_usable_weapon_skills(unsigned short* out, int maxN);   // the player's usable WS ids (get_abilities bitmask) ; count
 int  read_usable_job_abilities(unsigned short* out, int maxN);   // the player's usable JA ids (incl. pet ready moves when a pet is out) ; count
