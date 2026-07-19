@@ -13,6 +13,14 @@ struct ChangeLine { const char* en; const char* fr; };
 
 // Per-version change lines. Grouped BY VERSION so the Update tab can show the newest release expanded and the
 // older ones as collapsible headers. `*bold*` markup works (draw_wrapped colours it brighter).
+static const ChangeLine CL_32[] = {
+    { "*Scrolling works again in the config window.* It broke in 1.0.29 : the fix that stopped the game's cursor showing over the overlay was swallowing the mouse wheel before the config could see it. Sorry — that one was on us.",
+      "*Le défilement fonctionne à nouveau dans la fenêtre de config.* Il était cassé depuis la 1.0.29 : le correctif qui empêchait le curseur du jeu d'apparaître sur l'overlay avalait la molette avant que la config puisse la voir. Désolé, celle-là vient de nous." },
+    { "*Multi-client (dual-box) updates* : after an update, every running client comes back on its own. Until now only the first one reloaded and the others had to be started by hand with //load AioHud — they were all watching the same signal, and the fastest one consumed it.",
+      "*Mises à jour en multi-client (dual-box)* : après une mise à jour, chaque client relancé revient tout seul. Jusqu'ici seul le premier se rechargeait et les autres devaient être relancés à la main via //load AioHud — ils surveillaient tous le même signal, et le plus rapide le consommait." },
+    { "Note : this fix travels with the update itself, so THIS update still leaves the other client to reload by hand one last time. The ones after it are clean.",
+      "Note : ce correctif voyage avec la mise à jour elle-même, donc CELLE-CI laissera encore l'autre client à recharger à la main une dernière fois. Les suivantes seront propres." },
+};
 static const ChangeLine CL_31[] = {
     { "Truncated text now ends with \"...\" everywhere. The Hate List used two dots while the party name and spell used three.",
       "Le texte tronqué se termine partout par « ... ». La liste de haine en utilisait deux, alors que le nom et le sort du groupe en utilisaient trois." },
@@ -102,6 +110,7 @@ static const ChangeLine CL_21[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.32", CL_32, (int)(sizeof(CL_32) / sizeof(CL_32[0])) },
     { "1.0.31", CL_31, (int)(sizeof(CL_31) / sizeof(CL_31[0])) },
     { "1.0.30", CL_30, (int)(sizeof(CL_30) / sizeof(CL_30[0])) },
     { "1.0.29", CL_29, (int)(sizeof(CL_29) / sizeof(CL_29[0])) },
