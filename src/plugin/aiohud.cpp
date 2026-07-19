@@ -368,12 +368,18 @@ unsigned int aio_plugin_mouse(u32 eventtype, u32 /*x*/, u32 /*y*/, u32 delta, u3
     if (eventtype == 5) { const bool b = blockRGest; inRGest = false; blockRGest = false; return b ? 1u : blocked; }
     if (inRGest) return blockRGest ? 1u : blocked;   // mid-right-drag : same fate as its down, never split
 
-    if (overlay && overGame && eventtype != 1 && eventtype != 2) return 1u;
+    //     WHEEL IS EXCLUDED HERE (delta != 0). This blanket swallow sat BEFORE the wheel block below, so it ate
+    //     the scroll before the config could ever see it -- config scrolling stopped working in v1.0.29. The wheel
+    //     is handled below, where it can both feed the overlay and still be kept from the game.
+    if (overlay && overGame && (int)delta == 0 && eventtype != 1 && eventtype != 2) return 1u;
 
     // 2) No left gesture in progress. Wheel : edit box-resize / Help scroll while the overlay is up ; else the
     //    minimap zoom when the cursor is over it. Consume it so the game camera never zooms underneath.
     if ((int)delta != 0) {
         if (active) { aio::ui_config().wheel += ((int)delta > 0) ? 1 : -1; return 1u; }
+        // Overlay up and the pointer is over the game, but the game is NOT focused : do not ACT on the scroll
+        // (that input belongs to whatever window has focus) yet do not hand it to the game either.
+        if (overlay && overGame) return 1u;
         aio::UiConfig& c = aio::ui_config();
         if (c.mmVisible && focused && g_gameHwnd) {
             POINT p;

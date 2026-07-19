@@ -60,32 +60,47 @@ end
 --   OK <v>    -> extracted over the Windower root ; //load AioHud (only if we unloaded)
 --   ERROR <m> -> reload the current build (if we unloaded) so the HUD comes back
 --   UPTODATE  -> nothing to do
+-- DUAL-BOX / MULTI-CLIENT : done.txt is a BROADCAST, not a queue. Every running client watches the same file,
+-- so no client may consume it -- this addon used to os.remove() it on OK, and whichever client polled first
+-- deleted the reload signal before the other saw it. The result: one character came back, the other stayed
+-- unloaded and had to be //load'ed by hand. The updater script already clears done.txt at the start of every
+-- run, so nobody here needs to delete anything.
+--
+-- Each client therefore tracks, in its OWN memory, the last phase it acted on, and reacts to a CHANGE.
 local unloaded = false   -- did WE //unload this cycle ? (so we know whether to //load again)
+local acted    = nil     -- the phase line this client has already handled
+
 local function watch_done()
     local s = read_status()
-    if s then
-        if s:find('^READY') and not unloaded then
+    if s and s ~= acted then
+        acted = s
+        if s:find('^READY') then
             unloaded = true
             log('downloaded v' .. (s:match('READY%s+(%S+)') or '?') .. ', reloading AioHud...')
             windower.send_command('unload AioHud')       -- release the DLL so the (still-running) updater can extract
         elseif s:find('^OK') then
             if unloaded then windower.send_command('load AioHud') end
             log('updated to v' .. (s:match('OK%s+(%S+)') or '?') .. '.')
-            os.remove(done); unloaded = false
+            unloaded = false
         elseif s:find('^ERROR') then
             if unloaded then windower.send_command('load AioHud') end
             log('update failed: ' .. s)
-            os.remove(done); unloaded = false
+            unloaded = false
         elseif s:find('^UPTODATE') then
             log('already up to date.')
-            os.remove(done); unloaded = false
+            unloaded = false
         end
-    else
-        unloaded = false   -- done.txt gone -> ready for the next update
+    elseif not s then
+        acted = nil          -- the updater cleared it : ready for the next cycle
+        unloaded = false
     end
     coroutine.schedule(watch_done, 1)
 end
 coroutine.schedule(watch_done, 1)
+
+-- Prime the handled phase at load : a done.txt left over from a previous session must not be replayed as a
+-- fresh reload. A real update always rewrites the file, which reads as a change from this baseline.
+acted = read_status()
 
 -- typed //aioupdate : just ask the plugin to spawn (the watcher above handles the unload/load).
 windower.register_event('addon command', trigger)
