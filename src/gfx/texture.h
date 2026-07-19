@@ -40,10 +40,32 @@ u32 load_raw_texture_mip(u32 dev, const char* path, int W, int H);   // + mip ch
 u32 load_bmp_texture(u32 dev, const char* path);
 
 // Gear-icon ROM fallback : decode item `id`'s 32x32 icon straight from the game's ROM DAT files (a port of
-// EquipViewer's icon_extractor) and write it as the same V4 BMP load_bmp_texture reads, to `out_bmp_path`.
-// Lets ANY item resolve even when it isn't in the bundled assets/gearicons/ seed (the bundle becomes a cache).
-// Returns true if a BMP was written. No game install found / unknown id-range -> false (keep the id-text fallback).
-bool decode_gear_icon_from_rom(unsigned id, const char* out_bmp_path);
+// EquipViewer's icon_extractor) INTO MEMORY -- `out_px` takes 32*32 ARGB DWORDs, top-down, ready for
+// make_texture_argb_mip. Lets ANY item resolve even when it isn't in the bundled assets/gearicons/ seed
+// (only 1323 of ~23500 items are seeded, so this is the NORMAL path, not an edge case).
+// Returns false only when the icon is genuinely unreachable : no game install, or an id outside every DAT range.
+// It deliberately does NOT touch the disk -- writing the cache used to be able to fail (read-only plugin folder)
+// and take a perfectly good decode down with it, which is what showed raw item IDs on locked-down installs.
+// //aio geartrace : where a decode actually stopped. The old single "ROM decode failed" conflated no-registry,
+// no-DAT and no-write-permission -- three different bugs with three different fixes.
+enum GearStep { GS_OK = 0, GS_NO_RANGE, GS_NO_ROMDIR, GS_NO_DAT, GS_BAD_READ };
+struct GearInfo {
+    int         step;     // GearStep
+    const char* dat;      // "118/109" (0 if unresolved)
+    const char* romdir;   // "<ffxi>\ROM" (0 if unresolved)
+    const char* regkey;   // which PlayOnline* key answered (0 if none)
+    long        index;    // record index inside the DAT
+    int         err;      // errno from the failing fopen (0 if none)
+};
+bool decode_gear_icon_from_rom(unsigned id, u32* out_px, GearInfo* info = 0);
+
+// Best-effort cache of a decoded icon as the same V4 BMP load_bmp_texture reads. Atomic (temp + rename) and
+// fully checked, so a failed/partial write can never leave a corrupt BMP behind. Returns false if it couldn't
+// be written -- callers should IGNORE that : the icon is already in hand, only the next-session shortcut is lost.
+bool write_gear_icon_bmp(const char* out_bmp_path, const u32* px, int* out_err = 0);
+
+// which registry key resolved the FFXI install, and to what (0 = none found). //aio geartrace reporting.
+const char* ffxi_rom_dir_probe(const char** out_regkey);
 
 // create an A8R8G8B8 texture from an in-memory ARGB buffer (W*H DWORDs, row-major).
 u32 make_texture_argb(u32 dev, int W, int H, const u32* pixels);

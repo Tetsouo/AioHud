@@ -13,6 +13,10 @@ namespace aio {
 struct GameState;
 class LiquidBars;
 
+// //aio geartrace : trace the next N gear-icon resolutions (bundled BMP -> id range -> DAT -> decode -> texture
+// -> cache write) to aiohud_debug.log. Diagnoses "items show as raw IDs" without guessing which step failed.
+void set_gear_trace(int n);
+
 class Player : public Widget {
 public:
     explicit Player(const GameState* state);

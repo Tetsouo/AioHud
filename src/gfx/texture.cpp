@@ -5,6 +5,7 @@
 #include <windows.h>
 #include <math.h>
 #include <stdio.h>   // gear-icon ROM fallback : fopen/fseek/fread + _snprintf
+#include <errno.h>   // //aio geartrace : distinguish "read-only folder" (EACCES) from the other write failures
 
 namespace aio {
 
@@ -418,6 +419,8 @@ void preload_texture(u32 tex)
 // ===== Gear-icon ROM-DAT fallback (faithful port of EquipViewer's icon_extractor, Rubenator 2021) =====
 // The FFXI install folder lives in the registry under PlayOnline*<region>\InstallFolder, value "0001".
 // Cached : resolve once. Returns "<ffxi>\ROM" or nullptr if no install is found.
+static const char* s_romRegKey = 0;   // which SUBS[] entry answered (//aio geartrace)
+
 static const char* ffxi_rom_dir()
 {
     static char rom[300]; static int tried = 0;
@@ -432,13 +435,21 @@ static const char* ffxi_rom_dir()
     for (int i = 0; i < 3 && !base[0]; ++i) {
         HKEY h;   // 32-bit plugin -> SOFTWARE already maps to Wow6432Node ; KEY_WOW64_32KEY is explicit + harmless.
         if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, SUBS[i], 0, KEY_READ | KEY_WOW64_32KEY, &h) != ERROR_SUCCESS) continue;
-        DWORD type = 0, sz = sizeof(base);
+        DWORD type = 0, sz = sizeof(base) - 1;   // -1 : leave room to force-terminate below
         if (RegQueryValueExA(h, "0001", NULL, &type, (LPBYTE)base, &sz) != ERROR_SUCCESS || (type != REG_SZ && type != REG_EXPAND_SZ)) base[0] = 0;
+        else { base[(sz < sizeof(base) - 1) ? sz : sizeof(base) - 1] = 0; s_romRegKey = SUBS[i]; }   // RegQueryValueExA does NOT guarantee a NUL
         RegCloseKey(h);
     }
     if (!base[0]) return nullptr;
     _snprintf(rom, sizeof(rom), "%s\\ROM", base); rom[sizeof(rom) - 1] = 0;
     return rom;
+}
+
+const char* ffxi_rom_dir_probe(const char** out_regkey)
+{
+    const char* r = ffxi_rom_dir();
+    if (out_regkey) *out_regkey = s_romRegKey;
+    return r;
 }
 
 // id-range -> (ROM DAT relative path, id offset). Straight from EquipViewer's item_dat_map.
@@ -460,25 +471,36 @@ static const GearDat GEAR_DAT[] = {
 // FFXI's palette bytes are bit-rotated : the decoded value is a rotate-left-by-3 of the encoded byte.
 static inline unsigned char rotl3(unsigned char x) { return (unsigned char)(((x & 0x1F) << 3) | (x >> 5)); }
 
-bool decode_gear_icon_from_rom(unsigned id, const char* out_bmp_path)
+bool decode_gear_icon_from_rom(unsigned id, u32* out_px, GearInfo* info)
 {
+    GearInfo scratch; if (!info) info = &scratch;
+    info->step = GS_NO_RANGE; info->dat = 0; info->romdir = 0; info->regkey = 0; info->index = -1; info->err = 0;
+    if (!out_px) return false;
     const GearDat* d = nullptr;
     for (int i = 0; i < (int)(sizeof(GEAR_DAT) / sizeof(GEAR_DAT[0])); ++i)
         if (id >= GEAR_DAT[i].lo && id <= GEAR_DAT[i].hi) { d = &GEAR_DAT[i]; break; }
     if (!d) return false;
-    const char* rom = ffxi_rom_dir();
+    info->dat = d->dat;
+    const long idOff = (long)d->lo + d->off;
+    info->index = (long)id - idOff;
+
+    info->step = GS_NO_ROMDIR;
+    const char* rom = ffxi_rom_dir_probe(&info->regkey);
     if (!rom) return false;
+    info->romdir = rom;
 
     char path[340]; _snprintf(path, sizeof(path), "%s\\%s.DAT", rom, d->dat); path[sizeof(path) - 1] = 0;
     for (char* c = path; *c; ++c) if (*c == '/') *c = '\\';   // GEAR_DAT paths use '/'
 
+    info->step = GS_NO_DAT;
     FILE* fp = fopen(path, "rb");
-    if (!fp) return false;
-    const long idOff = (long)d->lo + d->off;
+    if (!fp) { info->err = errno; return false; }
     unsigned char data[0x800];
-    bool ok = (fseek(fp, ((long)id - idOff) * 0xC00 + 0x2BD, SEEK_SET) == 0) && (fread(data, 1, sizeof(data), fp) == sizeof(data));
+    bool ok = (fseek(fp, info->index * 0xC00 + 0x2BD, SEEK_SET) == 0) && (fread(data, 1, sizeof(data), fp) == sizeof(data));
     fclose(fp);
+    info->step = GS_BAD_READ;
     if (!ok) return false;
+    info->step = GS_OK;
 
     // palette : 256 BGRA entries, each byte rotl3-decoded ; the alpha byte is additionally doubled + clamped.
     unsigned char pal[256][4];
@@ -488,12 +510,26 @@ bool decode_gear_icon_from_rom(unsigned id, const char* out_bmp_path)
         pal[g][2] = rotl3(data[g * 4 + 2]);   // R
         int a = rotl3(data[g * 4 + 3]) * 2; pal[g][3] = (unsigned char)(a < 256 ? a : 255);   // A (doubled)
     }
-    // 32x32 pixel indices : each encoded byte e maps to palette entry rotl3(e).
-    unsigned char px[1024 * 4];
-    for (int p = 0; p < 1024; ++p) {
-        const unsigned char* c = pal[rotl3(data[0x400 + p])];
-        px[p * 4 + 0] = c[0]; px[p * 4 + 1] = c[1]; px[p * 4 + 2] = c[2]; px[p * 4 + 3] = c[3];
+    // 32x32 pixel indices : each encoded byte e maps to palette entry rotl3(e). The palette is BGRA and the
+    // DAT rows are BOTTOM-UP, so pack to 0xAARRGGBB and flip vertically -- that lands the caller's buffer in
+    // exactly the orientation load_bmp_texture used to hand back after its own bottom-up flip (the icons must
+    // look identical whether they came from the bundled BMP or straight from the DAT).
+    for (int y = 0; y < 32; ++y) for (int x = 0; x < 32; ++x) {
+        const unsigned char* c = pal[rotl3(data[0x400 + (31 - y) * 32 + x])];
+        out_px[y * 32 + x] = ((u32)c[3] << 24) | ((u32)c[2] << 16) | ((u32)c[1] << 8) | (u32)c[0];
     }
+    return true;
+}
+
+// Best-effort disk cache. The decode above no longer depends on this : if the folder is read-only (a Windower
+// install under Program Files with a non-elevated token, Controlled Folder Access, an AV hold) the icon still
+// renders, we just re-decode it next session. Written to a temp file then MoveFileEx'd over the target, and
+// every write checked -- a half-written BMP used to poison the slot PERMANENTLY and on disk (the "file exists"
+// gates then skipped both the re-decode and the give-up, so it re-parsed a corrupt file every frame forever).
+bool write_gear_icon_bmp(const char* out_bmp_path, const u32* px, int* out_err)
+{
+    if (out_err) *out_err = 0;
+    if (!out_bmp_path || !px) return false;
     // BMP V4 header : byte-identical to EquipViewer's output (== the bundled BMPs load_bmp_texture already reads).
     static const unsigned char HDR[122] = {
         'B','M', 0x7A,0x10,0,0, 0,0, 0,0, 0x7A,0,0,0,                                   // file size 0x107A, pixels @ 0x7A
@@ -504,11 +540,21 @@ bool decode_gear_icon_from_rom(unsigned id, const char* out_bmp_path)
         0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
         0,0,0,0, 0,0,0,0, 0,0,0,0
     };
-    FILE* out = fopen(out_bmp_path, "wb");
-    if (!out) return false;
-    fwrite(HDR, 1, sizeof(HDR), out);
-    fwrite(px, 1, sizeof(px), out);
-    fclose(out);
+    // flip back to the BMP's bottom-up order (decode_gear_icon_from_rom handed us a top-down buffer).
+    u32 rows[1024];
+    for (int y = 0; y < 32; ++y) for (int x = 0; x < 32; ++x) rows[y * 32 + x] = px[(31 - y) * 32 + x];
+
+    char tmp[344]; _snprintf(tmp, sizeof(tmp), "%s.tmp", out_bmp_path); tmp[sizeof(tmp) - 1] = 0;
+    FILE* out = fopen(tmp, "wb");
+    if (!out) { if (out_err) *out_err = errno; return false; }   // folder read-only -> skip the cache, nothing else
+    const bool wrote = fwrite(HDR,  1, sizeof(HDR),  out) == sizeof(HDR)
+                    && fwrite(rows, 1, sizeof(rows), out) == sizeof(rows);
+    const bool closed = fclose(out) == 0;                        // buffered-write failures surface HERE, not at fwrite
+    if (!wrote || !closed) { if (out_err) *out_err = errno; DeleteFileA(tmp); return false; }   // never leave a truncated BMP behind
+    if (!MoveFileExA(tmp, out_bmp_path, MOVEFILE_REPLACE_EXISTING)) {
+        if (out_err) *out_err = -(int)GetLastError();            // negative = Win32, positive = errno
+        DeleteFileA(tmp); return false;
+    }
     return true;
 }
 

@@ -13,6 +13,16 @@ struct ChangeLine { const char* en; const char* fr; };
 
 // Per-version change lines. Grouped BY VERSION so the Update tab can show the newest release expanded and the
 // older ones as collapsible headers. `*bold*` markup works (draw_wrapped colours it brighter).
+static const ChangeLine CL_33[] = {
+    { "*Equipment showing item numbers instead of icons is fixed.* When a piece wasn't among the icons shipped with AioHud, it was rebuilt from the game's own files — and that worked. But the rebuilt icon was then saved for next time, and *if that save failed, the icon was thrown away* and its number shown instead. Saving fails on installs where the folder is write-protected, typically FFXI under Program Files. The icon is now displayed first and saved afterwards ; a failed save just means it gets rebuilt next session.",
+      "*L'équipement qui affichait des numéros au lieu des icônes est corrigé.* Quand une pièce ne faisait pas partie des icônes livrées avec AioHud, elle était reconstruite depuis les fichiers du jeu — et ça fonctionnait. Mais l'icône reconstruite était ensuite enregistrée pour la fois suivante, et *si cet enregistrement échouait, l'icône était jetée* et son numéro affiché à la place. L'enregistrement échoue sur les installations où le dossier est protégé en écriture, typiquement FFXI sous Program Files. L'icône est désormais affichée d'abord et enregistrée ensuite ; un enregistrement raté signifie simplement qu'elle sera reconstruite à la prochaine session." },
+    { "This mostly affected players whose gear differs from the icons bundled with AioHud — the more of your equipment was missing from that set, the more numbers you saw.",
+      "Cela touchait surtout les joueurs dont l'équipement diffère des icônes fournies avec AioHud — plus votre matériel manquait à ce lot, plus vous voyiez de numéros." },
+    { "An icon whose save was interrupted (game closed at the wrong moment, disk full) left a damaged file behind that broke that item's icon *permanently*, even after reinstalling. Saving is now all-or-nothing, so a damaged file can no longer be created — and an existing one repairs itself.",
+      "Une icône dont l'enregistrement était interrompu (jeu fermé au mauvais moment, disque plein) laissait un fichier abîmé qui cassait l'icône de cet objet *définitivement*, même après réinstallation. L'enregistrement est désormais tout-ou-rien, donc un fichier abîmé ne peut plus être créé — et un fichier déjà abîmé se répare tout seul." },
+    { "Equipping a full set of unseen gear no longer causes a brief stutter : the icons are now rebuilt a couple per frame instead of all sixteen at once.",
+      "Équiper un set entier de pièces jamais vues ne provoque plus de saccade brève : les icônes sont désormais reconstruites deux par image au lieu des seize d'un coup." },
+};
 static const ChangeLine CL_32[] = {
     { "*Scrolling works again in the config window.* It broke in 1.0.29 : the fix that stopped the game's cursor showing over the overlay was swallowing the mouse wheel before the config could see it. Sorry — that one was on us.",
       "*Le défilement fonctionne à nouveau dans la fenêtre de config.* Il était cassé depuis la 1.0.29 : le correctif qui empêchait le curseur du jeu d'apparaître sur l'overlay avalait la molette avant que la config puisse la voir. Désolé, celle-là vient de nous." },
@@ -110,6 +120,7 @@ static const ChangeLine CL_21[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.33", CL_33, (int)(sizeof(CL_33) / sizeof(CL_33[0])) },
     { "1.0.32", CL_32, (int)(sizeof(CL_32) / sizeof(CL_32[0])) },
     { "1.0.31", CL_31, (int)(sizeof(CL_31) / sizeof(CL_31[0])) },
     { "1.0.30", CL_30, (int)(sizeof(CL_30) / sizeof(CL_30[0])) },

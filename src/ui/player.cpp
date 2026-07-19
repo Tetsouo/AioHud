@@ -14,6 +14,8 @@
 #include "ui/text_style.h"       // te_sz/te_ow/te_col : shared TextStyle-resolve impl
 #include "ui/ui_colors.h"        // mul_a : shared ARGB helper
 #include "ui/box_style.h"        // draw_themed_box : shared box chrome (detached equipment frame)
+#include "model/itemnames_gen.h"   // item_name : label the GEARICON FAIL lines
+#include "windower_debug.h"   // GEARICON FAIL probe (dev-only)
 #include <windows.h>
 #include <string.h>
 #include <stdio.h>
@@ -42,6 +44,27 @@ static const int GIL_ICON_W = 64, GIL_ICON_H = 64;
 
 // gear icons (equipment viewer) : bundled 32x32 BMPs named by item id, loaded on demand + cached per slot.
 static const char* GEARICON_DIR() { static char b[260]; if (!b[0]) plugin_path(b, 260, "assets\\gearicons\\"); return b; }
+
+// //aio geartrace : a countdown of gear-icon resolutions still to trace to aiohud_debug.log (0 = off). Traces the
+// WHOLE chain per slot -- bundled BMP hit/miss, id-range -> DAT, registry -> ROM dir, decode, texture, cache write
+// -- because "ROM decode failed" alone conflated no-registry / no-DAT / no-write-permission. NOT gated on
+// AIOHUD_PROBES : the whole point is that a TESTER's release build can produce the capture.
+static int s_gearTrace = 0;
+void set_gear_trace(int n) {
+    s_gearTrace = n;
+    windower::debug::log("=== GEARTRACE armed (%d slot resolutions) ===", n);
+    const char* key = 0; const char* rom = ffxi_rom_dir_probe(&key);
+    windower::debug::log("    icon dir : %s", GEARICON_DIR());
+    windower::debug::log("    ROM dir  : %s   (registry key: %s)", rom ? rom : "<NOT FOUND>", key ? key : "<none matched>");
+}
+bool gear_trace_armed() { return s_gearTrace > 0; }
+void gear_trace(const char* fmt, ...) {
+    if (s_gearTrace <= 0) return;
+    char buf[1024]; va_list ap; va_start(ap, fmt);
+    int n = wvsprintfA(buf, fmt, ap); va_end(ap);   // NB: wvsprintfA has no %f
+    if (n < 0) n = 0; buf[n] = 0;
+    windower::debug::log("GEAR %s", buf);
+}
 
 // thousands-separated gil (e.g. 1234567 -> "1,234,567"), into `out` (>= 16 bytes for a u32).
 static void format_gil(char* out, unsigned v) {
@@ -522,6 +545,11 @@ void Player::draw(const Frame& f) {
         // Skip -> the cached gearTex_ persist across the zone, mirroring how the addon keeps its icons on 0x0A/0x0B.
         const bool equipReady = eqDemo || g.equipValid;
         // sync per-slot textures : (re)load gearicons/<id>.bmp only when a slot's equipped item id changes.
+        // BUDGET : a fresh ROM decode is file IO + a mip-chain build, inline on the render thread. Gearing up 16
+        // unseen slots at once (a zone into new gear) used to do all 16 in ONE frame ; cap it and let the rest
+        // land on the following frames -- the slot just shows its id-text for a frame or two instead of hitching.
+        const int MAX_GEAR_DECODES = 2;
+        int decodes = 0;
         if (equipReady) for (int s = 0; s < 16; ++s) {
             const unsigned short want = (eq.id[s] != 0 && eq.id[s] != 0xFFFF) ? eq.id[s] : 0;
             // (Re)load when the slot's item changed OR the load hasn't succeeded yet (gearTex_ still 0 for a
@@ -530,14 +558,52 @@ void Player::draw(const Frame& f) {
             if (needLoad) {
                 if (gearId_[s] != want) { if (gearTex_[s]) { release_texture(gearTex_[s]); gearTex_[s] = 0; } gearTry_[s] = 0; }   // new item -> drop the old + reset retries
                 if (!want) { gearId_[s] = want; }
-                else {
-                    char p[160]; sprintf(p, "%s%u.bmp", GEARICON_DIR(), want);
+                else if (decodes < MAX_GEAR_DECODES) {
+                    char p[300]; _snprintf(p, sizeof(p), "%s%u.bmp", GEARICON_DIR(), want); p[sizeof(p) - 1] = 0;
+                    const bool tr = gear_trace_armed();
+                    if (tr) { --s_gearTrace; gear_trace("slot %d  id=%u (0x%04X) '%s'", s, want, want, item_name(want) ? item_name(want) : "?"); }
                     u32 tex = load_bmp_texture(dev, p);
-                    if (!tex && GetFileAttributesA(p) == INVALID_FILE_ATTRIBUTES && decode_gear_icon_from_rom(want, p))
-                        tex = load_bmp_texture(dev, p);   // not in the bundled seed -> decode it once from the game's ROM DAT (cached to gearicons/ for next time)
-                    if (tex) { gearTex_[s] = tex; gearId_[s] = want; gearTry_[s] = 0; }        // loaded -> cache it
-                    else if (GetFileAttributesA(p) == INVALID_FILE_ATTRIBUTES) { gearId_[s] = want; gearTry_[s] = 255; }   // no icon anywhere (no game install / unknown id) -> id-text fallback, DON'T retry (255 = give up)
-                    else { gearId_[s] = want; if (gearTry_[s] < 254) ++gearTry_[s]; }          // BMP EXISTS but create failed -> retry every frame until it succeeds (never gives up on a real file ; capped <255 so it can't hit the give-up sentinel)
+                    if (tr) gear_trace("  BMP    %s -> %s", p,
+                                       tex ? "OK (cache hit)"
+                                           : (GetFileAttributesA(p) == INVALID_FILE_ATTRIBUTES ? "ABSENT" : "PRESENT but UNREADABLE (corrupt)"));
+                    if (!tex) {
+                        // No usable BMP -- ABSENT or CORRUPT, we no longer distinguish. Only 1323 of ~23500 items are
+                        // seeded, so this is the normal path. Decode straight to a texture ; the disk cache is written
+                        // afterwards and its failure is ignored, so a read-only plugin folder (Program Files without
+                        // elevation, Controlled Folder Access, an AV hold) costs a re-decode next session, not the icon.
+                        ++decodes;
+                        u32 px[32 * 32];
+                        GearInfo gi;
+                        const bool dec = decode_gear_icon_from_rom(want, px, &gi);
+                        if (tr) {
+                            static const char* STEP[] = { "OK", "NO ID RANGE", "NO ROM DIR (registry)", "DAT NOT OPENABLE", "DAT READ SHORT" };
+                            gear_trace("  RANGE  %s.DAT  idx=%d", gi.dat ? gi.dat : "-", (int)gi.index);
+                            gear_trace("  ROMDIR %s   (key: %s)", gi.romdir ? gi.romdir : "<none>", gi.regkey ? gi.regkey : "<none>");
+                            gear_trace("  DECODE %s%s", STEP[gi.step & 7], gi.err ? " errno set" : "");
+                            if (gi.err) gear_trace("         errno=%d", gi.err);
+                        }
+                        if (dec) {
+                            tex = make_texture_argb_mip(dev, 32, 32, px);
+                            int werr = 0;
+                            const bool cached = tex && write_gear_icon_bmp(p, px, &werr);   // best-effort ; also overwrites a corrupt cached BMP
+                            if (tr) {
+                                gear_trace("  TEX    %s", tex ? "OK" : "FAILED (D3D CreateTexture)");
+                                if (tex) gear_trace("  CACHE  %s%s", cached ? "written" : "FAILED (icon still shows -- cache only)",
+                                                    cached ? "" : (werr == 13 ? "  errno=13 EACCES : folder is READ-ONLY" : ""));
+                                if (tex && !cached && werr != 13) gear_trace("         err=%d (negative = Win32 GetLastError)", werr);
+                            }
+                        } else { gearId_[s] = want; gearTry_[s] = 255;   // unreachable for real (no game install / id outside every DAT range) -> id-text, don't retry
+#ifdef AIOHUD_PROBES
+                            windower::debug::log("GEARICON FAIL id=%u (0x%04X) [%s] -- ROM decode unreachable (step=%d)",
+                                                 want, want, item_name(want) ? item_name(want) : "?", gi.step);
+#endif
+                            if (tr) gear_trace("  RESULT id-text fallback (permanent for this session)");
+                            continue;
+                        }
+                    }
+                    if (tr) gear_trace("  RESULT %s", tex ? "ICON DRAWN" : "id-text fallback (will retry next frame)");
+                    if (tex) { gearTex_[s] = tex; gearId_[s] = want; gearTry_[s] = 0; }   // loaded -> cache it
+                    else { gearId_[s] = want; if (gearTry_[s] < 254) ++gearTry_[s]; }     // decoded but texture create failed (transient) -> retry next frame
                 }
             }
         }

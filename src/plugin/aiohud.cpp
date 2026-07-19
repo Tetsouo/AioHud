@@ -17,6 +17,7 @@
 #include "aiohud_probes.h"          // dev-only diagnostic surface (present only in the local tree ; build.bat wires it in when the file exists)
 #endif
 #include "ui/hud.h"
+#include "ui/player.h"   // set_gear_trace : //aio geartrace
 #include "model/layout.h"
 #include "model/party_state.h"
 #include "model/game_mem.h"
@@ -792,6 +793,11 @@ void aio_plugin_command(const char* cmd)
         g_keyLog = !g_keyLog;
         g_host.console().print(g_keyLog ? ">>> AioHud : key log ON (type in the profile name field, then send aiohud_debug.log) <<<"
                                         : ">>> AioHud : key log OFF <<<");
+        return;
+    }
+    if (strstr(buf, "geartrace")) {   // //aio geartrace -> trace the next N gear-icon resolutions to aiohud_debug.log (raw-item-ID diagnosis)
+        aio::set_gear_trace(120);
+        g_host.console().print(">>> AioHud : gear trace ARMED (open the equipment viewer / change gear, then send Windower\\plugins\\aiohud_debug.log ; look for GEAR lines) <<<");
         return;
     }
     if (strstr(buf, "dbflog")) {   // //aio dbflog -> trace the next N target-debuff mutations to aiohud_debug.log (debuff-box diagnosis)
