@@ -369,6 +369,8 @@ struct PartyState {
     void on_omen_text(const char* s);               // mode-161 Omen objective text (via the incoming-text callback)
     static const char* omen_short(int type);        // objective type id (1..14) -> short label
     void on_nyzul_text(const char* s, int mode);    // Nyzul Isle text (modes 123/146/148 via the incoming-text callback)
+    // ^ BOTH mutate zt_. Never call them from the text callback directly: it runs on its OWN thread (measured
+    //   2026-07-20, tid 34944 vs the 11880 shared by render / packets / input). Go through queue_game_text().
     int  nyzul_remaining() const;                   // live floor-timer seconds left (0 = no timer ; may be < 0, clamp at display)
     void zt_save() const;                           // persist the current zone-tracker run to disk (survives an unload/reload/crash)
     bool zt_load(int zone);                         // restore it for `zone` -> true if a valid same-zone cache loaded (fresh plugin load)
@@ -581,5 +583,17 @@ void set_demo_select(bool on);
 // grow + the alliances react to the main-party size without needing real players. 0 = off (real size).
 int  party_sim_extra();
 void set_party_sim_extra(int n);
+
+// CROSS-THREAD text hand-off. The incoming-text callback runs on its own thread (MEASURED 2026-07-20 : text_in
+// tid 34944, while render6 / packet_in / mouse / key / wndproc all report the game main loop, tid 11880), and
+// nothing in this codebase synchronises anything. queue_game_text() only COPIES the line into a fixed ring;
+// drain_game_text() dispatches it to on_omen_text / on_nyzul_text from the main thread, inside the frame poll.
+// Single producer (text thread), single consumer (main thread), no allocation, drops the oldest when full --
+// losing an Omen objective line is strictly better than tearing zt_ under the renderer.
+void queue_game_text(const char* s, int mode);
+void drain_game_text();
+// Same hand-off for //aio commands : slot 7 also runs on its own thread (tid 23508 when measured). The callback
+// only queues ; this executes the queued lines on the main thread. Defined in plugin/aiohud.cpp.
+void drain_commands();
 
 } // namespace aio

@@ -13,6 +13,18 @@ struct ChangeLine { const char* en; const char* fr; };
 
 // Per-version change lines. Grouped BY VERSION so the Update tab can show the newest release expanded and the
 // older ones as collapsible headers. `*bold*` markup works (draw_wrapped colours it brighter).
+static const ChangeLine CL_41[] = {
+    { "*A memory leak that could cost ~13 MB per second is fixed.* If one of the vial images failed to load — most likely while an update was replacing it — the plugin re-created three others every single frame without ever freeing the previous ones.",
+      "*Une fuite mémoire pouvant coûter ~13 Mo par seconde est corrigée.* Si l'une des images de fiole échouait à se charger — typiquement pendant qu'une mise à jour la remplaçait — le plugin recréait trois autres textures à chaque image sans jamais libérer les précédentes." },
+    { "*Your settings can no longer be silently truncated.* The config file was written in place, so another client reading it at that exact moment got a half-written file, treated it as complete, and could then save that loss back to disk. It is now written fully before replacing the old one.",
+      "*Vos réglages ne peuvent plus être tronqués en silence.* Le fichier de config était écrit sur place, donc un autre client le lisant à cet instant précis obtenait un fichier à moitié écrit, le considérait comme complet, et pouvait ensuite réécrire cette perte sur le disque. Il est désormais écrit entièrement avant de remplacer l'ancien." },
+    { "*Chat lines and //aio commands are now handled on the game's main thread.* They were being processed on separate threads while the display was reading the same data — a race that would only ever show up as a rare, unreproducible glitch.",
+      "*Les lignes de chat et les commandes //aio sont désormais traitées sur le thread principal du jeu.* Elles l'étaient sur des threads séparés pendant que l'affichage lisait les mêmes données — une situation qui ne se serait manifestée que par un défaut rare et non reproductible." },
+    { "Several guards were added against malformed data : equipment slots are bounds-checked before being read, cached ally-buff names are always terminated, and the zone-map file paths can no longer overflow on a deep install path.",
+      "Plusieurs protections ont été ajoutées contre des données malformées : les emplacements d'équipement sont bornés avant lecture, les noms de buffs alliés en cache sont toujours terminés, et les chemins de fichiers de cartes ne peuvent plus déborder sur une installation profonde." },
+    { "Performance : the nearby-entity scan no longer runs when the minimap is hidden, and spell names for recast timers are looked up once instead of being searched every frame.",
+      "Performance : le balayage des entités proches ne tourne plus quand le minimap est masqué, et les noms de sorts des minuteurs de recast sont indexés une fois au lieu d'être recherchés à chaque image." },
+};
 static const ChangeLine CL_40[] = {
     { "*A failed load no longer disables things until you restart.* A project-wide sweep found the same flaw in several more places : minimap markers and clock icons, the zone-map file tables (one unreadable file left EVERY map unavailable for the session), and the per-character profile list. They all retry now.",
       "*Un chargement raté ne désactive plus des éléments jusqu'au redémarrage.* Une revue de tout le projet a trouvé le même défaut à plusieurs autres endroits : les marqueurs et icônes du minimap, les tables de fichiers des cartes de zone (un seul fichier illisible rendait TOUTES les cartes indisponibles pour la session), et la liste des profils par personnage. Tous réessaient désormais." },
@@ -186,6 +198,7 @@ static const ChangeLine CL_21[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.41", CL_41, (int)(sizeof(CL_41) / sizeof(CL_41[0])) },
     { "1.0.40", CL_40, (int)(sizeof(CL_40) / sizeof(CL_40[0])) },
     { "1.0.39", CL_39, (int)(sizeof(CL_39) / sizeof(CL_39[0])) },
     { "1.0.38", CL_38, (int)(sizeof(CL_38) / sizeof(CL_38[0])) },

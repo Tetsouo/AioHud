@@ -149,9 +149,23 @@ static void ensure_addon_autoload()
 
 static void spawn_updater(bool checkOnly);   // defined below ; launch the no-window updater / update-check
 
+// THREAD IDENTITY, logged once per callback. The repo carries three CONTRADICTORY claims about this
+// (hud.cpp says a layout reload "from the command thread crashes the game", party_state_roster.cpp says
+// "packet thread", fonts.md says rendering is single-threaded inside EndScene) and NOTHING in src/ synchronises
+// anything -- no critical section, no atomic, anywhere. So the code is written as if it were all one thread
+// while asserting it is not. That question decides whether several shared-state findings are real bugs or
+// non-issues, and it cannot be answered by reading. One line per callback, first call only : ~7 lines a session.
+static void tid_once(const char* what) {
+    static const char* seen[12]; static unsigned tids[12]; static int n = 0;
+    for (int i = 0; i < n; ++i) if (seen[i] == what) return;
+    if (n < 12) { seen[n] = what; tids[n] = GetCurrentThreadId(); ++n; }
+    windower::debug::log("THREAD %-10s tid=%u   (main-loop tid is whichever 'render6' reports)", what, GetCurrentThreadId());
+}
+
 void aio_plugin_init(PluginManager host)
 {
     g_host = host;
+    tid_once("init");
     setlocale(LC_NUMERIC, "C");         // dot decimals for ALL our float I/O (config.txt + layout.json strtod) whatever
                                         // the OS locale -- a comma-locale (French-Canadian, French, German...) would
                                         // otherwise misparse every saved/loaded position/scale and wreck box placement.
@@ -199,6 +213,7 @@ static HWND    g_subclassed = NULL;
 
 static LRESULT CALLBACK aio_wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
 {
+    tid_once("wndproc");
     // Only the CLIENT area, and only while our overlay owns the pointer : the frame/resize cursors on the window
     // border must keep working, and outside the overlay the game owns its cursor completely.
     if (msg == WM_SETCURSOR && LOWORD(lp) == HTCLIENT &&
@@ -225,6 +240,7 @@ static void aio_subclass_remove()
 
 void aio_plugin_render6()
 {
+    tid_once("render6");
     u32 dev = g_host.service_raw(2);   // host vtbl[2] = D3D8 device
     if (valid_ptr(dev)) g_gameHwnd = aio::dFocusWindow(dev);
     if (g_gameHwnd) aio_subclass_install((HWND)g_gameHwnd);   // once the device gives us the window
@@ -274,6 +290,7 @@ static void feed_packet(int id, const unsigned char* b)
 
 void aio_plugin_packet_in(u32 a, u32 b, u32 c, u32 d)
 {
+    tid_once("packet_in");
     if (!valid_ptr(b)) return;
     u32 hdr = 0; safe_read(b, &hdr);
     int id = hdr & 0x1FF;
@@ -289,7 +306,15 @@ void aio_plugin_packet_in(u32 a, u32 b, u32 c, u32 d)
         if ((int)(ha & 0x1FF) == id) pkt = (const unsigned char*)a;   // a = the un-modified original -> use it
     }
 
-    // feed the live party model. SEH-guarded : a truncated packet must never fault the game.
+    // FED INLINE, deliberately -- unlike text_in and command, which are queued and drained on the main thread.
+    // The reason is evidence, not symmetry: slot 11 has reported the game main loop (tid 11880) in EVERY capture,
+    // while slots 7 and 9 were each measured on a POOL thread in one session and the main thread in another.
+    // Deferring packets too was tried on 2026-07-20 and backed out: it buys a guarantee against a thread we have
+    // never observed, and it is not free here -- this is the game's own network path, it adds a frame of latency
+    // to every module fed by packets, and copying the body by the header's declared length is only safe if no
+    // handler reads past it (unverified).
+    // If it is ever revisited: copy a fixed 512 bytes rather than the declared length, and re-measure slot 11
+    // first -- the thread identity varies per session, so one capture proves nothing on its own.
     feed_packet(id, pkt);
 
 #ifdef AIOHUD_PROBES
@@ -302,6 +327,7 @@ void aio_plugin_packet_in(u32 a, u32 b, u32 c, u32 d)
 // done by emptying `modified`, not by the return value). SEH-guarded : a bad text pointer must never fault the game.
 void aio_plugin_text_in(const char* original, char* /*modified*/, int* mode)
 {
+    tid_once("text_in");
     __try {
         const int m = (mode && valid_ptr((u32)mode)) ? *mode : -1;
         if (!original || !valid_ptr((u32)original)) return;
@@ -309,8 +335,13 @@ void aio_plugin_text_in(const char* original, char* /*modified*/, int* mode)
         aio::probes::text_in(original, m);                             // dev-only armed text probes
 #endif
         const int mm = m & 0x1FF;                                       // Windower sets the 0x200 flag ; mask it off (Omen was 673 = 161|0x200)
-        if (mm == 161) aio::party().on_omen_text(original);            // Omen objective lines
-        else if (mm == 123 || mm == 146 || mm == 148) aio::party().on_nyzul_text(original, mm);   // Nyzul Isle floor/timer/objective lines
+        // QUEUE, don't process here. MEASURED 2026-07-20: text_in runs on its OWN thread (tid 34944) while
+        // render6 / packet_in / mouse / key / wndproc all share the game main loop (tid 11880). Calling
+        // on_omen_text / on_nyzul_text directly mutated zt_ -- which the render thread reads every frame and the
+        // packet handlers write -- with no synchronisation, and dragged zt_save() (file I/O + read_player on game
+        // memory) onto that foreign thread. Copy the line into a ring here; the main thread drains it in
+        // poll_game_state. Single producer, single consumer, fixed capacity, no allocation.
+        if (mm == 161 || mm == 123 || mm == 146 || mm == 148) aio::queue_game_text(original, mm);
     } __except (EXCEPTION_EXECUTE_HANDLER) { /* malformed text pointer -> ignore, never crash the game */ }
 }
 
@@ -319,6 +350,7 @@ void aio_plugin_text_in(const char* original, char* /*modified*/, int* mode)
 // mouse while the config overlay is up (cursor is read separately via Win32 GetCursorPos).
 unsigned int aio_plugin_mouse(u32 eventtype, u32 /*x*/, u32 /*y*/, u32 delta, u32 blocked)   // x/y unused : cursor read via GetCursorPos
 {
+    tid_once("mouse");
     // Capture the mouse whenever the overlay OWNS the pointer -- that is, the pointer is over the game window,
     // focused or not. Gating this on focus alone was the double-cursor bug : the game holds mouse capture, so
     // losing focus never stopped it reading the mouse, and it lit up its own in-engine pointer again.
@@ -438,6 +470,7 @@ unsigned int aio_plugin_mouse(u32 eventtype, u32 /*x*/, u32 /*y*/, u32 delta, u3
 // and CONSUME the key (return 1) so the game never sees it ; otherwise the key passes straight through.
 static bool g_keyLog = false;   // //aio keylog -> dump every key event to aiohud_debug.log for diagnosing input bugs
 unsigned int aio_plugin_key(u32 key, u32 b, u32 c) {
+    tid_once("key");
     // Press/release lives in bit 0x40 of b's LOW BYTE (b's low byte = the key-state flags Windower passes ;
     // 0x40 set = key DOWN / make, clear = key UP / break). RE'd from two live captures (2026-07-17, //aio keylog) :
     // it holds identically on both a working setup and the one that doubled -- 39/39 and every event respectively.
@@ -637,7 +670,8 @@ int aio_update_progress(char* msg, int n)
 const char* aio_version_string() { return AIOHUD_VERSION; }
 }   // namespace aio
 
-void aio_plugin_command(const char* cmd)
+// The dispatch itself. Runs on the MAIN thread only -- see aio_plugin_command below for why.
+static void aio_command_dispatch(const char* cmd)
 {
     if (!cmd) return;
     // lower-case a copy so keywords are case-insensitive (//AIO HP 50 == //aio hp 50).
@@ -771,8 +805,17 @@ void aio_plugin_command(const char* cmd)
         } else if (nhit > 1) {                                      // ambiguous -> show the matches so the user can refine
             char line[240]; int w = _snprintf(line, sizeof(line), "%c%c[EmpyPop] several match: %c%c", 0x1F, YEL, 0x1F, GRN);
             bool first = true;
-            for (int k = 0; k < aio::NMS_N && w < (int)sizeof(line) - 24; ++k)
-                if (strstr(aio::NMS[k].key, a)) { w += _snprintf(line + w, sizeof(line) - w, "%s%s", first ? "" : ", ", aio::NMS[k].en); first = false; }
+            // MSVC's _snprintf returns -1 and does NOT terminate on truncation : `w += -1` would rewind a byte and
+            // keep appending, and `sizeof(line) - w` is size_t, so a w past the end underflows to ~4 GB. Not
+            // reachable today (NMS_N=28, longest name 19 chars, so the guard leaves room) -- it goes live the day a
+            // longer NM is added to nms_gen.h. Every sibling call site here already force-terminates.
+            for (int k = 0; k < aio::NMS_N && w > 0 && w < (int)sizeof(line) - 24; ++k)
+                if (strstr(aio::NMS[k].key, a)) {
+                    const int n2 = _snprintf(line + w, sizeof(line) - w, "%s%s", first ? "" : ", ", aio::NMS[k].en);
+                    if (n2 < 0) break;                      // truncated : stop, keep what fits
+                    w += n2; first = false;
+                }
+            line[sizeof(line) - 1] = 0;
             chat(line);
         } else {
             lstrcpynA(C.epTrack, aio::NMS[hit].key, sizeof(C.epTrack));
@@ -919,6 +962,42 @@ void aio_plugin_command(const char* cmd)
       if (strstr(buf, "hp") || strstr(buf, "mp") || strstr(buf, "tp") || (*p >= '0' && *p <= '9')) parse_fill_string(buf);
       else g_host.console().print(">>> aio: unknown command <<<"); }
 }
+
+// ---- COMMAND HAND-OFF : slot 7 runs on its OWN thread ------------------------------------------------------
+// MEASURED 2026-07-20 : command reports tid 23508, text_in 34944, while render6 / packet_in / mouse / key /
+// wndproc all report the game main loop, tid 11880. Nothing in src/ synchronises anything, so EVERY //aio
+// command was mutating state the renderer reads mid-frame -- ui_config(), party(), profiles, themes. The sharpest
+// case: `//aio profile load` and the render thread's profile_sync_poll both enter load_config_from, which parses
+// through ONE `static char line[8192]` into ONE ui_config() singleton -> a config assembled from two interleaved
+// files. hud.cpp's long-standing "doing it from the command thread crashes the game" comment was RIGHT, and the
+// reload_pending_ deferral it justifies is the precedent this generalises: queue here, dispatch on the main
+// thread, and every command -- including ones added later -- is safe by construction rather than by review.
+// Single producer (command thread), single consumer (main thread), no allocation. Costs at most one frame.
+static const int CMDQ_N = 16;
+static char          g_cmdQ[CMDQ_N][256];
+static volatile long g_cmdHead = 0;   // written by the COMMAND thread only
+static volatile long g_cmdTail = 0;   // written by the MAIN thread only
+
+void aio_plugin_command(const char* cmd)
+{
+    tid_once("command");
+    if (!cmd) return;
+    const long head = g_cmdHead;
+    if (head - g_cmdTail >= CMDQ_N) return;              // full (spamming faster than we draw) -> drop
+    const int slot = (int)(head & (CMDQ_N - 1));
+    int i = 0; for (; i < (int)sizeof(g_cmdQ[0]) - 1 && cmd[i]; ++i) g_cmdQ[slot][i] = cmd[i];
+    g_cmdQ[slot][i] = 0;
+    g_cmdHead = head + 1;                                 // publish LAST : the consumer never sees a partial slot
+}
+
+namespace aio {
+void drain_commands() {                                   // called once per frame from Hud::render (main thread)
+    while (g_cmdTail != g_cmdHead) {
+        aio_command_dispatch(g_cmdQ[(int)(g_cmdTail & (CMDQ_N - 1))]);
+        g_cmdTail = g_cmdTail + 1;
+    }
+}
+}   // namespace aio
 
 const char* aio_plugin_name()        { return "AioHud"; }
 // NB: Windower uses GetDescription (lowercased) as the plugin's CONSOLE COMMAND

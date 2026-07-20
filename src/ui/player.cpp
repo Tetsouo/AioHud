@@ -616,7 +616,11 @@ void Player::draw(const Frame& f) {
                     }
                     if (tr) gear_trace("  RESULT %s", tex ? "ICON DRAWN" : "id-text fallback (will retry next frame)");
                     if (tex) { gearTex_[s] = tex; gearId_[s] = want; gearTry_[s] = 0; }   // loaded -> cache it
-                    else { gearId_[s] = want; if (gearTry_[s] < 254) ++gearTry_[s]; }     // decoded but texture create failed (transient) -> retry next frame
+                    // Decoded but the texture create failed -> retry, but BOUNDED. gearTry_ saturating at 254 with
+                    // only 255 suppressing retries meant a slot whose CreateTexture keeps failing (VRAM pressure,
+                    // a device in a bad state) retried FOREVER : with 2 decodes/frame that is ~120 file operations
+                    // a second on the render thread, sustained. Eight attempts, then fall back to the id text.
+                    else { gearId_[s] = want; if (gearTry_[s] < 8) ++gearTry_[s]; else gearTry_[s] = 255; }
                 }
             }
         }

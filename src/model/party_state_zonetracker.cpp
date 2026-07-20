@@ -564,4 +564,37 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
     if (ch) zt_save();
 }
 
+// ---- CROSS-THREAD text hand-off (see party_state.h) --------------------------------------------------------
+// The ONLY place in this codebase that genuinely spans two threads, established by measurement rather than
+// assumption: text_in reports tid 34944 while render6 / packet_in / mouse / key / wndproc all report 11880.
+// Producer copies; consumer dispatches. The indices are plain volatile u32 and the ring is power-of-two, so a
+// torn read is impossible on x86 (aligned 32-bit loads/stores are atomic) -- no lock, no allocation, and the
+// worst case under overflow is a dropped line, never a torn zt_.
+static const int GT_N = 32;
+static char          g_gtText[GT_N][240];
+static int           g_gtMode[GT_N];
+static volatile long g_gtHead = 0;   // written by the TEXT thread only
+static volatile long g_gtTail = 0;   // written by the MAIN thread only
+
+void queue_game_text(const char* s, int mode) {
+    if (!s) return;
+    const long head = g_gtHead;
+    if (head - g_gtTail >= GT_N) return;                 // full : drop (an Omen line is worth less than a torn read)
+    const int slot = (int)(head & (GT_N - 1));
+    int i = 0; for (; i < (int)sizeof(g_gtText[0]) - 1 && s[i]; ++i) g_gtText[slot][i] = s[i];
+    g_gtText[slot][i] = 0;
+    g_gtMode[slot] = mode;
+    g_gtHead = head + 1;                                  // publish LAST : the consumer never sees a half-filled slot
+}
+
+void drain_game_text() {
+    while (g_gtTail != g_gtHead) {
+        const int slot = (int)(g_gtTail & (GT_N - 1));
+        const int mm = g_gtMode[slot];
+        if (mm == 161) party().on_omen_text(g_gtText[slot]);
+        else           party().on_nyzul_text(g_gtText[slot], mm);
+        g_gtTail = g_gtTail + 1;
+    }
+}
+
 } // namespace aio

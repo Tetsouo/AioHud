@@ -338,18 +338,19 @@ void LiquidBars::on_device_lost()
 
 void LiquidBars::ensure(u32 dev)
 {
-    if (!tex_[0]) {
-        __try { for (int v = 0; v < 3; v++) tex_[v] = make_liquid_texture(dev, v); }
-        __except (EXCEPTION_EXECUTE_HANDLER) {}
-    }
-    if (!cap_front_) {
-        __try {
-            cap_front_ = load_raw_texture(dev, CAP_FRONT(), CAP_W, CAP_H);
-            cap_back_  = load_raw_texture(dev, CAP_BACK(),  CAP_W, CAP_H);
-            glow_      = make_glow(dev);
-            bubble_    = make_bubble(dev);
-        } __except (EXCEPTION_EXECUTE_HANDLER) {}
-    }
+    // GUARD EVERY HANDLE, not just the first of the group. These were `if (!tex_[0])` and `if (!cap_front_)` over
+    // blocks that assign three and four handles: if the FIRST one failed while the others succeeded, the guard
+    // stayed open and every subsequent frame re-created the others WITHOUT releasing the previous handles --
+    // ~216 KB per frame, ~13 MB/s at 60 fps, in MANAGED pool. The trigger is real, not theoretical: cap_front.bin
+    // failing to open while the updater replaces it is exactly what happened in dual-box on 2026-07-19.
+    // Every other loader in the tree (minimap, player, party, target) already guards per handle.
+    __try {
+        for (int v = 0; v < 3; v++) if (!tex_[v]) tex_[v] = make_liquid_texture(dev, v);
+        if (!cap_front_) cap_front_ = load_raw_texture(dev, CAP_FRONT(), CAP_W, CAP_H);
+        if (!cap_back_)  cap_back_  = load_raw_texture(dev, CAP_BACK(),  CAP_W, CAP_H);
+        if (!glow_)      glow_      = make_glow(dev);
+        if (!bubble_)    bubble_    = make_bubble(dev);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
 }
 
 void LiquidBars::dispose()

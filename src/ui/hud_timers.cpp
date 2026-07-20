@@ -54,13 +54,41 @@ static const char* abil_name_by_recast(unsigned rid, const unsigned char* jaBits
                                                    //   RUN Vivacious Pulse) -> don't show a wrong name ; the real jig sits on rc 218.
     return (rid == 0) ? 0 : first;
 }
+// INDEXED once, not scanned per frame. This walked all SPELLS_N (957) rows for EVERY active recast, every frame --
+// up to 40 x 957 row tests a frame for a mapping that is constant (the table is generated and never changes).
+// Pure function of rid, unlike abil_name_by_recast whose answer depends on the job's usable-ability bitmap.
 static const char* spell_name_by_recast(unsigned rid) {
-    for (int i = 0; i < SPELLS_N; ++i) if (SPELLS[i].recast_id == rid) return SPELLS[i].en;
-    return 0;
+    static const char* idx[4096];
+    static bool built = false;
+    if (!built) {   // first row wins, exactly as the old linear scan did
+        built = true;
+        for (int i = 0; i < SPELLS_N; ++i) { const unsigned r = SPELLS[i].recast_id; if (r < 4096 && !idx[r]) idx[r] = SPELLS[i].en; }
+    }
+    return (rid < 4096) ? idx[rid] : 0;
 }
 static const char* abil_name_by_id(unsigned id) {   // for buffs-on-allies rows whose `spell` is an ABILITY (COR rolls)
     const AbilRow* a = abil_info(id); return a ? a->en : 0;   // abil_info = binary search (not a linear scan of all 626)
 }
+
+
+#ifdef AIOHUD_PROBES
+// ---- //aio songdump : in-RAM record of the Timers rows (see hud.h). Fixed ring, no heap, no file I/O. ----
+static char  g_srRing[256][160];
+static int   g_srHead = 0, g_srCount = 0;
+static void sr_push(const char* fmt, ...) {
+    va_list ap; va_start(ap, fmt);
+    _vsnprintf(g_srRing[g_srHead], sizeof(g_srRing[0]) - 1, fmt, ap);
+    va_end(ap);
+    g_srRing[g_srHead][sizeof(g_srRing[0]) - 1] = 0;
+    g_srHead = (g_srHead + 1) % 256; if (g_srCount < 256) ++g_srCount;
+}
+void songrow_ring_dump() {
+    const int start = (g_srHead - g_srCount + 256) % 256;
+    windower::debug::log("SONGROW ======== %d recorded row-set change(s), oldest first ========", g_srCount);
+    for (int i = 0; i < g_srCount; ++i) windower::debug::log("SONGROW %s", g_srRing[(start + i) % 256]);
+    g_srHead = 0; g_srCount = 0;
+}
+#endif
 
 // ============================ TIMERS box (self buff timers + recasts) ============================
 // Exact server-sent buff durations (0x063 type-9 -> party().buff_timers()). Each row = the buff's status icon (the

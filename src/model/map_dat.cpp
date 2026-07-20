@@ -4,6 +4,7 @@
 #include "model/map_dat.h"
 #include <windows.h>
 #include <string.h>
+#include <stdio.h>   // _snprintf : bounded path formatting (wsprintfA is capped by its own buffer, not the destination)
 #pragma comment(lib, "advapi32.lib")   // RegOpenKeyExA / RegQueryValueExA (PlayOnline install path)
 
 namespace aio {
@@ -67,7 +68,10 @@ static char g_ovl[16][64]; static int g_ovlN = 0; static bool g_ovlTried = false
 static void load_overlays() {
     if (g_ovlTried) return; g_ovlTried = true;
     const char* wr = windower_root(); if (!wr) return;
-    char p[MAX_PATH]; wsprintfA(p, "%s\\addons\\XIPivot\\data\\settings.xml", wr);
+    // BOUNDED. wsprintfA is limited by its OWN 1 KB internal buffer, not by the destination -- a deep Windower
+    // root overflows a char[MAX_PATH] and smashes the caller's stack frame. Same class the project already paid
+    // for in gfx/window.cpp, and this is the path most likely to differ on a Program Files install.
+    char p[MAX_PATH]; _snprintf(p, MAX_PATH, "%s\\addons\\XIPivot\\data\\settings.xml", wr); p[MAX_PATH - 1] = 0;
     unsigned n = 0; unsigned char* d = read_file(p, n);
     if (!d) return;
     char* txt = (char*)HeapAlloc(GetProcessHeap(), 0, n + 1);
@@ -115,10 +119,12 @@ static void load_tables() {
     const char* root = ffxi_root(); if (!root) return;
     char p[MAX_PATH];
     for (int v = 1; v < MAX_VOL; ++v) {
-        if (v == 1) wsprintfA(p, "%s\\VTABLE.DAT", root); else wsprintfA(p, "%s\\ROM%d\\VTABLE%d.DAT", root, v, v);
+        if (v == 1) _snprintf(p, MAX_PATH, "%s\\VTABLE.DAT", root); else _snprintf(p, MAX_PATH, "%s\\ROM%d\\VTABLE%d.DAT", root, v, v);
+        p[MAX_PATH - 1] = 0;
         unsigned vn = 0; unsigned char* vt = read_file(p, vn);
         if (!vt) continue;
-        if (v == 1) wsprintfA(p, "%s\\FTABLE.DAT", root); else wsprintfA(p, "%s\\ROM%d\\FTABLE%d.DAT", root, v, v);
+        if (v == 1) _snprintf(p, MAX_PATH, "%s\\FTABLE.DAT", root); else _snprintf(p, MAX_PATH, "%s\\ROM%d\\FTABLE%d.DAT", root, v, v);
+        p[MAX_PATH - 1] = 0;
         unsigned fn = 0; unsigned char* ft = read_file(p, fn);
         if (!ft) { HeapFree(GetProcessHeap(), 0, vt); continue; }
         g_vt[v] = vt; g_vtN[v] = vn; g_ft[v] = ft; g_ftN[v] = fn; g_maxVol = v;
@@ -141,11 +147,11 @@ static bool resolve_path(unsigned fileId, char* out) {
         if (wr) {
             load_overlays();
             for (int i = 0; i < g_ovlN; ++i) {
-                wsprintfA(out, "%s\\addons\\XIPivot\\data\\DATs\\%s\\%s\\%d\\%d.DAT", wr, g_ovl[i], rom, subdir, file);
+                _snprintf(out, MAX_PATH, "%s\\addons\\XIPivot\\data\\DATs\\%s\\%s\\%d\\%d.DAT", wr, g_ovl[i], rom, subdir, file); out[MAX_PATH - 1] = 0;
                 if (GetFileAttributesA(out) != INVALID_FILE_ATTRIBUTES) return true;   // overlay hit -> use the custom map
             }
         }
-        wsprintfA(out, "%s\\%s\\%d\\%d.DAT", root, rom, subdir, file);   // vanilla ROM
+        _snprintf(out, MAX_PATH, "%s\\%s\\%d\\%d.DAT", root, rom, subdir, file); out[MAX_PATH - 1] = 0;   // vanilla ROM
         return true;
     }
     return false;

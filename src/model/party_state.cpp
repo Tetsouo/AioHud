@@ -204,12 +204,16 @@ bool PartyState::self_can_produce_buff(unsigned status, const unsigned char* jaB
 }
 // ---- derived-state CACHE (survives a plugin reload ; the pol.exe process + its clocks persist) ----
 static const unsigned CACHE_MAGIC = 0x43484941u;   // 'AIHC'
+// Version tied to the LAYOUT, like the roster cache (party_state_roster.cpp) : OtherBuff has gained fields over
+// time, and a hand-written literal 1 lets a &lt;120 s file from the previous build be re-interpreted under the new
+// struct -- garbage strings and counts read as if they were valid.
+static const unsigned CACHE_VER = 1u | ((unsigned)sizeof(PartyState::OtherBuff) << 8);
 static void cache_name(char* out, int cap, unsigned selfId) { _snprintf(out, cap, "data\\cache\\state_%08X.bin", selfId); out[cap - 1] = 0; }
 void PartyState::save_cache(unsigned selfId) const {
     if (!selfId) return;
     char rel[48]; cache_name(rel, sizeof(rel), selfId);
     FILE* f = fopen(plugin_path_r(rel), "wb"); if (!f) return;
-    unsigned ver = 1; unsigned long long wt = (unsigned long long)time(0);
+    unsigned ver = CACHE_VER; unsigned long long wt = (unsigned long long)time(0);
     fwrite(&CACHE_MAGIC, 4, 1, f); fwrite(&ver, 4, 1, f); fwrite(&wt, 8, 1, f);
     unsigned short cnt;
     cnt = 0; for (int i = 0; i < 1024; ++i) if (rollVal_[i]) ++cnt; fwrite(&cnt, 2, 1, f);   // roll pips
@@ -227,13 +231,23 @@ void PartyState::load_cache(unsigned selfId) {
     char rel[48]; cache_name(rel, sizeof(rel), selfId);
     FILE* f = fopen(plugin_path_r(rel), "rb"); if (!f) return;
     unsigned magic = 0, ver = 0; unsigned long long wt = 0;
-    if (fread(&magic, 4, 1, f) != 1 || magic != CACHE_MAGIC || fread(&ver, 4, 1, f) != 1 || ver != 1 || fread(&wt, 8, 1, f) != 1) { fclose(f); return; }
+    if (fread(&magic, 4, 1, f) != 1 || magic != CACHE_MAGIC || fread(&ver, 4, 1, f) != 1 || ver != CACHE_VER || fread(&wt, 8, 1, f) != 1) { fclose(f); return; }
     if ((unsigned long long)time(0) - wt > 120ull) { fclose(f); return; }   // stale (game restart / long gap) -> ignore ; live packets rebuild
     unsigned short cnt = 0;
     if (fread(&cnt, 2, 1, f) == 1) for (int k = 0; k < cnt; ++k) { unsigned short s; unsigned char v, l; if (fread(&s, 2, 1, f) != 1 || fread(&v, 1, 1, f) != 1 || fread(&l, 1, 1, f) != 1) break; if (s < 1024) { rollVal_[s] = v; rollLuck_[s] = l; } }
     if (fread(&cnt, 2, 1, f) == 1) for (int k = 0; k < cnt; ++k) { unsigned short s; unsigned char mk; if (fread(&s, 2, 1, f) != 1 || fread(&mk, 1, 1, f) != 1) break; if (s < 1024) songMod_[s] = mk; }
     if (fread(&cnt, 2, 1, f) == 1) for (int k = 0; k < cnt; ++k) { unsigned short s; unsigned c; if (fread(&s, 2, 1, f) != 1 || fread(&c, 4, 1, f) != 1) break; if (s < 1024) buffCaster_[s] = c; }
-    unsigned short obn = 0; if (fread(&obn, 2, 1, f) == 1 && obn <= 32) { if (fread(otherBuffs_, sizeof(OtherBuff), obn, f) == obn) otherBuffN_ = obn; }
+    // OtherBuff::name is read RAW from disk, unlike every packet path which terminates it explicitly. Consumers
+    // treat it as a C string (hud_timers passes it to _snprintf "%s" and straight to the font drawer), and %s
+    // walks the SOURCE to a NUL regardless of the destination bound -- so an unterminated name reads into the
+    // neighbouring entries and, at the end of the array, off it, in the RENDER path. Force-terminate on load.
+    unsigned short obn = 0;
+    if (fread(&obn, 2, 1, f) == 1 && obn <= 32) {
+        if (fread(otherBuffs_, sizeof(OtherBuff), obn, f) == obn) {
+            for (int k = 0; k < (int)obn; ++k) otherBuffs_[k].name[sizeof(otherBuffs_[k].name) - 1] = 0;
+            otherBuffN_ = obn;
+        }
+    }
     fclose(f);
 }
 void PartyState::buff_source_jobs(unsigned status, bool& playerCan, bool& trustCan) const {

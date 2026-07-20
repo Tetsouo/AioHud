@@ -54,7 +54,8 @@ static const char* job_abbrev(int j) {
 }
 // "Name Main/Sub" (or "Name Main" with no sub). false if the character isn't readable yet.
 bool profile_default_name(char* out, int cap) {
-    if (cap) out[0] = 0;
+    if (!out || cap <= 0) return false;   // the old `if (cap) out[0] = 0;` conceded cap==0 was possible, then wrote out[cap-1] unguarded
+    out[0] = 0;
     PlayerInfo me; if (!read_player(me) || !me.name[0] || me.mjob < 1 || me.mjob > 23) return false;
     if (me.sjob >= 1 && me.sjob <= 23) _snprintf(out, cap, "%s %s-%s", me.name, job_abbrev(me.mjob), job_abbrev(me.sjob));   // '-' not '/' : '/' is filename-illegal (would %-encode to %2F)
     else                               _snprintf(out, cap, "%s %s", me.name, job_abbrev(me.mjob));
@@ -113,9 +114,17 @@ static const char* last_char_profile(const char* charName) {
 
 // ---- core (de)serialization : the live config <-> a key=value file at `path`. The named-profile
 // API and the single live-config file both go through these, so they always share one format. ----
+// ATOMIC : temp + rename. A plain fopen(path,"w") truncates and then dribbles ~200 fprintf's, and every client on
+// this Windower shares data\profiles\ -- so another client's profile_sync_poll could read a HALF-WRITTEN file.
+// load_config_from clears guideGroupCount and all 23 tmTrackOffN[] blacklists BEFORE parsing, so a short read does
+// not fail: it succeeds with everything after the truncation point missing, profile_mark_clean() blesses that as
+// the truth, and the loss is written back to disk on that client's next save. Same rule as the gear-icon cache
+// and charprofiles.txt. (An earlier comment in profile_sync_poll claimed this write was already MoveFileEx-based.
+// It was not -- that was an assumption, and this is the fix that makes it true.)
 static void save_config_to(const char* path) {
     CNumLoc _cnl;   // dot decimals regardless of the OS locale
-    FILE* f = fopen(path, "w"); if (!f) return;
+    char tmp[320]; _snprintf(tmp, sizeof(tmp), "%s.%lu.tmp", path, (unsigned long)GetCurrentProcessId()); tmp[sizeof(tmp) - 1] = 0;
+    FILE* f = fopen(tmp, "w"); if (!f) return;
     UiConfig& c = ui_config();
     fprintf(f, "partyShow=%d\n", c.partyShow);
     fprintf(f, "allyShow=%d\n", c.allyShow);
@@ -304,7 +313,10 @@ static void save_config_to(const char* path) {
     }
     for (int i = 0; i < 3; ++i)
         fprintf(f, "box%d=%d,%.5f,%.5f,%.4f\n", i, c.box[i].posSet ? 1 : 0, c.box[i].x, c.box[i].y, c.box[i].scale);
-    fclose(f);
+    // fclose is where buffered-write failures surface (disk full, quota) -- check it, then publish in one step.
+    // On any failure the ORIGINAL file is left untouched, which is the whole point: a config we could not write
+    // completely must never replace a config that was complete.
+    if (fclose(f) != 0 || !MoveFileExA(tmp, path, MOVEFILE_REPLACE_EXISTING)) DeleteFileA(tmp);
 }
 
 static void parse_box(const char* s, BoxStyle& b) {   // "on,alpha,themeCopy,theme,lum,hue[,border]" -> BoxStyle (keeps defaults on short lines)
@@ -921,7 +933,7 @@ void profile_sync_poll() {
     if (ft.dwLowDateTime == g_profStamp.dwLowDateTime && ft.dwHighDateTime == g_profStamp.dwHighDateTime) return;
 
     // Consume the stamp ONLY on a decision we actually made. Consuming it up-front (as this first did) meant a read
-    // landing inside the other client's MoveFileEx replace -- a sharing violation, an AV hold -- left this client on
+    // landing inside the other client's atomic replace -- a sharing violation, an AV hold -- left this client on
     // the OLD settings FOREVER, because the change had already been marked as seen. Rule 10, form C.
     if (profile_dirty()) { g_profStamp = ft; return; }         // mid-edit here : deliberately skip THIS change, don't re-offer it
 

@@ -237,6 +237,8 @@ void Hud::render(u32 dev) {
     // once here, never in a widget's draw(). See gamestate.h.
     poll_game_state(state_);
     profile_sync_poll();   // another client on this Windower saved the profile we are on -> re-apply it (throttled 1/s)
+    drain_game_text();     // Omen / Nyzul chat lines queued by the TEXT thread -> dispatched here, on the main thread
+    drain_commands();      // //aio commands queued by the COMMAND thread (tid differs) -> executed here, on the main thread
 
     // GATE the whole HUD on "logged in / in the world". read_player STILL succeeds while zoning, so it alone can't
     // hide during a zone -- but the client sends 0x00B (zone-out) then 0x00A (zone-in), which set party().zoning_
@@ -347,8 +349,21 @@ void Hud::render(u32 dev) {
         config_.draw(f, screenW_, screenH_);   // full-screen config overlay, on top of everything (the Help owns + loads its own zone map)
         draw_config_preview(f);                // real party+alliance demo boxes inside the config preview stage
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        static bool logged = false;
-        if (!logged) { logged = true; windower::debug::log("HUD draw threw (SEH)"); }
+        // RATE-LIMITED, not once-per-session. A `static bool logged` meant a widget faulting on EVERY frame
+        // produced exactly one line for the whole session -- indistinguishable in the log from a single transient
+        // hiccup, while the HUD silently drew nothing. Report the first one immediately, then at most one line
+        // every 5 s with the running count, so a REPEATING fault is visible as such (rule 10's corollary).
+        static unsigned faults = 0, nextLogMs = 0;
+        const unsigned nowMs = GetTickCount();
+        ++faults;
+        if (faults == 1 || (int)(nowMs - nextLogMs) >= 0) {
+            nextLogMs = nowMs + 5000;
+            windower::debug::log("HUD draw threw (SEH) -- %u fault(s) so far this session", faults);
+        }
+    }
+    if (!tok) {   // no state block -> the game's own render state is NOT protected from our draws (rule 8)
+        static bool sbWarned = false;
+        if (!sbWarned) { sbWarned = true; windower::debug::log("WARNING: CreateStateBlock returned 0 -- drawing WITHOUT save/restore this session"); }
     }
     if (tok) { dApplySB(dev, tok); dDelSB(dev, tok); }
 }

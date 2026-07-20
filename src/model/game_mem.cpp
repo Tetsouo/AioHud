@@ -1,6 +1,7 @@
 // game_mem.cpp -- see game_mem.h.
 #include "model/game_mem.h"
 #include "model/gamestate.h"
+#include "model/ui_config.h"   // mmShow : skip the entity-array sweep entirely when the minimap is off (model->model, no layering issue)
 #include "windower.h"   // safe_read / valid_ptr (guarded game-memory reads)
 #include <windows.h>
 #include <cstring>
@@ -587,6 +588,11 @@ bool read_equipment(EquipSet& out) {
         u32 idx = 0; safe_read(ia + s, &idx); idx &= 0xFF;      // u8 index (0 = empty)
         if (idx == 0) continue;
         u32 bag = 0; safe_read(ba + s * 4, &bag);               // s32 bag id
+        // BOUND both indices before computing an address. item_slot() in this same file enforces exactly these
+        // invariants; these two paths did not. A garbage bag during the half-ready window after a zone makes
+        // bag * 0xCA8 wrap and lands `item` anywhere valid_ptr accepts -- safe_read contains the fault, so the
+        // result is not a crash but a WRONG item id, which then feeds the enhancing-duration maths.
+        if (bag >= (u32)ITEM_BAG_MAX || idx >= ITEM_BAG_ENTRIES) continue;
         u32 item = ir + bag * 0xCA8 + idx * 0x28;
         if (!valid_ptr(item)) continue;
         u32 id = 0, cnt = 0; safe_read(item + 0x00, &id); safe_read(item + 0x04, &cnt);
@@ -611,6 +617,7 @@ bool read_equipment_ext(unsigned short ids[16], unsigned char ext[16][24]) {
         u32 idx = 0; safe_read(ia + s, &idx); idx &= 0xFF;
         if (idx == 0) continue;
         u32 bag = 0; safe_read(ba + s * 4, &bag);
+        if (bag >= (u32)ITEM_BAG_MAX || idx >= ITEM_BAG_ENTRIES) continue;   // same bounds as read_equipment / item_slot
         u32 item = ir + bag * 0xCA8 + idx * 0x28;
         if (!valid_ptr(item)) continue;
         u32 id = 0; safe_read(item + 0x00, &id);
@@ -1005,7 +1012,10 @@ void poll_game_state(GameState& gs) {
       if (ent) { u32 xx = 0, zz = 0, hh = 0; safe_read(ent + ENT_X_OFF, &xx); safe_read(ent + ENT_Z_OFF, &zz); safe_read(ent + ENT_HEADING_OFF, &hh);
                  gs.meX = *(float*)&xx; gs.meZ = *(float*)&zz; gs.meHeading = *(float*)&hh; } }
     read_map_record(gs.zone, current_submap(), gs.map);   // real floor (multi-level zones) -> right map page
-    gs.mapEntN = read_map_entities(gs.mapEnts, MAP_ENT_MAX);    // PC/NPC/mob markers
+    // Gated on the minimap being ON. This is a 9 KB guarded block copy + a 2304-slot sweep + ~7 safe_read per live
+    // slot, EVERY frame -- in a crowded city that is thousands of guarded reads for data nobody draws when the
+    // module is switched off (Minimap::draw returns on !mmShow long after the work is already paid for).
+    gs.mapEntN = ui_config().mmShow ? read_map_entities(gs.mapEnts, MAP_ENT_MAX) : 0;   // PC/NPC/mob markers
     gs.vana = vana_clock_now();                                // Vana'diel clock (computed, no memory read)
 
     TargetInfo tg;
