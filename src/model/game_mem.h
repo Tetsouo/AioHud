@@ -44,7 +44,11 @@ int  read_blu_spells(unsigned short* out, int maxN);             // BLU : the cu
 static const int MAP_ENT_MAX = 400;
 // type 1=PC 2=NPC 3=mob ; id (+0x78) / claimId (+0x188) / pflags (+0x124) / status (+0x170 engaged) carried
 // so the minimap can colour markers with the Target box's convention (claim / party / engaged).
-struct MapEntity { float x, z, heading; unsigned id, claimId, pflags; unsigned char type, status; };
+// `spawn` = the raw SpawnType byte. Bits 2 and 3 are the client's OWN "in my party" / "in my alliance" flags
+// (Windower derives its in_party/in_alliance from exactly these -- FUN_1008DB90), which is a direct signal and
+// does not depend on our roster being loaded. Kept alongside `type` so the colour logic can tell party from
+// alliance, something a roster lookup cannot do (both are in party().find).
+struct MapEntity { float x, z, heading; unsigned id, claimId, pflags; unsigned char type, status, spawn; };
 int read_map_entities(MapEntity* out, int maxN);
 
 // Resolve up to `n` entity server-ids to their live vitals in ONE entity-array block-copy (rule 6/7 : the

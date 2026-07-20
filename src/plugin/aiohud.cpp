@@ -562,6 +562,11 @@ void aio_plugin_unload()
 {
     aio_subclass_remove();   // MUST come first : a WndProc pointing into a freed DLL crashes the client
 
+    // Flush the derived-state cache NOW. The only other writer is a 4 s throttle in the poller, so a buff cast in the
+    // last few seconds before //unload was never persisted -- its caster, tier name and song-JA tags were simply gone
+    // on reload, which is exactly the window the standard unload/load iteration loop lives in.
+    if (aio::party().self_id()) aio::party().save_cache(aio::party().self_id());
+
     g_hud.dispose();
 }
 

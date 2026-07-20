@@ -194,10 +194,30 @@ static const ChangeLine CL_21[] = {
       "Corrig\xC3\xA9 : la molette redimensionne maintenant chaque cadre flottant dans //aio edit (elle ne faisait rien avant)." },
 };
 
+static const ChangeLine CL_42[] = {
+    { "Timers : your songs no longer vanish when a Trust bard sings over them. All marches share one status id, so a Trust's cast used to steal the attribution and the buff-source filter then hid YOUR own song while it was plainly still up.",
+      "Timers : vos chants ne disparaissent plus quand un trust barde chante par-dessus. Toutes les marches partagent un identifiant de statut, donc l'incantation d'un trust volait l'attribution et le filtre de source masquait VOTRE propre chant alors qu'il tournait toujours." },
+    { "Timers : a buff someone else put on you now shows WHO cast it, and Trust songs show their real name and tier instead of borrowing yours. Rolls name their caster too.",
+      "Timers : un buff pose par quelqu'un d'autre indique desormais QUI l'a lance, et les chants des trusts portent leur vrai nom et leur palier au lieu d'emprunter les votres. Les rolls nomment aussi leur lanceur." },
+    { "Timers : the Duration column is ordered your own casts first, then real party players, then Trusts -- each block still sorted soonest-to-expire.",
+      "Timers : la colonne Duree est classee vos propres lancers d'abord, puis les vrais joueurs de l'equipe, puis les trusts -- chaque bloc restant trie par expiration la plus proche." },
+    { "Timers : song tiers, modifier tags and casters now survive //unload + //load, even after several minutes. The cache is written on unload and no longer discarded after two minutes.",
+      "Timers : les paliers de chants, les marqueurs et les lanceurs survivent desormais a //unload + //load, meme apres plusieurs minutes. Le cache est ecrit au dechargement et n'est plus jete au bout de deux minutes." },
+    { "Fixed : status icons could be missing for a whole session on a machine left running more than 24 days -- the retry that reloads the icon atlas never armed.",
+      "Corrige : les icones de statut pouvaient manquer toute une session sur une machine allumee depuis plus de 24 jours -- la relance qui recharge l'atlas ne s'armait jamais." },
+    { "Fixed : dragging the Timers row-spacing slider rewrote the whole config file every frame, making it stutter.",
+      "Corrige : faire glisser le curseur d'espacement des lignes de Timers reecrivait tout le fichier de config a chaque image, ce qui le rendait saccade." },
+    { "Fixed : one field of the action packet was read on 10 bits instead of 6 (confirmed against the game's own parser), which could inflate the target count of an area spell.",
+      "Corrige : un champ du paquet d'action etait lu sur 10 bits au lieu de 6 (confirme face a l'analyseur du jeu), ce qui pouvait gonfler le nombre de cibles d'un sort de zone." },
+    { "Minimap : alliance members now have their own colour instead of sharing the party one -- read from the client's own party/alliance flags on the entity.",
+      "Minimap : les membres d'alliance ont desormais leur propre couleur au lieu de partager celle de l'equipe -- lue directement sur les drapeaux party/alliance du client." },
+};
+
 // One entry per released version, NEWEST FIRST. The Update tab renders each as a collapsible header ; the newest
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.42", CL_42, (int)(sizeof(CL_42) / sizeof(CL_42[0])) },
     { "1.0.41", CL_41, (int)(sizeof(CL_41) / sizeof(CL_41[0])) },
     { "1.0.40", CL_40, (int)(sizeof(CL_40) / sizeof(CL_40[0])) },
     { "1.0.39", CL_39, (int)(sizeof(CL_39) / sizeof(CL_39[0])) },

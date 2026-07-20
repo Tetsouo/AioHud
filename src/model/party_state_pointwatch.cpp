@@ -36,6 +36,30 @@ void PartyState::on_set_update(const unsigned char* p) {   // 0x063 Set Update
             buffTimers_[buffTimerN_].expiry = pkt_u32(p, 0x48 + i * 4);
             ++buffTimerN_;
         }
+        latch_co_expiry_casters();
+    }
+}
+// A trust move can grant SEVERAL statuses while the 0x028 names only ONE (MEASURED : Monberaux's move gives Protect
+// AND Shell, the packet reports status 40 only). The co-expiring partner is identifiable while both are fresh, so
+// LATCH the attribution into buffCaster_ here instead of re-deriving it every frame -- the anchor is temporary.
+// Ygnas later recast Protectra V over the Protect, which replaced the anchor's expiry and orphaned Shell for the
+// rest of its life. Latching at refresh time keeps what we learned while it was still learnable.
+void PartyState::latch_co_expiry_casters() {
+    for (int i = 0; i < buffTimerN_; ++i) {
+        const unsigned short st = buffTimers_[i].id;
+        if (st >= 1024) continue;
+        if (buffCaster_[st] && caster_resolves(buffCaster_[st])) continue;   // already attributed to a LIVE caster -> leave it
+        buffCaster_[st] = 0;                                                // stale id (trusts re-summoned) -> forget it and re-derive
+        unsigned found = 0; bool split = false;
+        for (int j = 0; j < buffTimerN_; ++j) {
+            if (j == i || buffTimers_[j].expiry != buffTimers_[i].expiry) continue;
+            const unsigned short o = buffTimers_[j].id;
+            const unsigned c = (o < 1024) ? buffCaster_[o] : 0;
+            if (!c || !caster_resolves(c)) continue;
+            if (found && found != c) { split = true; break; }  // co-expiring statuses disagree -> don't guess
+            found = c;
+        }
+        if (found && !split) buffCaster_[st] = found;
     }
 }
 void PartyState::on_exp_msg(const unsigned char* p, unsigned id) {   // 0x029 (Param1 @0x0C) / 0x02D (Param1 @0x10)

@@ -148,7 +148,11 @@ int read_map_entities(MapEntity* out, int maxN) {
         if (!valid_ptr(p) || p == self) continue;
         u32 sp = 0; if (!safe_read(p + ENT_SPAWN_OFF, &sp)) continue; sp &= 0xFF;
         unsigned char type;
-        if (sp == 0x01) type = 1; else if (sp == 0x02) type = 2; else if (sp == 0x10) type = 3; else continue;
+        // BIT test, not equality. SpawnType packs a type bit (0x01 PC / 0x02 NPC / 0x10 mob) with membership
+        // bits -- Windower's own FUN_1008DB90 derives in_party from bit 2 and in_alliance from bit 3 of THIS byte.
+        // So a party PC reads 0x0D (PC|party|alliance) and a party trust 0x0E, and the old `== 0x01` / `== 0x02`
+        // silently dropped every party and alliance member from the minimap while solo players still showed.
+        if (sp & 0x01) type = 1; else if (sp & 0x02) type = 2; else if (sp & 0x10) type = 3; else continue;
         u32 rf = 0; safe_read(p + ENT_RENDER_OFF, &rf); if (rf & 0x4000) continue;   // render/valid flag : filters despawned/invalid ghost slots
         u32 xx = 0, zz = 0; if (!safe_read(p + ENT_X_OFF, &xx) || !safe_read(p + ENT_Z_OFF, &zz)) continue;
         const float ex = *(float*)&xx, ez = *(float*)&zz;
@@ -157,6 +161,7 @@ int read_map_entities(MapEntity* out, int maxN) {
         safe_read(p + ENT_ID_OFF, &id); safe_read(p + ENT_CLAIM_OFF, &cl); safe_read(p + ENT_PFLAGS_OFF, &pf); safe_read(p + ENT_STATUS_OFF, &st); safe_read(p + ENT_HEADING_OFF, &hh);
         out[n].x = ex; out[n].z = ez; out[n].heading = *(float*)&hh; out[n].type = type;
         out[n].id = id; out[n].claimId = cl; out[n].pflags = pf; out[n].status = (unsigned char)(st & 0xFF);
+        out[n].spawn = (unsigned char)(sp & 0xFF);   // party/alliance bits ride along
         ++n;
     }
     return n;
@@ -206,7 +211,7 @@ int read_party_aggro_mobs(const unsigned* friendlyIds, int nFriendly, EntityVita
     for (unsigned i = 0; i < 0x900 && n < maxN; ++i) {
         u32 p = ptrs[i];
         if (!valid_ptr(p)) continue;
-        u32 sp = 0; if (!safe_read(p + ENT_SPAWN_OFF, &sp) || (sp & 0xFF) != 0x10) continue;   // mobs only (SpawnType 0x10)
+        u32 sp = 0; if (!safe_read(p + ENT_SPAWN_OFF, &sp) || !(sp & 0x10)) continue;   // mobs only : BIT 4, not equality -- a charmed mob in your party reads 0x1C
         u32 rf = 0; safe_read(p + ENT_RENDER_OFF, &rf); if (rf & 0x4000) continue;             // hidden / despawned ghost
         u32 cl = 0; if (!safe_read(p + ENT_CLAIM_OFF, &cl) || !cl) continue;                   // unclaimed -> skip (packet path handles it)
         bool friendly = false; for (int k = 0; k < nFriendly; ++k) if (friendlyIds[k] == cl) { friendly = true; break; }

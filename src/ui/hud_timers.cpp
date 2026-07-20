@@ -174,17 +174,21 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
     // COR roll : name = "Chaos Roll", pip = the coloured pip number (0 = none), post = " (AoE 6)" suffix -> drawn as
     // "Chaos Roll [5] (AoE 6)" with ONLY the pip in pipCol (unlucky=red, lucky/11=green, else white). nameCol overrides
     // the whole-name colour (unused now that only the pip is tinted).
-    struct Row { int rem; int icon; const char* name; int both; int order; u32 nameCol; int pip; u32 pipCol; const char* post; const char* tag; u32 tagCol; };   // tag : BRD song modifiers "(SV)(T)" drawn in tagCol, between the name and the AoE suffix
+    struct Row { int rem; int icon; const char* name; int both; int order; u32 nameCol; int pip; u32 pipCol; const char* post; const char* tag; u32 tagCol; int src; };   // tag : BRD song modifiers "(SV)(T)" drawn in tagCol, between the name and the AoE suffix
     static const int TM_REM_MISSING = -1000000000;   // FOCUS alert row : an ally is MISSING a critical buff -> timer shows "OUT" in red, sorts to the very top
     static Row bufs[50], recs[50]; int nb = 0, nr = 0;
-    for (int i = 0; i < 50; ++i) { bufs[i].nameCol = recs[i].nameCol = 0; bufs[i].pip = recs[i].pip = 0; bufs[i].post = recs[i].post = 0; bufs[i].tag = recs[i].tag = 0; }   // clear per-frame overrides (static arrays)
+    for (int i = 0; i < 50; ++i) { bufs[i].nameCol = recs[i].nameCol = 0; bufs[i].pip = recs[i].pip = 0; bufs[i].post = recs[i].post = 0; bufs[i].tag = recs[i].tag = 0; bufs[i].src = recs[i].src = 0; }   // clear per-frame overrides (static arrays)
     if (preview || editing) {
         static const struct { int id, rem; } SB[5] = { {43, 1490}, {57, 155}, {214, 309}, {40, 540}, {33, 28} };
         for (int i = 0; i < 5; ++i) { bufs[nb].rem = SB[i].rem; bufs[nb].icon = SB[i].id; bufs[nb].name = buff_status_name(SB[i].id); bufs[nb].both = 0; bufs[nb].order = 0; ++nb; }
         if (C.tmMine) {   // demo : an AoE song grouped for the whole party (you included) + a COR roll pip + a single-target buff on one ally
             bufs[nb].rem = 168;  bufs[nb].icon = 43;  bufs[nb].name = "Minuet V"; bufs[nb].tag = " (SV NT)"; bufs[nb].tagCol = 0xFFE8C55Au; bufs[nb].post = " (AoE 6)"; bufs[nb].both = 0; bufs[nb].order = 0; ++nb;
             bufs[nb].rem = 280;  bufs[nb].icon = 313; bufs[nb].name = "Chaos Roll"; bufs[nb].pip = 11; bufs[nb].pipCol = 0xFF74D074u; bufs[nb].tag = " (CC)"; bufs[nb].tagCol = 0xFFE8C55Au; bufs[nb].post = " (AoE 6)"; bufs[nb].both = 0; bufs[nb].order = 0; ++nb;   // pip 11 = green, under Crooked Cards
-            bufs[nb].rem = 1200; bufs[nb].icon = 40;  bufs[nb].name = "Aeryn - Haste";     bufs[nb].both = 1; bufs[nb].order = 2; ++nb;
+            // Band 1 = a real PLAYER's buff on you, band 2 = a TRUST's : both carry the owner in parentheses, which is
+            // what the Help page has to teach. The per-ally sample below is band 5+ (it was left at 2, now "trusts").
+            bufs[nb].rem = 540;  bufs[nb].icon = 33;  bufs[nb].name = "Haste"; bufs[nb].tag = " (Aeryn)";   bufs[nb].tagCol = 0xFF9AB0C8u; bufs[nb].both = 0; bufs[nb].order = 1; ++nb;
+            bufs[nb].rem = 62;   bufs[nb].icon = 41;  bufs[nb].name = "Shell V"; bufs[nb].tag = " (Monberaux)"; bufs[nb].tagCol = 0xFF9AB0C8u; bufs[nb].both = 0; bufs[nb].order = 2; ++nb;
+            bufs[nb].rem = 1200; bufs[nb].icon = 40;  bufs[nb].name = "Aeryn - Haste";     bufs[nb].both = 1; bufs[nb].order = 5; ++nb;
         }
         static const struct { int icon, rem; const char* nm; } SR[4] = { {66, 8, "Mighty Strikes"}, {143, 22, "Haste"}, {160, 3, "Provoke"}, {56, 45, "Berserk"} };
         for (int i = 0; i < 4; ++i) { recs[nr].rem = SR[i].rem; recs[nr].icon = SR[i].icon; recs[nr].name = SR[i].nm; recs[nr].both = 0; recs[nr].order = 0; ++nr; }
@@ -215,7 +219,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         };
 
         // ---- pass 1 : group the buffs YOU cast on ALLIES by spell -> AoE groups (songs / rolls hit the whole party) ----
-        struct AoeGrp { unsigned short spell, status; int allies, rem; unsigned char isAbil, selfHas, aoe; };
+        struct AoeGrp { unsigned short spell, status; int allies, rem; unsigned expTick; unsigned char isAbil, selfHas, aoe; };   // expTick : the exact self-expiry the ally copies were frozen on -> identifies WHICH cast they came from
         static AoeGrp grp[32]; int ng = 0;
         int no = 0; const PartyState::OtherBuff* ob = 0;
         auto obRem = [&](const PartyState::OtherBuff& o) -> int {
@@ -229,13 +233,44 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             for (int i = 0; i < no; ++i) {
                 if (obRem(ob[i]) <= 0) continue;
                 int gi = -1; for (int k = 0; k < ng; ++k) if (grp[k].spell == ob[i].spell) { gi = k; break; }
-                if (gi < 0 && ng < 32) { gi = ng++; grp[gi].spell = ob[i].spell; grp[gi].status = ob[i].status; grp[gi].allies = 0; grp[gi].rem = obRem(ob[i]); grp[gi].isAbil = ob[i].isAbil; grp[gi].selfHas = 0; grp[gi].aoe = 0; }
+                if (gi < 0 && ng < 32) { gi = ng++; grp[gi].spell = ob[i].spell; grp[gi].status = ob[i].status; grp[gi].allies = 0; grp[gi].rem = obRem(ob[i]); grp[gi].isAbil = ob[i].isAbil; grp[gi].selfHas = 0; grp[gi].aoe = 0; grp[gi].expTick = ob[i].expTick; }
                 if (gi >= 0) { grp[gi].allies++; grp[gi].aoe |= ob[i].aoe; }   // aoe = this spell was ever cast as a REAL AoE (>=2 targets at once)
             }
         }
 
-        static char selfTag[8][16]; int stN = 0;   // per-frame song-modifier tag buffers for SOLO songs in pass 2
+        // Per-frame tag buffers for pass 2. Sized for the ROW count, not for songs: this pool started as "song
+        // modifier tags for solo songs" (a handful), then also became the "(caster name)" tag for every buff someone
+        // else put on us. With a full trust party that is 20+ rows, and at 8 slots the overflow silently dropped the
+        // owner name off most of them -- reported as "plein de buff sans porteur" while the model had them all.
+        // 20 chars holds " (" + a 15-char FFXI name + ")" + NUL.
+        // Sized to bufs[] capacity ON PURPOSE : this pool must never be the thing that runs out. It was 8 (song
+        // modifier tags only), and when it also became the "(caster name)" tag it silently dropped the owner off
+        // most rows. Raising it to 32 only moved the cliff -- 50 is the row cap, so the tag can always be written.
+        static char selfTag[50][20]; int stN = 0;
+        const int stMax = (int)(sizeof(selfTag) / sizeof(selfTag[0]));
         unsigned char jaBits[128]; const bool jaOk = read_usable_ja_bits(jaBits);   // once/frame : which JAs THIS job can use (self-cast filter + shared recast_id disambiguation)
+        // ONE definition of "does the buff-source filter keep this timer", shared by the row emit AND by the FOCUS
+        // monitor. They used to disagree: the emit applied the filter, the monitor did not -- so under "Mine only" a
+        // party WHM's Haste never warned you it was about to expire, then screamed HASTE OUT in red the moment it did.
+        // Half a feature reachable, half not. Same verdict for both, so they are reachable or unreachable together.
+        auto srcKeeps = [&](unsigned short status, unsigned expiry, int timerIdx) -> bool {
+            if (C.tmBuffSrc == TMSRC_ALL) return true;
+            const unsigned caster = party().buff_caster_for(status, expiry, timerIdx), me = party().self_id();
+            if (caster != 0 && caster == me) return true;                       // your own -> always kept
+            if (caster != 0) {
+                const bool trust = party().is_trust(caster);
+                if (C.tmBuffSrc == TMSRC_MINE) return false;
+                if (C.tmBuffSrc == TMSRC_PLAYERS && trust)  return false;
+                if (C.tmBuffSrc == TMSRC_TRUSTS  && !trust) return false;
+                return true;
+            }
+            if (party().self_can_produce_buff(status, jaBits, jaOk)) return true;   // unknown but your job can make it
+            if (C.tmBuffSrc == TMSRC_MINE) return false;
+            bool ph = false, th = false; party().buff_source_jobs(status, ph, th);
+            if (C.tmBuffSrc == TMSRC_PLAYERS && !ph) return false;
+            if (C.tmBuffSrc == TMSRC_TRUSTS  && ph && !th) return false;
+            return true;
+        };
         const int trkJob = party().self_main_job();   // "track per job" filter : a buff/recast whose key is in C.tmTrackOff[trkJob] is hidden
         // ---- pass 2 : your OWN self buffs (exact server timers). A self buff that matches an AoE group you cast folds
         //      INTO that group (you count, your exact timer drives it) instead of getting its own row. ----
@@ -268,7 +303,10 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 if (s_focusLastRem[bt[i].id] != r16) { s_focusLastRem[bt[i].id] = r16; ftrace = true; }
             }
             {
-                const unsigned short srcSpell = party().self_buff_spell(bt[i].id);
+                // PER-TIMER spell, exactly like the row's NAME below. self_buff_spell() is per-STATUS and holds only
+                // YOUR last cast, so a trust's Honor March inherited the Hidden/Focus settings of YOUR Victory March
+                // (same status 214): hiding your song silently hid theirs, and your Hidden+Focus made THEIR row alert.
+                const unsigned short srcSpell = party().self_buff_spell_ranked(bt[i].id, bt[i].expiry, i);
                 const SpellRow* sr = srcSpell ? spell_info(srcSpell) : 0;
                 if (sr && sr->recast_id) {
                     hideKey  = UiConfig::TM_KEY_RECAST + sr->recast_id;
@@ -284,38 +322,30 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                                      C.tmFocusWarn,
                                      trkJob ? (C.tm_track_off(trkJob, (unsigned)bt[i].id) ? 1 : 0) : -1);
             }
+            // tm_self_focus_on(), not the raw focusKey : the monitor that fires the red OUT row ORs in the status
+            // mirror, and the config panel writes that mirror as an OR over every same-status spell. Reading only the
+            // per-spell key here made the two disagree -- a spell set to plain "Hidden" (help: "never shown. Silence.")
+            // still produced a permanent OUT alert because a same-status sibling was focused.
             if (trkJob && C.tm_track_off(trkJob, hideKey)) {
-                if (!(C.tm_track_off(trkJob, focusKey) && rem < C.tmFocusWarn)) continue;
+                if (!(tm_self_focus_on(C, trkJob, bt[i].id) && rem < C.tmFocusWarn)) continue;
             }
             // GEO aura noise : the geomancy effect status (542-556 Boosts) and "Colure Active" (612) pulse every ~3s
             // in 0x063 ; hide them (the Indi- YOU carry is redrawn as a stable computed row below).
             if (party().geo_aura_remaining(bt[i].id) >= 0) continue;
             if ((bt[i].id >= 542 && bt[i].id <= 556) || bt[i].id == 612) continue;
-            if (C.tmBuffSrc != TMSRC_ALL) {   // buff-SOURCE filter (your own always kept) : mine / +players / +trusts
-                const unsigned caster = party().buff_caster(bt[i].id), me = party().self_id();
-                const bool selfCast = (caster != 0 && caster == me);
-                if (!selfCast) {
-                    if (caster != 0) {   // KNOWN other caster (HUD saw the cast) -> reliable : player vs trust by name DB
-                        const bool trust = party().is_trust(caster);
-                        if (C.tmBuffSrc == TMSRC_MINE) continue;                     // mine only
-                        else if (C.tmBuffSrc == TMSRC_PLAYERS && trust) continue;    // mine + players : drop trusts
-                        else if (C.tmBuffSrc == TMSRC_TRUSTS && !trust) continue;    // mine + trusts : drop players
-                    } else if (party().self_can_produce_buff(bt[i].id, jaBits, jaOk)) {
-                        // unknown caster but YOUR job could make it -> plausibly your own -> keep in every mode.
-                    } else {             // unknown caster your job can't make -> infer source from party composition
-                        if (C.tmBuffSrc == TMSRC_MINE) continue;                     // external, not yours
-                        bool ph = false, th = false; party().buff_source_jobs(bt[i].id, ph, th);
-                        // PLAYERS mode : hide unless a real PLAYER could have produced it. We're already past the
-                        // self-cast check (selfCan=0), so !ph means neither you nor any party/alliance player can
-                        // make it -> it is NOT a player buff (it's a Trust / chemist-mix / 3000-TP-move stat boost
-                        // whose grant never reached our 0x028 parse : Attack/CHR Boost, Enlight...) -> drop it.
-                        if (C.tmBuffSrc == TMSRC_PLAYERS && !ph) continue;
-                        if (C.tmBuffSrc == TMSRC_TRUSTS  && ph && !th) continue;     // only a player in party can make it -> hide
-                    }
-                }
-            }
-            if (!meHas(bt[i].id)) continue;   // cross-check the REAL buffs : drop a stale 0x063 entry (e.g. a replaced Corsair roll the game already removed)
-            int gi = -1; for (int k = 0; k < ng; ++k) if (grp[k].status == bt[i].id) { gi = k; break; }
+            if (!srcKeeps(bt[i].id, bt[i].expiry, i)) continue;   // buff-SOURCE filter (shared with the FOCUS monitor)
+            if (!meHas(bt[i].id)) continue;   // cross-check the REAL buffs : drop a stale 0x063 entry (e.g. a replaced Corsair roll the game already removed). meHas already returns true when the list is unavailable, so a zone cannot wipe the rows here.
+            // WHICH ally group does this self buff belong to ? Groups are built per SPELL, so matching them by STATUS
+            // collapsed two different songs that share one status -- Minuet IV + Minuet V (both status 198), Honor March
+            // + Victory March (both 214) -- into the FIRST group found. Both folded there, one row was emitted for two
+            // songs, and grp[].rem then overwrote the survivor's countdown (captured : 4 songs in game, 3 rows drawn).
+            // So resolve the SPELL first and match on it ; fall back to the status only when this status carries a
+            // single timer, where the ambiguity cannot arise.
+            const unsigned ssid = party().self_buff_spell_ranked(bt[i].id, bt[i].expiry, i);   // spell/tier (Valor Minuet V), disambiguating same-status buffs by expiry rank
+            int sameSt = 0; for (int k = 0; k < n; ++k) if (bt[k].id == bt[i].id) ++sameSt;
+            int gi = -1;
+            for (int k = 0; k < ng; ++k) if (grp[k].spell == ssid) { gi = k; break; }
+            if (gi < 0 && sameSt < 2) for (int k = 0; k < ng; ++k) if (grp[k].status == bt[i].id) { gi = k; break; }
             // Fold your own copy into the ally row ONLY when that row will actually be a grouped "(AoE N)" line (real AoE
             // or "group ally buffs" on). In per-person mode a single-target spell you also put on yourself must stay a
             // SELF row -- pass 3's per-ally branch only emits allies, so folding here would make your own buff vanish.
@@ -323,13 +353,63 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // fold, or a self-Tracked buff would vanish behind an ally-Hidden setting.
             const bool allyHides = trkJob && C.tm_track_off(trkJob, UiConfig::TM_KEY_ALLY | bt[i].id)
                                    && !(C.tm_track_off(trkJob, UiConfig::TM_KEY_FOCUS | UiConfig::TM_KEY_ALLY | bt[i].id) && rem < C.tmFocusWarn);
-            if (gi >= 0 && countHas(bt[i].id) >= 2 && (grp[gi].aoe || C.tmAllyGroup != 0) && !allyHides) { grp[gi].selfHas = 1; grp[gi].rem = rem; continue; }
-            const unsigned ssid = party().self_buff_spell_ranked(bt[i].id, bt[i].expiry);   // spell/tier (Valor Minuet V), disambiguating same-status buffs by expiry rank
+            // NB : expTick canNOT be used here as a "same cast" test. Captured : two March groups (Honor + Victory)
+            // both carried expTick 682 while the Victory March self timer read 712 -- the frozen expiry is shared
+            // between same-status songs, not per cast. Gating the fold on it made the fold never fire for the second
+            // song, so every March was drawn TWICE (own row + group row).
+            const bool folds = (gi >= 0 && countHas(bt[i].id) >= 2 && (grp[gi].aoe || C.tmAllyGroup != 0) && !allyHides);
+            // THROTTLE : this runs per timer per FRAME. Unthrottled it is 60 Hz x the whole window -- the log would be
+            // useless and huge. Log a status only when its verdict or its whole-second countdown actually changed.
+            static unsigned sfKey[32] = { 0 }; static int sfRem[32] = { 0 }; static int sfFold[32] = { 0 };
+            const int sfi = i & 31; const unsigned sfk = ((unsigned)bt[i].id << 16) ^ bt[i].expiry;
+            const bool sfNew = (sfKey[sfi] != sfk) || (sfRem[sfi] != rem) || (sfFold[sfi] != (folds ? 1 : 0));
+            if (sfNew) { sfKey[sfi] = sfk; sfRem[sfi] = rem; sfFold[sfi] = folds ? 1 : 0; }
+            if (sfNew && party().bcapt_armed()) {   // //aio bcaptlog : the fold VERDICT, success path included -- two consecutive
+                const SpellRow* dsp = spell_info(ssid);   // FOLDED lines sharing one gi = the double-fold that eats a row
+                windower::debug::log("SONGFOLD st=%-4u exp=%u rem=%-5d ssid=%-5u \"%s\" sameSt=%d ringN=%d gi=%d countHas=%d aoe=%d allyGroup=%d allyHides=%d -> %s",
+                                     bt[i].id, bt[i].expiry, rem, ssid, (dsp && dsp->en) ? dsp->en : "?",
+                                     sameSt, party().self_cast_ring_count(bt[i].id), gi, countHas(bt[i].id),
+                                     (gi >= 0) ? grp[gi].aoe : -1, C.tmAllyGroup, allyHides ? 1 : 0,
+                                     folds ? "FOLDED (self row suppressed)" : "OWN ROW");
+            }
+            if (folds) { grp[gi].selfHas = 1; grp[gi].rem = rem; continue; }
             const SpellRow* ssp = spell_info(ssid);
-            bufs[nb].rem = rem; bufs[nb].icon = bt[i].id; bufs[nb].name = (ssp && ssp->en) ? ssp->en : buff_status_name(bt[i].id); bufs[nb].both = 0; bufs[nb].order = 0;   // your own buffs -> group first
-            PartyState::RollInfo sri = party().roll_info(bt[i].id);   // SOLO COR roll (no party) : "Chaos Roll [7]", pip tinted by luck
-            if (sri.value) { bufs[nb].pip = sri.value; bufs[nb].pipCol = (sri.luck == 2) ? 0xFFF06060u : (sri.luck == 1 || sri.value == 11) ? 0xFF74D074u : 0xFFEAF0FFu; if (sri.cc) { bufs[nb].tag = " (CC)"; bufs[nb].tagCol = 0xFFE8C55Au; } }
-            else { unsigned char sm = party().song_mods(ssid); if (sm && stN < 8) { const char* tg = song_mod_tag(sm, selfTag[stN], sizeof(selfTag[0])); if (tg) { bufs[nb].tag = tg; bufs[nb].tagCol = 0xFFE8C55Au; ++stN; } } }   // SOLO song (SV NT ...) keyed by spell
+            bufs[nb].rem = rem; bufs[nb].icon = bt[i].id; bufs[nb].name = (ssp && ssp->en) ? ssp->en : buff_status_name(bt[i].id); bufs[nb].both = 0;
+            // BAND : what YOU cast (0), then what real PLAYERS put on you (1), then TRUSTS (2). Each band is still
+            // sorted soonest-first by the comparator below. "Yours" is the per-timer caster, not "it is on me".
+            const unsigned rowCaster = party().buff_caster_for(bt[i].id, bt[i].expiry, i);
+            const bool rowMine = (rowCaster == 0 || rowCaster == party().self_id());   // for TAGS: unknown is probably ours
+            // For BANDING, unknown is its own thing. The source filter already treats caster==0 as "infer", but the
+            // sort treated it as "mine", so every unattributed row -- food, gear, a 3000-TP boost we failed to parse --
+            // sorted ABOVE your own live songs, which is the exact complaint this banding was added to fix.
+            bufs[nb].order = (rowCaster == party().self_id()) ? 0
+                           : (rowCaster == 0)                 ? 1
+                           : party().is_trust(rowCaster)      ? 3 : 2;
+            // Owner name for anything you did not cast -- rolls included. This used to live only in the song branch,
+            // so a party COR's roll on you showed its pips with no idea whose roll it was.
+            const char* rowOwner = rowMine ? 0 : party().pc_name_by_id(rowCaster);
+            PartyState::RollInfo sri = party().roll_info(bt[i].id);   // COR roll : "Chaos Roll [7]", pip tinted by luck
+            if (sri.value) {
+                bufs[nb].pip = sri.value; bufs[nb].pipCol = (sri.luck == 2) ? 0xFFF06060u : (sri.luck == 1 || sri.value == 11) ? 0xFF74D074u : 0xFFEAF0FFu;
+                if (stN < stMax && (rowOwner || sri.cc)) {
+                    _snprintf(selfTag[stN], sizeof(selfTag[0]) - 1, "%s%s%s%s", sri.cc ? " (CC)" : "",
+                              rowOwner ? " (" : "", rowOwner ? rowOwner : "", rowOwner ? ")" : "");
+                    selfTag[stN][sizeof(selfTag[0]) - 1] = 0;
+                    bufs[nb].tag = selfTag[stN]; bufs[nb].tagCol = rowOwner ? 0xFF9AB0C8u : 0xFFE8C55Au; ++stN;
+                }
+            }
+            else {
+                // Song JA tags (SV/NT/TR/M) describe OUR buffs at OUR cast time -- only ever put them on a row we cast.
+                // They were leaking onto trust songs that shared a status, printing "Honor March MNT" twice.
+                if (rowMine) {
+                    unsigned char sm = party().song_mods(ssid);
+                    if (sm && stN < stMax) { const char* tg = song_mod_tag(sm, selfTag[stN], sizeof(selfTag[0])); if (tg) { bufs[nb].tag = tg; bufs[nb].tagCol = 0xFFE8C55Au; ++stN; } }
+                } else if (rowOwner && rowOwner[0] && stN < stMax) {   // someone else's buff -> name the owner
+                    _snprintf(selfTag[stN], sizeof(selfTag[0]) - 1, " (%s)", rowOwner); selfTag[stN][sizeof(selfTag[0]) - 1] = 0;
+                    bufs[nb].tag = selfTag[stN]; bufs[nb].tagCol = 0xFF9AB0C8u; ++stN;
+                }
+            }
+            bufs[nb].src = 2;   // pass 2 : your OWN 0x063 buff timer
             ++nb;
         }
         {   // GEO : the single Indi- you carry -> a stable row at the COMPUTED aura lifetime (base+JP+gear), not the 3s pulse
@@ -337,7 +417,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             int gr = ga.status ? party().geo_aura_remaining(ga.status) : -1;
             if (gr > 0 && nb < 50) {
                 const SpellRow* gsp = spell_info(ga.spell);
-                bufs[nb].rem = gr; bufs[nb].icon = ga.status; bufs[nb].name = (gsp && gsp->en) ? gsp->en : buff_status_name(ga.status); bufs[nb].both = 0; bufs[nb].order = 0; ++nb;
+                bufs[nb].rem = gr; bufs[nb].icon = ga.status; bufs[nb].name = (gsp && gsp->en) ? gsp->en : buff_status_name(ga.status); bufs[nb].both = 0; bufs[nb].order = 0; bufs[nb].src = 3; ++nb;   // GEO aura
             }
         }
 
@@ -362,7 +442,12 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             const bool group = (grp[k].aoe || C.tmAllyGroup != 0) && effN >= 2;
             if (group) {   // AoE : one grouped row (Minuet V (AoE 6))
                 PartyState::RollInfo ri = grp[k].isAbil ? party().roll_info(grp[k].status) : PartyState::RollInfo{ 0, 0 };   // COR roll -> pip value (double-up included)
-                bufs[nb].rem = rem; bufs[nb].icon = grp[k].status; bufs[nb].both = meHas(grp[k].status) ? 0 : 1; bufs[nb].order = 1;   // Self(0) > AoE groups(1) > individual allies(2+)
+                bufs[nb].rem = rem; bufs[nb].icon = grp[k].status; bufs[nb].both = meHas(grp[k].status) ? 0 : 1;
+                // Bands: yours(0) > players-on-you(1) > trusts-on-you(2) > other AoE groups(3) > per-ally(4+).
+                // A group whose SELF copy folded in (grp[].selfHas) is still YOUR OWN buff -- it must stay in band 0.
+                // Otherwise your own AoE song left the top band the moment the fold fired and sorted BELOW a trust's
+                // buff on you, which is exactly the "my casts are not at the top" complaint.
+                bufs[nb].order = grp[k].selfHas ? 0 : 4;
                 if (grp[k].isAbil && ri.value && en) {   // roll : "Chaos Roll [11] (CC) (AoE 6)" -- ONLY the pip tinted
                     _snprintf(obLabel[nb], sizeof(obLabel[nb]), " (AoE %d)", effN); obLabel[nb][sizeof(obLabel[nb]) - 1] = 0;
                     bufs[nb].name = en; bufs[nb].pip = ri.value; bufs[nb].post = obLabel[nb];
@@ -376,6 +461,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 } else {
                     _snprintf(obLabel[nb], sizeof(obLabel[nb]), "(AoE %d)", effN); obLabel[nb][sizeof(obLabel[nb]) - 1] = 0; bufs[nb].name = obLabel[nb];
                 }
+                bufs[nb].src = 4;   // pass 3 : a buff YOU cast on allies, shown as one AoE group
                 ++nb;   // your AoE -> group first
             } else {   // PER-ALLY : one "Person - Spell" row for each ally who really carries it (self is in pass 2)
                 for (int i = 0; i < no && nb < 50; ++i) if (ob[i].spell == grp[k].spell && obRem(ob[i]) > 0) {
@@ -383,7 +469,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     if (!has && !graceOB) continue;   // that ally lost it (stale) -> skip ; during the zone grace trust the estimate
                     if (en) { _snprintf(obLabel[nb], sizeof(obLabel[nb]), "%s - %s", ob[i].name, en); obLabel[nb][sizeof(obLabel[nb]) - 1] = 0; bufs[nb].name = obLabel[nb]; }
                     else bufs[nb].name = ob[i].name;
-                    bufs[nb].rem = obRem(ob[i]); bufs[nb].icon = ob[i].status; bufs[nb].both = 1; bufs[nb].order = 2 + party().party_order(ob[i].target); ++nb;   // individual allies -> after Self(0) and AoE(1)
+                    bufs[nb].rem = obRem(ob[i]); bufs[nb].icon = ob[i].status; bufs[nb].both = 1; bufs[nb].order = 5 + party().party_order(ob[i].target); bufs[nb].src = 5; ++nb;   // individual allies -> after yours(0), others-on-you(1) and AoE(2)
                 }
             }
         }
@@ -425,10 +511,11 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                                          fk2, C.tm_track_off(trkJob, fk2) ? 1 : 0,
                                          UiConfig::TM_KEY_FOCUS | st, C.tm_track_off(trkJob, UiConfig::TM_KEY_FOCUS | st) ? 1 : 0);
                 }
-                if (st >= 1024 || is_debuff_status(st) || !meHas((int)st) || !tm_self_focus_on(C, trkJob, st)) continue;   // gate on meHas (same source as the emit check) -> no false alert while it's up ; per-SPELL focus key (see tm_self_keys)
+                if (st >= 1024 || is_debuff_status(st) || !meHas((int)st) || !tm_self_focus_on(C, trkJob, st)) continue;
+                if (!srcKeeps((unsigned short)st, bt2[i].expiry, i)) continue;   // the source filter hides this row -> it must not alert either   // gate on meHas (same source as the emit check) -> no false alert while it's up ; per-SPELL focus key (see tm_self_keys)
                 int s = -1; for (int q = 0; q < fmN; ++q) if (fm[q].self && fm[q].status == st) { s = q; break; }
                 if (s < 0 && fmN < 24) { s = fmN++; fm[s].target = meId; fm[s].status = (unsigned short)st; fm[s].self = 1; fm[s].isAbil = 0; fm[s].lostMs = 0; fm[s].zoneCheck = 0; fm[s].name[0] = 0; }
-                if (s >= 0) fm[s].spell = party().self_buff_spell(st);   // refresh the spell/tier each frame (a re-cast at a higher tier updates the OUT label)
+                if (s >= 0) fm[s].spell = party().self_buff_spell_ranked((unsigned short)st, bt2[i].expiry, i);   // refresh the spell/tier each frame (a re-cast at a higher tier updates the OUT label)
               } }
             for (int i = 0; i < no; ++i) {                                                     // remember FOCUS buffs currently up on allies (Allies focus key 0xC000|st ; needs tmMine)
                 const unsigned st = ob[i].status;
@@ -499,7 +586,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     _snprintf(obLabel[nb], sizeof(obLabel[nb]), "%s - %s", fm[q].name, en ? en : "?");
                 }
                 obLabel[nb][sizeof(obLabel[nb]) - 1] = 0;
-                bufs[nb].name = obLabel[nb]; bufs[nb].nameCol = 0xFFFF3B3Bu; bufs[nb].rem = TM_REM_MISSING; bufs[nb].icon = fm[q].status; bufs[nb].both = 1; bufs[nb].order = 0; ++nb;   // ALL "OUT" alerts (self + ally) sort to order 0 : rem=MISSING pulls them to the very top so a small tmMax can't clip a critical alert
+                bufs[nb].name = obLabel[nb]; bufs[nb].nameCol = 0xFFFF3B3Bu; bufs[nb].rem = TM_REM_MISSING; bufs[nb].icon = fm[q].status; bufs[nb].both = 1; bufs[nb].order = 0; bufs[nb].src = 6; ++nb;   // ALL "OUT" alerts (self + ally) sort to order 0 : rem=MISSING pulls them to the very top so a small tmMax can't clip a critical alert
             }
         }
         if (f.game) for (int i = 0; i < f.game->nRecast && nr < 50; ++i) {   // recasts are TEXT-only (no menu-icon set exists)
@@ -522,6 +609,39 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
     for (int a = 1; a < nb; ++a) { Row t = bufs[a]; int b = a - 1; while (b >= 0 && after(bufs[b], t)) { bufs[b + 1] = bufs[b]; --b; } bufs[b + 1] = t; }
     for (int a = 1; a < nr; ++a) { Row t = recs[a]; int b = a - 1; while (b >= 0 && after(recs[b], t)) { recs[b + 1] = recs[b]; --b; } recs[b + 1] = t; }
     if (nb > C.tmMax) nb = C.tmMax; if (nr > C.tmMax) nr = C.tmMax;
+
+#ifdef AIOHUD_PROBES
+    // //aio songdump layer 4 -- the rows as BUILT, each labelled with the pass that emitted it.
+    // Recorded into a RAM ring, never to disk : an earlier version wrote a line per change and the extra frame time
+    // was enough to make the ghost-song bug stop reproducing. Observation must be free, so the file write is deferred
+    // to //aio songdump. Only a CHANGE in the row set (status / name / pass / tag -- not the ticking countdown) is kept.
+    if (!preview) {
+        unsigned sig = 2166136261u;   // FNV-1a over what identifies the rows, deliberately excluding `rem`
+        for (int i = 0; i < nb; ++i) {
+            sig = (sig ^ (unsigned)bufs[i].icon) * 16777619u;
+            sig = (sig ^ (unsigned)bufs[i].src)  * 16777619u;
+            for (const char* c = bufs[i].name; c && *c; ++c) sig = (sig ^ (unsigned char)*c) * 16777619u;
+            for (const char* c = bufs[i].tag;  c && *c; ++c) sig = (sig ^ (unsigned char)*c) * 16777619u;
+        }
+        static unsigned lastSig = 0;
+        if (sig != lastSig) {
+            lastSig = sig;
+            static const char* const SRC[7] = { "?", "?", "SELF-timer", "GEO-aura", "ALLY-AoE-group", "ALLY-single", "FOCUS-missing" };
+            sr_push("---- Timers built %d row(s) ----", nb);
+            for (int i = 0; i < nb; ++i) {
+                // flag a row the game itself no longer carries : that is precisely what a ghost is.
+                bool inMem = false;   // (meHas is scoped to the build block above -- read the same source directly)
+                if (f.game) for (int k = 0; k < f.game->nbuff; ++k) if ((int)f.game->buffs[k] == bufs[i].icon) { inMem = true; break; }
+                const bool ghost = (bufs[i].icon > 0 && bufs[i].src != 6 && !inMem);
+                sr_push("  [%-14s] st=%-4d rem=%-6d \"%s\"%s%s%s",
+                        SRC[(bufs[i].src >= 0 && bufs[i].src < 7) ? bufs[i].src : 0],
+                        bufs[i].icon, bufs[i].rem, bufs[i].name ? bufs[i].name : "?",
+                        bufs[i].tag ? bufs[i].tag : "", bufs[i].post ? bufs[i].post : "",
+                        ghost ? "   <<< GHOST : not in the game's own buff list" : "");
+            }
+        }
+    }
+#endif
 
     float sscl = C.tmScale; if (sscl < 0.5f) sscl = 0.5f; if (sscl > 2.0f) sscl = 2.0f;
     const float S = (ovS > 0.0f) ? ovS : (screenH / 1000.0f) * sscl;
@@ -680,9 +800,17 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
 u32 Hud::ensure_buff_atlas(u32 dev) {
     if (!buffAtlas_ && buffAtlasTries_ < 12) {
         const unsigned nowMs = GetTickCount();
-        if ((int)(nowMs - buffAtlasNextMs_) >= 0) {
+        // `!buffAtlasNextMs_` FIRST : 0 is the "never tried" sentinel (init + every device change), and comparing a
+        // raw GetTickCount() against it goes NEGATIVE once uptime passes 24.8 days -- which silently killed the very
+        // first attempt, so the whole bounded retry never armed and EVERY status icon stayed missing for the session.
+        if (!buffAtlasNextMs_ || (int)(nowMs - buffAtlasNextMs_) >= 0) {
             buffAtlas_ = load_raw_texture(dev, buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H);
-            if (!buffAtlas_) { ++buffAtlasTries_; buffAtlasNextMs_ = nowMs + 300; }
+            if (!buffAtlas_) {
+                ++buffAtlasTries_;
+                buffAtlasNextMs_ = (nowMs + 300) | 1;   // |1 : never land back on the 0 "never tried" sentinel
+                if (buffAtlasTries_ >= 12)                          // SAY SO when the budget dies -- a probe that goes quiet reads exactly like a bug that isn't happening
+                    windower::debug::log("buff atlas: giving up after 12 tries (%s) -- status icons will be missing", buff_atlas_path());
+            }
         }
     }
     return buffAtlas_;

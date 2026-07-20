@@ -178,7 +178,7 @@ void PartyState::on_character_changed(unsigned newId) {
     // Derived state keyed to "who I am". None of it self-heals: it is built from packets we watched as the
     // PREVIOUS character, so it would render their roll pips / song tags / ally buffs under the new one.
     for (int i = 0; i < 1024; ++i) { buffCaster_[i] = 0; rollVal_[i] = 0; rollLuck_[i] = 0; songMod_[i] = 0; selfBuffSpell_[i] = 0; }
-    for (int i = 0; i < 24; ++i) selfCasts_[i] = SelfCast{};
+    for (int i = 0; i < 64; ++i) selfCasts_[i] = SelfCast{};
     selfCastHead_ = 0;
     otherBuffN_ = 0;
     jobShadowN_ = 0;                                // else the 24 slots fill with two characters' alliances and new members stop being tracked

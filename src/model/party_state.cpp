@@ -166,14 +166,107 @@ int PartyState::geo_aura_remaining(unsigned short status) const {   // computed 
 }
 // which spell/tier granted the self buff (status, expiry) -- disambiguates two same-status buffs (Minuet V + IV)
 // by expiry RANK : the later-expiring buff = the more recently cast spell.
-unsigned short PartyState::self_buff_spell_ranked(unsigned short status, unsigned expiry) const {
-    int rank = 0;   // number of same-status self buffs expiring LATER than this one (0 = latest = most recent cast)
-    for (int i = 0; i < buffTimerN_; ++i) if (buffTimers_[i].id == status && buffTimers_[i].expiry > expiry) ++rank;
-    unsigned short sp[8]; unsigned tk[8]; int nc = 0;   // this status's recent casts, then sort newest-first
-    for (int i = 0; i < 24 && nc < 8; ++i) if (selfCasts_[i].status == status && selfCasts_[i].spell) { sp[nc] = selfCasts_[i].spell; tk[nc] = selfCasts_[i].tick; ++nc; }
-    for (int a = 1; a < nc; ++a) { unsigned short s = sp[a]; unsigned t = tk[a]; int b = a - 1; while (b >= 0 && tk[b] < t) { sp[b + 1] = sp[b]; tk[b + 1] = tk[b]; --b; } sp[b + 1] = s; tk[b + 1] = t; }
-    if (rank < nc) return sp[rank];
-    return nc > 0 ? sp[nc - 1] : self_buff_spell(status);
+void PartyState::record_cast(unsigned short status, unsigned short spell, unsigned caster, unsigned predExp) {
+    if (!status || status >= 1024) return;
+    // REPLACE, don't append, when the same caster re-sings the same spell : the new cast overwrites the old buff in
+    // game, so keeping both left two live candidates with the same name. Ranking then handed the SAME spell to two
+    // different timers -- reported as "Victory March twice" (2026-07-20). One live entry per (status, spell, caster).
+    const unsigned now = ffxi_now_tick();
+    for (int i = 0; i < 64; ++i) {
+        SelfCast& e = selfCasts_[i];
+        if (e.status == status && e.spell == spell && e.caster == caster) {
+            e.predExp = predExp; e.tick = now; return;
+        }
+    }
+    // Evict by USEFULNESS, not round-robin: an empty slot first, then the one whose buff expired longest ago. A plain
+    // rotating head threw away live casts (the player's 9-minute song) to make room for a trust's 60-second one.
+    int slot = -1; unsigned oldest = 0xFFFFFFFFu;
+    for (int i = 0; i < 64; ++i) {
+        const SelfCast& e = selfCasts_[i];
+        if (!e.spell) { slot = i; break; }
+        if ((int)(e.predExp - now) > 0) continue;          // still alive -> never evict it for a new cast
+        if (e.predExp < oldest) { oldest = e.predExp; slot = i; }
+    }
+    if (slot < 0) {   // every slot still live : sacrifice a FOREIGN cast (soonest to expire) before ever touching one
+        unsigned soonest = 0xFFFFFFFFu;   // of ours -- losing our own entry is what hides our row under the source filter
+        for (int i = 0; i < 64; ++i)
+            if (selfCasts_[i].caster != selfId_ && selfCasts_[i].predExp < soonest) { soonest = selfCasts_[i].predExp; slot = i; }
+        if (slot < 0) { slot = selfCastHead_ % 64; selfCastHead_ = (selfCastHead_ + 1) % 64; }   // all ours -> rotate
+    }
+    SelfCast& sc = selfCasts_[slot];
+    sc.status = status; sc.spell = spell; sc.caster = caster; sc.predExp = predExp; sc.tick = now;
+}
+// Match by predicted-expiry ORDER, not by absolute closeness. MEASURED 2026-07-20, twice:
+//   - ranking by RECENCY is wrong whenever durations differ -- a trust's Minuet is the most recent cast but the
+//     soonest to expire, so it swapped names with our long one ;
+//   - matching on absolute predicted expiry is wrong too : our own duration math (Troubadour/Marcato/gear/JP) was
+//     off by more than any sane tolerance, so every one of OUR songs fell back to "unknown" and lost its tier.
+// What IS reliable is the ORDERING : the longest-lasting cast produces the longest-lasting timer. So rank the
+// same-status timers by expiry, rank the candidate casts by predicted expiry, and pair them off index by index.
+// Absolute accuracy no longer matters -- only that our songs out-last a trust's, which they always do.
+int PartyState::match_cast(unsigned short status, unsigned expiry, int timerIdx) const {
+    if (!status || status >= 1024) return -1;
+    const unsigned now = ffxi_now_tick();
+    int rank = 0;   // how many same-status timers outlive this one -> our index in the expiry-sorted list
+    for (int i = 0; i < buffTimerN_; ++i) {
+        if (buffTimers_[i].id != status) continue;
+        if (buffTimers_[i].expiry > expiry) { ++rank; continue; }
+        // TIE-BREAK on the timer's own slot : two casts in ONE server tick give identical expiries, and without this
+        // both rows took the same rank -> the same cast -> the same name printed twice.
+        if (timerIdx >= 0 && buffTimers_[i].expiry == expiry && i < timerIdx) ++rank;
+    }
+    int idx[64]; unsigned pe[64]; int nc = 0;                   // candidate casts, still plausibly alive
+    for (int i = 0; i < 64 && nc < 64; ++i) {
+        const SelfCast& sc = selfCasts_[i];
+        if (sc.status != status || !sc.spell || !sc.predExp) continue;
+        if ((int)(sc.predExp - now) < -600) continue;           // expired more than 10 s ago -> not a candidate
+        idx[nc] = i; pe[nc] = sc.predExp; ++nc;
+    }
+    for (int a = 1; a < nc; ++a) {                              // insertion sort, longest predicted expiry first
+        const int ii = idx[a]; const unsigned pp = pe[a]; int b = a - 1;
+        while (b >= 0 && pe[b] < pp) { idx[b + 1] = idx[b]; pe[b + 1] = pe[b]; --b; }
+        idx[b + 1] = ii; pe[b + 1] = pp;
+    }
+    if (rank >= nc) return -1;             // no candidate for this rank -> honest "unknown", never someone else's spell
+    // DURATION SANITY, and it is deliberately asymmetric. The real buff list is the authority: a trust's cast cannot
+    // produce a buff that outlives its own base duration by minutes, so if the live timer runs far past what this
+    // FOREIGN cast predicted, the pairing is wrong and the row is almost certainly ours. Returning "unknown" keeps the
+    // row visible; attributing it to a trust HIDES it under the buff-source filter. When unsure, never blame a trust.
+    const SelfCast& m = selfCasts_[idx[rank]];
+    if (m.caster != selfId_ && (int)(expiry - m.predExp) > 90 * 60) return -1;
+    return idx[rank];
+}
+// Per-timer caster, with a CO-EXPIRY fallback for statuses the action packet never names.
+// MEASURED 2026-07-20 : Monberaux's move 4255 grants Protect AND Shell, but the 0x028 reports ONLY status 40 --
+// status 41 exists solely in the 0x063 timer list. There is no field to read, so the attribution has to come from
+// the one thing the two share: an IDENTICAL expiry tick means they were granted by the same event. Exact equality
+// only (the server stamps them from one action) -- no tolerance, or unrelated buffs would borrow a caster.
+unsigned PartyState::buff_caster_for(unsigned short status, unsigned expiry, int timerIdx) const {
+    const int k = match_cast(status, expiry, timerIdx);
+    if (k >= 0) return selfCasts_[k].caster;
+    // A stored caster whose id NO LONGER RESOLVES is stale, not an answer. MEASURED 2026-07-20: re-summoning the
+    // trusts gave them new entity ids (Monberaux 011069C6 -> 0110682C), so Shell's attribution pointed at a dead id
+    // and rendered as an empty owner. Treat it as unknown and re-derive, instead of reporting a name nobody has.
+    const unsigned direct = buff_caster(status);
+    if (direct && caster_resolves(direct)) return direct;
+    // UNANIMITY required : borrow only if every attributed co-expiring status names the SAME caster. Two casters
+    // acting in one server tick is rare but possible, and a wrong borrow is not cosmetic here -- with the buff-source
+    // filter on "hide trusts", mis-attributing our own buff to a trust DROPS the row. That is exactly the bug this
+    // whole session was spent fixing, so a disagreement must yield "unknown" rather than a coin flip.
+    unsigned found = 0;
+    for (int i = 0; i < buffTimerN_; ++i) {
+        if (buffTimers_[i].id == status || buffTimers_[i].expiry != expiry) continue;
+        const unsigned c = buff_caster(buffTimers_[i].id);
+        if (!c || !caster_resolves(c)) continue;
+        if (found && found != c) return 0;     // co-expiring statuses disagree -> don't guess
+        found = c;
+    }
+    return found;
+}
+unsigned short PartyState::self_buff_spell_ranked(unsigned short status, unsigned expiry, int timerIdx) const {
+    const int k = match_cast(status, expiry, timerIdx);
+    if (k >= 0) return selfCasts_[k].spell;
+    return 0;   // unattributable -> the caller falls back to the STATUS name (never to one of our own spells)
 }
 
 const char* PartyState::pc_name_by_id(unsigned id) const {   // roster / alliance server id -> player name (0 if unknown)
@@ -207,7 +300,7 @@ static const unsigned CACHE_MAGIC = 0x43484941u;   // 'AIHC'
 // Version tied to the LAYOUT, like the roster cache (party_state_roster.cpp) : OtherBuff has gained fields over
 // time, and a hand-written literal 1 lets a &lt;120 s file from the previous build be re-interpreted under the new
 // struct -- garbage strings and counts read as if they were valid.
-static const unsigned CACHE_VER = 1u | ((unsigned)sizeof(PartyState::OtherBuff) << 8);
+static const unsigned CACHE_VER = 5u | ((unsigned)sizeof(PartyState::OtherBuff) << 8);   // 3 : + self buff timers, selfBuffSpell_, selfCasts_ (format change -> old files rejected, not misread)
 static void cache_name(char* out, int cap, unsigned selfId) { _snprintf(out, cap, "data\\cache\\state_%08X.bin", selfId); out[cap - 1] = 0; }
 void PartyState::save_cache(unsigned selfId) const {
     if (!selfId) return;
@@ -224,6 +317,22 @@ void PartyState::save_cache(unsigned selfId) const {
     for (int i = 0; i < 1024; ++i) if (buffCaster_[i]) { unsigned short s = (unsigned short)i; fwrite(&s, 2, 1, f); fwrite(&buffCaster_[i], 4, 1, f); }
     unsigned short obn = (unsigned short)otherBuffN_; fwrite(&obn, 2, 1, f);   // buffs on allies (AoE grouping)
     if (otherBuffN_ > 0) fwrite(otherBuffs_, sizeof(OtherBuff), otherBuffN_, f);
+    // SELF buff timers. Safe to cache because `expiry` is an ABSOLUTE FFXI tick derived from the wall clock
+    // (ffxi_now_tick), not a relative countdown -- it stays correct across a plugin reload. Without this the rows
+    // simply vanished: buffTimers_ is filled ONLY by the 0x063 order-9 full refresh, and the server does not
+    // re-send it when a plugin reloads, so nothing repopulated them until the next zone or buff change.
+    unsigned short btn = (unsigned short)buffTimerN_; fwrite(&btn, 2, 1, f);
+    if (buffTimerN_ > 0) fwrite(buffTimers_, sizeof(BuffTimer), buffTimerN_, f);
+    // Which SPELL produced each self buff -> the row label. Without it a restored song reads "Minuet" instead of
+    // "Minuet V", because the tier lives in the spell, not in the buff status.
+    cnt = 0; for (int i = 0; i < 1024; ++i) if (selfBuffSpell_[i]) ++cnt; fwrite(&cnt, 2, 1, f);
+    for (int i = 0; i < 1024; ++i) if (selfBuffSpell_[i]) { unsigned short s = (unsigned short)i; fwrite(&s, 2, 1, f); fwrite(&selfBuffSpell_[i], 2, 1, f); }
+    // Recent self casts. self_buff_spell_ranked() needs these to tell apart two buffs sharing ONE status -- it
+    // ranks them by expiry and picks the matching cast. selfBuffSpell_ is indexed BY STATUS and therefore holds
+    // only one spell per status, so without this ring two Valor Minuet tiers (both status 198, MEASURED) both
+    // resolved to the same name after a reload.
+    fwrite(selfCasts_, sizeof(SelfCast), 64, f);
+    { const int head = selfCastHead_ % 64; fwrite(&head, 4, 1, f); }   // WRAPPED : selfCastHead_ is monotonic, so writing it raw made the read below reject the whole ring after 24 casts
     fclose(f);
 }
 void PartyState::load_cache(unsigned selfId) {
@@ -232,7 +341,15 @@ void PartyState::load_cache(unsigned selfId) {
     FILE* f = fopen(plugin_path_r(rel), "rb"); if (!f) return;
     unsigned magic = 0, ver = 0; unsigned long long wt = 0;
     if (fread(&magic, 4, 1, f) != 1 || magic != CACHE_MAGIC || fread(&ver, 4, 1, f) != 1 || ver != CACHE_VER || fread(&wt, 8, 1, f) != 1) { fclose(f); return; }
-    if ((unsigned long long)time(0) - wt > 120ull) { fclose(f); return; }   // stale (game restart / long gap) -> ignore ; live packets rebuild
+    // Freshness is now PER SECTION, not all-or-nothing. Everything below is keyed on ABSOLUTE FFXI ticks (expiries,
+    // predicted expiries) and stays exactly as valid after a 10-minute unload as after a 10-second one -- expired
+    // entries are dropped on load anyway. The old blanket 120 s gate meant that unloading, applying an update and
+    // loading again emptied the whole Duration column until the next zone, which is indistinguishable from a bug.
+    // Ally rows are the one estimate-based section (GetTickCount deltas), so they keep the tight window.
+    const unsigned long long age = (unsigned long long)time(0) - wt;
+    if (age > 7200ull) { fclose(f); return; }   // >2 h : the session is certainly not the one that wrote this
+    const bool freshEstimates = (age <= 120ull);
+    (void)freshEstimates;
     unsigned short cnt = 0;
     if (fread(&cnt, 2, 1, f) == 1) for (int k = 0; k < cnt; ++k) { unsigned short s; unsigned char v, l; if (fread(&s, 2, 1, f) != 1 || fread(&v, 1, 1, f) != 1 || fread(&l, 1, 1, f) != 1) break; if (s < 1024) { rollVal_[s] = v; rollLuck_[s] = l; } }
     if (fread(&cnt, 2, 1, f) == 1) for (int k = 0; k < cnt; ++k) { unsigned short s; unsigned char mk; if (fread(&s, 2, 1, f) != 1 || fread(&mk, 1, 1, f) != 1) break; if (s < 1024) songMod_[s] = mk; }
@@ -244,11 +361,53 @@ void PartyState::load_cache(unsigned selfId) {
     unsigned short obn = 0;
     if (fread(&obn, 2, 1, f) == 1 && obn <= 32) {
         if (fread(otherBuffs_, sizeof(OtherBuff), obn, f) == obn) {
-            for (int k = 0; k < (int)obn; ++k) otherBuffs_[k].name[sizeof(otherBuffs_[k].name) - 1] = 0;
-            otherBuffN_ = obn;
+            // READ AND DISCARD. Ally rows are deliberately NOT restored: they are validated against everyone's
+            // real 0x076 buff lists before being drawn, and those lists only exist while packets are flowing.
+            // After a reload they are empty (and trusts never appear in them at all), so restoring these rows
+            // showed AoE groups that the live session never displayed -- visible for the ~8 s post-load grace,
+            // during which the drawer trusts the estimate instead of validating, then vanishing when it expires.
+            // Your OWN buff timers below ARE restored: those are exact, absolute, and are what a reload loses.
+            otherBuffN_ = 0;
         }
     }
+    // self buff timers (absolute FFXI-tick expiries -> valid across a reload)
+    unsigned short btn = 0;
+    if (fread(&btn, 2, 1, f) == 1 && btn <= 32) {
+        if (fread(buffTimers_, sizeof(BuffTimer), btn, f) == btn) {
+            const unsigned nowTick = ffxi_now_tick();
+            int w = 0;
+            for (int k = 0; k < (int)btn; ++k)                       // drop anything that expired while we were unloaded
+                if ((int)(buffTimers_[k].expiry - nowTick) > 0) { if (w != k) buffTimers_[w] = buffTimers_[k]; ++w; }
+            buffTimerN_ = w;
+        }
+    }
+    // status -> source spell (row labels : "Minuet V", not "Minuet")
+    if (fread(&cnt, 2, 1, f) == 1) for (int k = 0; k < cnt; ++k) {
+        unsigned short s, sp;
+        if (fread(&s, 2, 1, f) != 1 || fread(&sp, 2, 1, f) != 1) break;
+        if (s < 1024) selfBuffSpell_[s] = sp;
+    }
+    // recent self casts -> lets self_buff_spell_ranked disambiguate same-status tiers again
+    { SelfCast sc[64]; int head = 0;
+      if (fread(sc, sizeof(SelfCast), 64, f) == 64 && fread(&head, 4, 1, f) == 1) {
+          for (int k = 0; k < 64; ++k) selfCasts_[k] = sc[k];
+          selfCastHead_ = ((head % 64) + 64) % 64;   // tolerate ANY stored value : self_buff_spell_ranked() scans all 24 slots
+      } }                                            // and sorts by tick, so it never reads the head -- rejecting the ring over it lost the data for nothing
     fclose(f);
+}
+void PartyState::arm_bcapt_log(int seconds) {
+    bcaptUntilMs_ = GetTickCount() + (unsigned)(seconds > 0 ? seconds : 60) * 1000u;
+    bcaptClosed_  = false;
+    windower::debug::log("BCAPT window OPEN for %ds -- every cat 4/6/11 action will be logged (any caster, any target)", seconds);
+}
+bool PartyState::bcapt_armed() {
+    if (bcaptClosed_) return false;
+    if ((int)(GetTickCount() - bcaptUntilMs_) >= 0) {   // SAY SO when the window dies -- silence is indistinguishable from "no bug"
+        bcaptClosed_ = true;
+        windower::debug::log("BCAPT window CLOSED (expired) -- re-arm with //aio bcaptlog if you need more");
+        return false;
+    }
+    return true;
 }
 void PartyState::buff_source_jobs(unsigned status, bool& playerCan, bool& trustCan) const {
     playerCan = trustCan = false;
@@ -309,7 +468,10 @@ void PartyState::on_action(const unsigned char* p) {
     // message, so gating on 603 cleanly excludes it (the phantom-TH-from-Enlight bug). We walk every action so a proc
     // on any hit of a multi-hit round is caught. Recorded from your / your party's hits onto the struck mob.
     if ((cat == 1 || cat == 2 || cat == 3) && (actor == selfId_ || is_party_or_pet(actor))) {
-        unsigned tc = getbits(p, 72, 10, size); if (tc < 1) tc = 1; if (tc > 16) tc = 16;
+        // 6 bits, NOT 10 -- PROVEN from the client's own parser (FFXiMain 0x05DEC950, Ghidra 2026-07-20). Bits 78-81
+        // are a SEPARATE unknown field ; folding them in inflated the count by multiples of 64 whenever they were
+        // non-zero, and the clamp below then silently hid it. Every other target-count read in this file used 6.
+        unsigned tc = getbits(p, 72, 6, size); if (tc < 1) tc = 1; if (tc > 16) tc = 16;
         int off = 150;
         for (unsigned t = 0; t < tc; ++t) {
             if (off + 36 > size * 8) break;
@@ -410,6 +572,14 @@ void PartyState::on_action(const unsigned char* p) {
         // Shellra/marches...) that hit YOU as target[1+] never matched selfId_ -> no caster -> "self-cast only"
         // couldn't hide it. Walking properly finds your block at any rank.
         unsigned tc2 = getbits(p, 72, 6, size); if (tc2 < 1) tc2 = 1; if (tc2 > 16) tc2 = 16;
+        const bool bcapt = bcapt_armed();
+        if (bcapt) {   // ONE header line per cast : who cast what, on how many -- the "qui a cast quoi sur qui" spine
+            const char* an = pc_name_by_id(actor); const char* sn = 0;
+            if (cat == 4) { const SpellRow* sr = spell_info(aid); sn = sr ? sr->en : 0; }
+            windower::debug::log("BCAPT CAST actor=%08X \"%s\"%s%s cat=%u id=%u \"%s\" bstTab=%u targets=%u",
+                                 actor, an ? an : "?", is_trust(actor) ? " [TRUST]" : "",
+                                 (actor == selfId_) ? " [ME]" : "", cat, aid, sn ? sn : "?", bstTab, tc2);
+        }
         int off = 150;
         for (unsigned t = 0; t < tc2; ++t) {
             if (off + 36 > size * 8) break;
@@ -424,10 +594,13 @@ void PartyState::on_action(const unsigned char* p) {
                 off += 86;
                 if (hasAdd) off += 37;                                     // add-effect body (anim 6 / param 17 / msg 10)
                 if (getbits(p, off, 1, size)) off += 35; else off += 1;    // spike block (+1 flag, +34 body)
-                if (bcaptLog_ > 0) {                                       // //aio bcaptlog : dump EVERY target/action so we see if self is reached and where the stride drifts
-                    windower::debug::log("BCAPT: cat=%u actor=%08X aid=%u bstTab=%u tc=%u  tgt=%08X%s ac=%u act[%u] mMsg=%u mParam=%u hasAdd=%u",
-                                         cat, actor, aid, bstTab, tc2, tgt, isMe ? "(ME)" : "", ac, a, mMsg, mParam, hasAdd);
-                    --bcaptLog_;
+                if (bcapt) {   // every target/action : shows WHO was touched, and where the bit-stride would drift
+                    const char* tn = pc_name_by_id(tgt);
+                    windower::debug::log("BCAPT   tgt[%u/%u]=%08X \"%s\"%s act[%u/%u] mMsg=%u mParam=%u hasAdd=%u  (prevCaster[%u]=%08X)",
+                                         t + 1, tc2, tgt, tn ? tn : "?", isMe ? " [ME]" : "", a + 1, ac,
+                                         mMsg, mParam, hasAdd,
+                                         (mParam && mParam < 1024) ? mParam : 0,
+                                         (mParam && mParam < 1024) ? buffCaster_[mParam] : 0);
                 }
                 if (isMe) {
                     // Record the caster for EVERY status this action grants YOU -- a 3000-TP Trust move (e.g. Ygnas)
@@ -441,7 +614,26 @@ void PartyState::on_action(const unsigned char* p) {
                     unsigned st = 0;
                     if (mMsg == 186 || mMsg == 194 || mMsg == 205 || mMsg == 230 || mMsg == 266 || mMsg == 280 || mMsg == 319 || mMsg == 365 || mMsg == 762) st = mParam;
                     else if (a == 0 && bstTab) st = bstTab;
-                    if (st && st < 1024) buffCaster_[st] = actor;
+                    // DON'T let someone else's cast steal an attribution that is still YOURS. MEASURED 2026-07-20:
+                    // all marches share status 214 and all madrigals 199, so when Ulmia/Joachim sang over the
+                    // player, buffCaster_[214] went Tetsouo -> Ulmia -> Joachim while the player's OWN Honor March
+                    // was still live at 11 min. With the buff-source filter on "mine + players" (tmBuffSrc=1) the
+                    // trust attribution then dropped the player's own row: the song vanished from Timers while it
+                    // was plainly still up in game. The client keeps NO per-status caster (proven in Ghidra, see
+                    // docs/game-data/action-packet.md), so a status-keyed map can hold exactly one caster -- the
+                    // only correct rule is that a live self-cast wins over a later foreign cast on the same status.
+                    if (st && st < 1024) {
+                        const bool mineAndLive = (buffCaster_[st] == selfId_) && (self_buff_expiry((unsigned short)st) != 0);
+                        if (!mineAndLive || actor == selfId_) buffCaster_[st] = actor;
+                        // A FOREIGN cast landing on us : record it too, with the spell's BASE duration (a trust has no
+                        // Troubadour/Marcato). Without this the ring held only our own casts, so a trust's song took a
+                        // rank slot and was handed OUR spell -- two "Honor March MNT" rows for one real song.
+                        if (cat == 4 && actor != selfId_) {
+                            const SpellBuff* sb = spell_buff(aid);
+                            if (sb && sb->effect == st)
+                                record_cast((unsigned short)st, (unsigned short)aid, actor, ffxi_now_tick() + (unsigned)sb->durSec * 60u);
+                        }
+                    }
                 }
             }
         }
@@ -471,10 +663,10 @@ void PartyState::on_action(const unsigned char* p) {
             unsigned short eids[16]; unsigned char eext[16][24];
             int setPct = 0, listedPct = 0, augPct = 0;
             if (read_equipment_ext(eids, eext)) { setPct = composure_set_pct(eids); listedPct = enh_dur_listed_pct(eids); augPct = enh_dur_augment_pct(eids, eext); }
-            bool composure = false, perpetuance = false, troubadour = false, soulvoice = false, marcato = false, clariontenuto = false, nightingale = false;
+            bool composure = false, perpetuance = false, troubadour = false, soulvoice = false, marcato = false, nightingale = false;
             { unsigned short mb[32]; int mn = read_player_buffs(mb, 32); for (int k = 0; k < mn; ++k) {
                 switch (mb[k]) { case 419: composure = true; break; case 469: perpetuance = true; break; case 348: troubadour = true; break;
-                                 case 52: soulvoice = true; break; case 231: marcato = true; break; case 347: nightingale = true; break; case 499: case 455: clariontenuto = true; break; } } }
+                                 case 52: soulvoice = true; break; case 231: marcato = true; break; case 347: nightingale = true; break; } } }   // 499 Clarion Call / 455 Tenuto : no duration effect, deliberately not read
             PlayerInfo me; const bool haveMe = read_player(me);
             const int    flatSec  = (haveMe && me.mjob == 5) ? (read_jp_gift_rank(338) + read_merit_level(2320) * 6) : 0;   // RDM main only
             const double setMult  = (composure && setPct > 0) ? (1.0 + setPct / 100.0) : 1.0;                              // RDM set, needs Composure
@@ -490,14 +682,25 @@ void PartyState::on_action(const unsigned char* p) {
             const double songM1   = 1.0 + (song_dur_m1_pct(eids, songFam) + songJp) / 100.0;
             const double songM2   = troubadour ? 2.0 : 1.0;
             const double songM3   = ((soulvoice || marcato) && (songFam == 11 || songFam == 12 || songFam == 14)) ? 1.5 : 1.0;
-            const int    songA3   = clariontenuto ? read_jp_u8(0x142) * 2 : (marcato ? read_jp_u8(0x148) : 0);   // flat seconds
+            // flat seconds. Marcato ONLY : neither Clarion Call nor Tenuto touches song duration (confirmed by the
+            // player, who mains the job) -- Clarion Call adds a song SLOT, Tenuto protects a song on you from being
+            // overwritten. Both used to feed a bogus duration bonus here, and the exclusive ternary also let either of
+            // them SUPPRESS Marcato's real one.
+            const int    songA3   = marcato ? read_jp_u8(0x148) : 0;
             const bool   miracle  = has_miracle_cheer(eids);
             u32 tc = getbits(p, 72, 6, size); if (tc < 1) tc = 1; if (tc > 16) tc = 16;
             bool aoeSelf = false;   // an AoE buff that ALSO landed on YOU -> the ally copies share your EXACT 0x063 timer
             for (u32 i = 0; i < tc; ++i) { const int b2 = 150 + (int)i * 123; if (b2 + 32 > size * 8) break; if (getbits(p, b2, 32, size) == selfId_) { aoeSelf = true; break; } }
             if (aoeSelf && b->effect < 1024) {   // remember the spell/tier for the self row name (+ a ring for same-status doubles)
                 selfBuffSpell_[b->effect] = (unsigned short)sid;
-                SelfCast& sc = selfCasts_[selfCastHead_ % 24]; sc.status = (unsigned short)b->effect; sc.spell = (unsigned short)sid; sc.tick = ffxi_now_tick(); ++selfCastHead_;
+                // Our OWN cast : predict the expiry from the duration we actually computed for it (songs get the full
+                // m1/m2/m3 + Marcato math, so a Troubadour'd Minuet predicts ~10 min, not the 120 s base). That accuracy
+                // is what lets match_cast tell our long song from a trust's short one on the SAME status.
+                double selfSec = (double)b->durSec;
+                if (b->skill == 40) selfSec = miracle ? 900.0 : ((double)b->durSec * songM1 * songM2 * songM3 + songA3);
+                else if (b->skill == 34) { selfSec = ((double)b->durSec + (double)flatSec) * setMult * gearMult * perpMult; if (selfSec > 1800.0) selfSec = 1800.0; }
+                else if (b->skill == 44) selfSec = (double)((int)b->durSec + geoJpSec + geoGear);
+                record_cast((unsigned short)b->effect, (unsigned short)sid, selfId_, ffxi_now_tick() + (unsigned)(selfSec * 60.0));
             }
             if (b->skill == 40 && sid < 1024) {   // BRD song : snapshot the song-enhancing JAs UP at cast, keyed by SPELL id
                 songMod_[sid] = (unsigned char)((soulvoice ? 1 : 0) | (nightingale ? 2 : 0) | (troubadour ? 4 : 0) | (marcato ? 8 : 0));   // by spell (not status) so two same-family songs (Advancing + Victory March) keep separate tags
@@ -634,12 +837,26 @@ void PartyState::on_action(const unsigned char* p) {
         if (!de) return;                                             // spell lands no trackable debuff (nuke / cure / buff)
         u32 tcount = getbits(p, 72, 6, size);
         if (tcount < 1) tcount = 1; if (tcount > 16) tcount = 16;
+        // VARIABLE stride, same walk as the TH / buff-caster blocks above. The old fixed `150 + i*123` was
+        // documented as broken there and rewritten in both -- but not here. It desynchronises the moment ANY
+        // earlier target carries an add-effect (+37 bits) or a spike block (+35), so an AoE debuff (Sleepga,
+        // Horde Lullaby, a cleaved Dia) read a garbage id AND a garbage message for every target after the
+        // first. Silent : it recorded plausible-looking debuffs on the wrong mobs.
+        int off = 150;
         for (u32 i = 0; i < tcount; ++i) {
-            const int base = 150 + (int)i * 123;
-            if (base + 32 > size * 8) break;               // past the packet
-            const u32 tid = getbits(p, base, 32, size);
+            if (off + 36 > size * 8) break;                // past the packet
+            const u32 tid = getbits(p, off, 32, size);
+            unsigned ac = getbits(p, off + 32, 4, size); off += 36;
+            u32 amsg = 0;                                  // the FIRST action's main message -- what `base + 80` used to read
+            for (unsigned a = 0; a < ac && a < 12; ++a) {
+                if (off + 86 > size * 8) { off = size * 8; break; }
+                if (a == 0) amsg = getbits(p, off + 44, 10, size);
+                const unsigned hasAdd = getbits(p, off + 85, 1, size);
+                off += 86;
+                if (hasAdd) off += 37;                     // optional add-effect block
+                if (getbits(p, off, 1, size)) off += 35; else off += 1;   // optional spike block (+1 flag, +34 body)
+            }
             if (tid && (tid >> 24) == 0x01) {              // a real server id (top byte 0x01)
-                const u32 amsg = getbits(p, base + 80, 10, size);   // per-target action message (target 0 -> bit 230)
                 DBFTRACE("DBF cat4-tgt tid=%08X msg=%u effect=%u self=%u", tid, amsg, de->effect, bySelf ? 1u : 0u);
                 // "No effect" (msg 75, reversed via //aio dbflog : land = 236, no-effect = 75) : the cast did NOT
                 // (re)apply -- the target resisted or already has it -> do NOT add or refresh its timer. Without
@@ -843,8 +1060,14 @@ void PartyState::prune_other_buffs_worn() {
         // AoE-on-self : mirror your live self timer only briefly, then SNAPSHOT the exact remaining + freeze (so a
         // later self-only re-cast can't bump this ally row). A cast that re-hits the ally re-arms mirrorSelf.
         if (ob.mirrorSelf && (int)(now - ob.startMs) > 2000) {
-            ob.expTick = self_buff_expiry(ob.status);   // freeze on the FFXI-tick expiry (same clock as the self rows -> no drift/racing)
-            ob.mirrorSelf = 0;
+            // GUARDED, exactly like the rolls branch six lines up. self_buff_expiry returns 0 for "I have no
+            // timer for that status" -- which is the state right after a //unload + //load, because buffTimers_
+            // is filled ONLY by the 0x063 order-9 full refresh and the server does not re-send it on a plugin
+            // reload. Assigning that 0 unconditionally destroyed the good expiry restored from the cache and
+            // dropped back to the estimate, which then expired almost immediately: songs vanished from the
+            // Timers box a few seconds after every reload. Keep what we have until a real timer shows up.
+            const unsigned e = self_buff_expiry(ob.status);
+            if (e != 0) { ob.expTick = e; ob.mirrorSelf = 0; }
         }
         if (ob.expTick) { if ((int)(ob.expTick - ffxi_now_tick()) <= 0) { drop[k] = true; continue; } }   // frozen on the self expiry
         else if ((int)((ob.startMs + ob.durMs) - now) <= 0) { drop[k] = true; continue; }                 // estimate elapsed

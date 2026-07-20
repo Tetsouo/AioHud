@@ -402,10 +402,16 @@ struct PartyState {
     // on_action from the 0x028 caster when a buff spell/JA lands on selfId_ ; queried by the Timers box.
     unsigned buffCaster_[1024] = { 0 };
     unsigned buff_caster(unsigned status) const { return status < 1024 ? buffCaster_[status] : 0; }
-    // //aio bcaptlog : dump the next N buff actions (cat 4/6/11) landing on self -> reveals the per-action
-    // MESSAGE id used to grant a status, so we can add any unrecognised "gains effect" message to on_action.
-    int bcaptLog_ = 0;
-    void arm_bcapt_log(int n) { bcaptLog_ = n; }
+    // //aio bcaptlog : dump EVERY buff action (cat 4/6/11) -- whoever cast it, on whoever it landed -- so a capture
+    // shows "who cast what on whom, and how many were touched". Reveals the per-action MESSAGE id used to grant a
+    // status, AND lets a trust's song be compared side by side with the player's.
+    // TIME-WINDOWED, not a countdown : a per-event budget burns out at 60 Hz long before the interesting moment
+    // (measured twice today -- one probe died at rem=89, another at rem=19). The window ANNOUNCES its own close,
+    // because a probe that goes quiet reads exactly like a bug that isn't happening.
+    unsigned bcaptUntilMs_ = 0;
+    bool     bcaptClosed_  = true;
+    void arm_bcapt_log(int seconds);
+    bool bcapt_armed();                 // true while the window is open ; logs "window closed" once on expiry
     // Corsair roll : the pip total (1..12, DOUBLE-UP included) + lucky/unlucky flag, keyed by the roll's status.
     // Filled by on_action from the roll's 0x028 (target[0] param = pip). Read by the Timers box to show "Roll (7)".
     unsigned char rollVal_[1024]  = { 0 };
@@ -432,9 +438,41 @@ struct PartyState {
     unsigned short self_buff_spell(unsigned status) const { return status < 1024 ? selfBuffSpell_[status] : 0; }
     // ring of your recent self-cast buffs (status+spell+tick) -> lets two same-status buffs (Minuet V + IV) be told
     // apart : the self buff-timer that expires LATEST is the most-recent cast. Matched by expiry rank in self_buff_spell_ranked.
-    struct SelfCast { unsigned short status = 0; unsigned short spell = 0; unsigned tick = 0; };
-    SelfCast selfCasts_[24]; int selfCastHead_ = 0;
-    unsigned short self_buff_spell_ranked(unsigned short status, unsigned expiry) const;
+    // One recorded cast that landed a status ON US -- from ANY caster, not just ourselves. `predExp` is the expiry we
+    // EXPECT it to produce (accurate for our own casts, where the real duration is computed at cast time ; base
+    // duration for foreign ones). Matching a 0x063 timer to its cast by CLOSEST predExp is the only reliable link:
+    // MEASURED 2026-07-20 that ranking by recency is wrong whenever durations differ -- a trust's Minuet is the most
+    // RECENT cast but the SOONEST to expire, so recency-rank handed our long Minuet IV the trust's entry and vice versa.
+    struct SelfCast { unsigned short status = 0; unsigned short spell = 0; unsigned tick = 0; unsigned caster = 0; unsigned predExp = 0; };
+    // 64, not 24 : the ring now holds EVERY caster's buff casts, and five trusts spamming Haste / Protectra / Indi- /
+    // songs churned a 24-slot ring in minutes -- it evicted the PLAYER's own song casts, so their rows borrowed a
+    // trust's entry and the buff-source filter then hid them. Reported as "two of my songs depop" (2026-07-20).
+    SelfCast selfCasts_[64]; int selfCastHead_ = 0;
+    void record_cast(unsigned short status, unsigned short spell, unsigned caster, unsigned predExp);
+    // ring index of the cast that best explains this timer, -1 if none. `timerIdx` is the caller's index into
+    // buff_timers() and is REQUIRED to break expiry ties: two trusts singing in one server tick produce two timers
+    // with an IDENTICAL expiry, and without a tiebreak both take the same rank and resolve to the same spell
+    // (reported as "Ulmia Advancing March en double", 2026-07-20). Pass -1 only when no index is available.
+    int  match_cast(unsigned short status, unsigned expiry, int timerIdx = -1) const;
+    unsigned short self_buff_spell_ranked(unsigned short status, unsigned expiry, int timerIdx = -1) const;
+    // WHO cast the buff behind THIS timer (0 = unknown). Per-timer, unlike buffCaster_ which holds one caster per
+    // status and therefore cannot separate our song from a trust's on the same status.
+    unsigned buff_caster_for(unsigned short status, unsigned expiry, int timerIdx = -1) const;
+    void latch_co_expiry_casters();   // 0x063 refresh : freeze the "same expiry -> same caster" inference while its anchor still exists
+    // Does this stored caster id still name someone? Trust entity ids CHANGE on re-summon (and on a zone), so an
+    // attribution recorded earlier can point at an id nobody has any more -- it must read as "unknown", not as a
+    // silent blank owner. Self always resolves; everyone else has to be findable in the current roster.
+    bool caster_resolves(unsigned id) const {
+        if (!id) return false;
+        if (id == selfId_) return true;
+        const char* n = pc_name_by_id(id); return n && n[0];
+    }
+    // //aio songlog : how many entries of the recent-cast ring match this status. The ring holds YOUR casts ONLY, so
+    // when two timers share one status but the ring has a single entry, the ranked lookup necessarily collapses them
+    // onto one spell -- that gap is the suspected trust-song bug, and this is the number that proves it.
+    int self_cast_ring_count(unsigned short status) const {
+        int n = 0; for (int i = 0; i < 64; ++i) if (selfCasts_[i].status == status && selfCasts_[i].spell) ++n; return n;
+    }
     unsigned self_id() const { return selfId_; }
     int self_main_job() const { for (int i = 0; i < count; ++i) if (m[i].id == selfId_) return m[i].mjob; return 0; }   // current MAIN job id (Timers "track per job" filter) ; 0 if unknown
     bool is_trust(unsigned id) const { for (int i = 0; i < count; ++i) if (m[i].id == id) return m[i].isTrust != 0; return false; }   // a caster id -> is it a Trust NPC ? (Timers buff-source filter)

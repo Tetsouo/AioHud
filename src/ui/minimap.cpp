@@ -49,7 +49,7 @@ static void tex_state(u32 dev, u32 tex) { dTexQuadState(dev, tex, true, true); }
 // marker colour = the shared claim/allegiance palette (ui/entity_color.h), keyed off the precomputed type
 // (3 mob / 1 PC ; unclaimed mob -> gold). Self is excluded from the markers so its self->white branch never fires.
 static u32 mm_ent_color(const MapEntity& me) {
-    return allegiance_color(me.type == 3, me.type == 1, me.id, me.claimId, me.status, me.pflags, 0xFFF2F2B7u);
+    return allegiance_color(me.type == 3, me.type == 1, me.id, me.claimId, me.status, me.pflags, 0xFFF2F2B7u, me.spawn);
 }
 
 // frame colour : follow the party/alliance box theme (procedural hue / FFXI skin border) or a custom colour.
