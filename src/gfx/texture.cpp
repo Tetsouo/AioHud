@@ -432,13 +432,19 @@ static const char* ffxi_rom_dir()
     static char rom[300]; static int tried = 0;
     if (tried) return rom[0] ? rom : nullptr;
     tried = 1; rom[0] = 0;
+    // Must match map_dat.cpp's ffxi_root() key list. They diverged: that one probes the explicit WOW6432Node
+    // forms too, this one did not -- so a machine where only those resolve got zone maps but NO gear icons (or
+    // the reverse), which reads as an unrelated bug on one tester's machine only.
     static const char* SUBS[] = {
+        "SOFTWARE\\WOW6432Node\\PlayOnlineEU\\InstallFolder",
+        "SOFTWARE\\WOW6432Node\\PlayOnlineUS\\InstallFolder",
+        "SOFTWARE\\WOW6432Node\\PlayOnline\\InstallFolder",
+        "SOFTWARE\\PlayOnlineEU\\InstallFolder",
         "SOFTWARE\\PlayOnlineUS\\InstallFolder",
         "SOFTWARE\\PlayOnline\\InstallFolder",
-        "SOFTWARE\\PlayOnlineEU\\InstallFolder",
     };
     char base[260]; base[0] = 0;
-    for (int i = 0; i < 3 && !base[0]; ++i) {
+    for (int i = 0; i < (int)(sizeof(SUBS) / sizeof(SUBS[0])) && !base[0]; ++i) {   // sizeof, not a literal : the list grew and the bound did not follow
         HKEY h;   // 32-bit plugin -> SOFTWARE already maps to Wow6432Node ; KEY_WOW64_32KEY is explicit + harmless.
         if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, SUBS[i], 0, KEY_READ | KEY_WOW64_32KEY, &h) != ERROR_SUCCESS) continue;
         DWORD type = 0, sz = sizeof(base) - 1;   // -1 : leave room to force-terminate below

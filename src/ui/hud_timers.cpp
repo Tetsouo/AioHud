@@ -377,7 +377,10 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // Is the buff's real list READY (populated) for its target ? (self = the memory buff list ; ally = the 0x076 cache).
             // Right after a zone these are momentarily EMPTY -- we must NOT read "empty" as "buff gone" or a survivor's
             // zoneCheck clears too early / a casualty is judged before the truth arrives.
-            auto listReady = [&](const FocusMem& e) -> bool { return e.self ? (f.game && f.game->nbuff > 0) : (party().buffs_for(e.target) != 0); };
+            // buffsOk, NOT nbuff > 0 : same trap meHas() above documents. An EMPTY self buff list is a real answer,
+            // and it is precisely the state after your last buff lapses -- reading it as "not ready yet" parked the
+            // post-zone entry with no decision and no OUT alert until some unrelated buff repopulated the list.
+            auto listReady = [&](const FocusMem& e) -> bool { return e.self ? (f.game && f.game->buffsOk) : (party().buffs_for(e.target) != 0); };
             auto focusHas = [&](const FocusMem& e) -> bool {                                    // is the buff actually on its target right now (list assumed ready)
                 if (e.self) { if (!f.game) return false; for (int i = 0; i < f.game->nbuff; ++i) if ((int)f.game->buffs[i] == (int)e.status) return true; return false; }
                 const BuffSet* bs = party().buffs_for(e.target); if (bs) for (int j = 0; j < bs->n; ++j) if (bs->ids[j] == e.status) return true; return false; };

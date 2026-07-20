@@ -331,11 +331,11 @@ static void draw_brass_bezel(u32 dev, const Frame& f, float cx, float cy, float 
     }
 }
 
-void Minimap::on_device_lost() { mapTex_ = 0; mapFileId_ = 0; mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; moonTex_ = 0; moonKey_ = -1; mkTried_ = false; }   // FORGET handles
+void Minimap::on_device_lost() { mapTex_ = 0; mapFileId_ = 0; mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0; }   // FORGET handles (+ re-arm the retry budget)
 void Minimap::dispose() {
     release_texture(mapTex_); mapTex_ = 0; mapFileId_ = 0;
     release_texture(mkPlayer_); release_texture(mkMob_); release_texture(elemTex_); release_texture(moonTex_);
-    mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; moonTex_ = 0; moonKey_ = -1; mkTried_ = false;
+    mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0;
 }
 
 void Minimap::draw(const Frame& f) {
@@ -345,8 +345,18 @@ void Minimap::draw(const Frame& f) {
     const UiConfig& c = ui_config();
     if (!c.mmShow || !g.inGame) return;                         // phase 1a : live only (needs a real map record)
     u32 dev = f.dev;
-    if (!mkTried_) { mkPlayer_ = load_raw_texture_mip(dev, MK_PLAYER_PATH(), 64, 64); mkMob_ = load_raw_texture_mip(dev, MK_MOB_PATH(), 64, 64);
-                     elemTex_ = load_raw_texture_mip(dev, ELEM_ATLAS_PATH(), 256, 32); mkTried_ = true; }
+    // BOUNDED retry, not a one-shot : this used to latch after a single attempt, so one transient miss (the updater
+    // replacing the asset, a device not ready right after a zone-in) meant NO markers on the minimap and NO element
+    // icons in the clock header for the whole device generation. Each texture is retried on its own.
+    if ((!mkPlayer_ || !mkMob_ || !elemTex_) && mkTries_ < 12) {
+        const unsigned nowMs = GetTickCount();
+        if ((int)(nowMs - mkNextMs_) >= 0) {
+            if (!mkPlayer_) mkPlayer_ = load_raw_texture_mip(dev, MK_PLAYER_PATH(), 64, 64);
+            if (!mkMob_)    mkMob_    = load_raw_texture_mip(dev, MK_MOB_PATH(),    64, 64);
+            if (!elemTex_)  elemTex_  = load_raw_texture_mip(dev, ELEM_ATLAS_PATH(), 256, 32);
+            if (!mkPlayer_ || !mkMob_ || !elemTex_) { ++mkTries_; mkNextMs_ = nowMs + (mkTries_ < 4 ? 0u : 300u); }
+        }
+    }
 
     const float S = scale_ * clampf(c.mmScale, 0.5f, 2.0f);     // overall box / header scale
     const float mapD = snap(220.0f * S * clampf(c.mmMapSize, 0.5f, 1.6f));   // map DIAMETER -- independent of the box

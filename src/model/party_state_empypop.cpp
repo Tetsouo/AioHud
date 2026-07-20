@@ -133,7 +133,10 @@ void PartyState::ep_refresh(const char* nmKey) {
     const Nm* nm = nm_by_key(nmKey);
     if (!nm) return;                               // unknown key (stale config / renamed NM) -> same
 
-    refresh_items();                               // ONE guarded block copy ; every count_item below hits the snapshot
+    // KEEP the last good chain when the container snapshot fails : count_item() then returns 0 for everything, and
+    // ep_build would render an authoritative "you own 0 of the pop items" for a tracked NM. An unreadable container
+    // is not the same answer as owning nothing (rule 10, form B).
+    if (!refresh_items()) return;                  // ONE guarded block copy ; every count_item below hits the snapshot
     ep_build(ep_, nm, treasure_, false);
 }
 

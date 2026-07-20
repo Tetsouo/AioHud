@@ -36,8 +36,11 @@ namespace aio { void timers_reset(); }   // hud_timers.cpp : //aio timers reset 
 
 // NB: the reverse-engineering DIAGNOSTIC surface (mem_scan / scan_word_range / th_bits / thfx_walk /
 // bt_scan / pw_scan_* / collect_ptr_hits / f2s_probe + every g_*log ring + the //aio debug/dump/scan
-// commands + the armed packet/text handlers) lives in aiohud_probes.cpp now. It is still COMPILED IN
-// and reachable via aio::probes::command / packet_in / text_in ; this file keeps only the shipping glue.
+// commands + the armed packet/text handlers) lives in aiohud_probes.cpp now, reachable via
+// aio::probes::command / packet_in / text_in ; this file keeps only the shipping glue.
+// It is compiled in ONLY when that file exists (build.bat sets /DAIOHUD_PROBES then, and the include below is
+// #ifdef'd), and aiohud_probes.* is NOT tracked by git -- so NO probe is present in a CI-built release. The one
+// deliberate exception is //aio geartrace, kept outside the block so a tester can capture on a release build.
 
 static const char* LAYOUT_PATH()    { static char b[260]; if (!b[0]) aio::plugin_path(b, 260, "design\\exports\\layout.json");           return b; }   // runtime-derived (was a hardcoded dev path)
 static const char* LAYOUT_RT_PATH() { static char b[260]; if (!b[0]) aio::plugin_path(b, 260, "design\\exports\\layout.roundtrip.json"); return b; }

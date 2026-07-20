@@ -13,6 +13,18 @@ struct ChangeLine { const char* en; const char* fr; };
 
 // Per-version change lines. Grouped BY VERSION so the Update tab can show the newest release expanded and the
 // older ones as collapsible headers. `*bold*` markup works (draw_wrapped colours it brighter).
+static const ChangeLine CL_40[] = {
+    { "*A failed load no longer disables things until you restart.* A project-wide sweep found the same flaw in several more places : minimap markers and clock icons, the zone-map file tables (one unreadable file left EVERY map unavailable for the session), and the per-character profile list. They all retry now.",
+      "*Un chargement raté ne désactive plus des éléments jusqu'au redémarrage.* Une revue de tout le projet a trouvé le même défaut à plusieurs autres endroits : les marqueurs et icônes du minimap, les tables de fichiers des cartes de zone (un seul fichier illisible rendait TOUTES les cartes indisponibles pour la session), et la liste des profils par personnage. Tous réessaient désormais." },
+    { "*Profile changes from another client are no longer lost.* If the file was being written at the exact moment we read it, the change was marked as seen and that client stayed on the old settings for good.",
+      "*Les modifications de profil venant d'un autre client ne sont plus perdues.* Si le fichier était en cours d'écriture au moment précis où on le lisait, la modification était marquée comme vue et ce client restait sur les anciens réglages définitivement." },
+    { "*Auto profile switching on a job change* no longer gives up when the load happens to fail — it retries on the next tick instead of skipping that job change entirely.",
+      "*Le changement automatique de profil au changement de job* n'abandonne plus quand le chargement échoue — il réessaie au cycle suivant au lieu d'ignorer ce changement de job." },
+    { "The equipment viewer's set bonuses (Composure, enhancing duration) no longer collapse to their base value for a moment after zoning, and the pop-item tracker no longer claims you own none of them when it cannot read your inventory.",
+      "Les bonus de set de l'afficheur d'équipement (Composure, durée d'amélioration) ne retombent plus à leur valeur de base un instant après un changement de zone, et le suivi d'objets de pop n'annonce plus que vous n'en possédez aucun quand il ne peut pas lire votre inventaire." },
+    { "Gear icons and zone maps now look for your FFXI install in the same six registry locations. They used three and six respectively, so an install found by only one of them gave you maps but no equipment icons.",
+      "Les icônes d'équipement et les cartes de zone cherchent désormais votre installation FFXI aux six mêmes emplacements de registre. Elles en utilisaient trois et six, donc une installation trouvée par une seule des deux listes donnait les cartes mais pas les icônes d'équipement." },
+};
 static const ChangeLine CL_39[] = {
     { "*Status icons could vanish from the Timers and Debuffs boxes.* The icon sheet was loaded with a single attempt : one badly-timed miss — typically while an update was replacing it — and every icon stayed missing for the rest of the session. It now retries.",
       "*Les icônes d'état pouvaient disparaître des boîtes Timers et Debuffs.* La planche d'icônes était chargée en une seule tentative : un échec au mauvais moment — typiquement pendant qu'une mise à jour la remplaçait — et toutes les icônes restaient absentes jusqu'à la fin de la session. Elle réessaie désormais." },
@@ -174,6 +186,7 @@ static const ChangeLine CL_21[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.40", CL_40, (int)(sizeof(CL_40) / sizeof(CL_40[0])) },
     { "1.0.39", CL_39, (int)(sizeof(CL_39) / sizeof(CL_39[0])) },
     { "1.0.38", CL_38, (int)(sizeof(CL_38) / sizeof(CL_38[0])) },
     { "1.0.37", CL_37, (int)(sizeof(CL_37) / sizeof(CL_37[0])) },

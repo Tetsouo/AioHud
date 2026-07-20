@@ -52,17 +52,10 @@ void edit_box_push_out(int id, float curT, float& ex, float& ey, float ew, float
 
 static inline float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
-// colour-quad render state for the grid quads (untextured diffuse).
-static void color_state(u32 dev) {
-    dSetVS(dev, FVF_XYZRHW_DIFFUSE);
-    dSetRS(dev, D3DRS_ZENABLE, 0); dSetRS(dev, D3DRS_CULLMODE, D3DCULL_NONE); dSetRS(dev, D3DRS_LIGHTING, 0);
-    dSetRS(dev, D3DRS_ALPHATESTENABLE, 0); dSetRS(dev, D3DRS_FOGENABLE, 0); dSetRS(dev, D3DRS_SPECULARENABLE, 0);
-    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1); dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA); dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    dSetRS(dev, D3DRS_BLENDOP, D3DBLENDOP_ADD); dSetTex(dev, 0, 0);
-    dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
-    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
-    dSetTSS(dev, 1, D3DTSS_COLOROP, D3DTOP_DISABLE); dSetTSS(dev, 1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
-}
+// colour-quad render state for the grid quads (untextured diffuse). Delegates like every other module: this was
+// the FIFTH hand-copied version and the one the v1.0.31 merge missed. It happened to still match, but that is
+// exactly the drift vector d3d.h warns about -- the previous copies had already diverged before being merged.
+static void color_state(u32 dev) { dColorQuadState(dev); }
 
 // a centre GUIDE line : bright core + soft cyan glow when the box is snapped (on), else a faint hairline.
 static void edit_vline(u32 dev, float cx, float sh, bool on) {

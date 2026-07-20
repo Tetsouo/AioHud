@@ -604,6 +604,9 @@ bool read_equipment_ext(unsigned short ids[16], unsigned char ext[16][24]) {
     for (int s = 0; s < 16; ++s) { ids[s] = 0; for (int k = 0; k < 24; ++k) ext[s][k] = 0; }
     u32 ir = items_root(), ia = equip_index_arr(), ba = equip_bag_arr();
     if (!ir || !ia || !ba) return false;
+    u32 cap = 0;                                                // inventory capacity : 0 until the containers fill
+    const bool ready = safe_read(ir + ITEM_META_MAX, &cap) && (cap & 0xFF) != 0;
+    int found = 0;
     for (int s = 0; s < 16; ++s) {
         u32 idx = 0; safe_read(ia + s, &idx); idx &= 0xFF;
         if (idx == 0) continue;
@@ -612,9 +615,13 @@ bool read_equipment_ext(unsigned short ids[16], unsigned char ext[16][24]) {
         if (!valid_ptr(item)) continue;
         u32 id = 0; safe_read(item + 0x00, &id);
         ids[s] = (unsigned short)(id & 0xFFFF);
+        if (ids[s] != 0 && ids[s] != 0xFFFF) ++found;
         for (int k = 0; k < 24; ++k) { u32 b = 0; if (!safe_read(item + 0x0D + k, &b)) break; ext[s][k] = (unsigned char)(b & 0xFF); }
     }
-    return true;
+    // Same readiness semantics as read_equipment above (this ended in a bare `return true`, so an all-zero read
+    // during the half-ready window after a zone was reported as authoritative). The caller computes Composure /
+    // enhancing-duration multipliers from these ids -- on an all-zero "success" they silently collapse to base.
+    return ready || found > 0;
 }
 
 // Player buffs, reversed from LuaCore get_player (FUN_10072040). The same player struct

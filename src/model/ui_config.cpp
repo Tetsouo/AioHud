@@ -67,8 +67,14 @@ static char g_charProf[32][2][48]; static int g_charProfN = 0; static bool g_cha
 // writes this same file, and the write is a full rewrite from the in-memory copy -- so a client holding a stale
 // copy silently DELETED the entries another client had added since. Symptom: "my profile stopped auto-loading".
 static void charprof_load(bool force = false) {
-    if (g_charProfLoaded && !force) return; g_charProfLoaded = true; g_charProfN = 0;
-    FILE* f = fopen(charprof_path(), "r"); if (!f) return;
+    if (g_charProfLoaded && !force) return;
+    // Latch AFTER the open succeeds. Marking it loaded first meant one failed fopen -- the file being replaced by
+    // another client's temp+rename, an AV hold -- left an EMPTY table permanently marked as loaded, so
+    // last_char_profile() returned nothing and per-character auto-load silently stopped for the whole session.
+    // That is the very "my profile stopped auto-loading" symptom, arriving by a second route.
+    FILE* f = fopen(charprof_path(), "r");
+    if (!f) return;                                  // NOT loaded : retry on the next call
+    g_charProfLoaded = true; g_charProfN = 0;
     char line[128];
     while (fgets(line, sizeof(line), f) && g_charProfN < 32) {
         char* tab = strchr(line, '\t'); if (!tab) continue; *tab = 0;
@@ -914,11 +920,14 @@ void profile_sync_poll() {
     if (!g_profStampOk) { g_profStamp = ft; g_profStampOk = true; return; }   // first sight : adopt, never reload
     if (ft.dwLowDateTime == g_profStamp.dwLowDateTime && ft.dwHighDateTime == g_profStamp.dwHighDateTime) return;
 
-    g_profStamp = ft;                                          // consume the change either way : never re-trigger on it
-    if (profile_dirty()) return;                               // mid-edit here -> keep this client's work
+    // Consume the stamp ONLY on a decision we actually made. Consuming it up-front (as this first did) meant a read
+    // landing inside the other client's MoveFileEx replace -- a sharing violation, an AV hold -- left this client on
+    // the OLD settings FOREVER, because the change had already been marked as seen. Rule 10, form C.
+    if (profile_dirty()) { g_profStamp = ft; return; }         // mid-edit here : deliberately skip THIS change, don't re-offer it
 
     char p[300]; profile_path(g_active, p, sizeof(p));
-    if (!load_config_from(p)) return;
+    if (!load_config_from(p)) return;                          // transient read failure -> leave the stamp, retry next tick
+    g_profStamp = ft;
     profile_mark_clean();
     request_scale_baseline_reset();                            // adopt the profile's box scales as-is (same as profile_load)
 }
@@ -943,13 +952,18 @@ void profile_autoload_tick() {
     char combo[64]; if (!profile_default_name(combo, sizeof(combo))) return;   // character not readable yet
     static char lastCombo[64] = { 0 };
     if (strcmp(combo, lastCombo) == 0) return;                                  // Name/Main/Sub unchanged -> nothing to do
-    strncpy(lastCombo, combo, sizeof(lastCombo) - 1); lastCombo[sizeof(lastCombo) - 1] = 0;
     const char* target = 0; char fb[48] = { 0 };
     if (profile_exists(combo)) target = combo;                                  // (1) exact Name/Main/Sub profile
     else {                                                                      // (2) this character's last manual profile
         PlayerInfo me; if (read_player(me) && me.name[0]) { const char* lp = last_char_profile(me.name); if (lp && lp[0] && profile_exists(lp)) { strncpy(fb, lp, 47); fb[47] = 0; target = fb; } }
     }
-    if (target && strcmp(g_active, target) != 0) profile_load(target);          // don't reload the already-active one (would fight a manual load)
+    // Latch the combo only once the switch has been HANDLED. Latching before meant a profile_load() that failed
+    // (the file being rewritten by another client) consumed the job change, and the auto-switch never retried for
+    // that Name/Main/Sub -- same for a read_player() that was not ready yet on the fallback path.
+    if (target && strcmp(g_active, target) != 0) {
+        if (!profile_load(target)) return;                                      // transient -> retry on the next tick
+    }
+    strncpy(lastCombo, combo, sizeof(lastCombo) - 1); lastCombo[sizeof(lastCombo) - 1] = 0;
 }
 
 // ---- "unsaved changes" tracking : snapshot the persisted fields, compare to live ----

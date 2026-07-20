@@ -81,7 +81,10 @@ static bool is_wearoff_msg(unsigned m) {
 // //aio dbflog : a countdown of target-debuff mutations still to trace to aiohud_debug.log (0 = off). File-scope
 // so the static record_* helpers can log too. Each traced line decrements it, so a capture self-limits.
 static int s_dbfTrace = 0;
-#define DBFTRACE(...) do { if (s_dbfTrace > 0) { --s_dbfTrace; windower::debug::log(__VA_ARGS__); } } while (0)
+// Says so when the budget runs out : a probe that goes quiet is indistinguishable from a bug that stopped
+// reproducing, which is exactly how two captures were misread during the Timers hunt.
+#define DBFTRACE(...) do { if (s_dbfTrace > 0) { --s_dbfTrace; windower::debug::log(__VA_ARGS__); \
+                           if (s_dbfTrace == 0) windower::debug::log("=== DBFLOG budget spent -- re-arm with //aio dbflog ==="); } } while (0)
 
 static inline bool is_sleep_status(unsigned s) { return s == 2 || s == 19 || s == 193; }   // Sleep, Sleep II, Lullaby (song sleep)
 // Statuses that PREVENT a mob from acting : sleep-family + Petrification (7), Stun (10), Terror (28). If the mob

@@ -57,7 +57,13 @@ void set_gear_trace(int n) {
     windower::debug::log("    icon dir : %s", GEARICON_DIR());
     windower::debug::log("    ROM dir  : %s   (registry key: %s)", rom ? rom : "<NOT FOUND>", key ? key : "<none matched>");
 }
-bool gear_trace_armed() { return s_gearTrace > 0; }
+// Announce the budget running out. A probe that just goes quiet reads EXACTLY like a bug that stopped
+// reproducing -- that cost three round-trips on the Timers hunt before //aio ftrace started saying so.
+bool gear_trace_armed() {
+    if (s_gearTrace > 0) return true;
+    if (s_gearTrace == 0) { s_gearTrace = -1; windower::debug::log("=== GEARTRACE budget spent -- re-arm with //aio geartrace ==="); }
+    return false;
+}
 void gear_trace(const char* fmt, ...) {
     if (s_gearTrace <= 0) return;
     char buf[1024]; va_list ap; va_start(ap, fmt);

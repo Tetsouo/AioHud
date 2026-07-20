@@ -28,7 +28,8 @@ private:
     u32      elemTex_ = 0;                 // 8-cell elemental-icon atlas (clock header day icon)
     u32      moonTex_ = 0;                 // supersampled moon-phase texture (rebuilt only when the phase/day changes)
     int      moonKey_ = -1;                // cache key : dayIdx / moonPct / waning
-    bool     mkTried_ = false;
+    int      mkTries_ = 0;      // bounded retry budget for the marker/element textures (was a one-shot bool)
+    unsigned mkNextMs_ = 0;
 
     // per-mob eased facing angle (the raw heading arrives in network steps -> ease it so the arrow turns
     // smoothly instead of snapping). Keyed by entity id ; reset on a zone/map change.

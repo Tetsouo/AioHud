@@ -99,8 +99,19 @@ static unsigned char* g_ft[MAX_VOL] = { 0 }; static unsigned g_ftN[MAX_VOL] = { 
 static int  g_maxVol = 0;
 static bool g_tablesTried = false;
 
+// Cache only SUCCESS. This latched `tried` up-front, so one unreadable VTABLE.DAT -- XIPivot rewriting its
+// overlays, an AV hold -- left g_maxVol at 0 and made resolve_path() fail for EVERY map for the rest of the
+// session. Worse, that negative cache sits UNDERNEATH the minimap's 12-retry budget, so the budget re-entered a
+// poisoned cache and could never recover. Rule 10: a transient failure must not become permanent.
 static void load_tables() {
-    if (g_tablesTried) return; g_tablesTried = true;
+    if (g_maxVol > 0) return;                       // already have usable tables -> done
+    if (g_tablesTried) {                            // previous attempt found nothing : allow a retry, but not every call
+        static unsigned nextTryMs = 0;
+        const unsigned now = GetTickCount();
+        if ((int)(now - nextTryMs) < 0) return;
+        nextTryMs = now + 3000;
+    }
+    g_tablesTried = true;
     const char* root = ffxi_root(); if (!root) return;
     char p[MAX_PATH];
     for (int v = 1; v < MAX_VOL; ++v) {
