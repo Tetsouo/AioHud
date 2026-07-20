@@ -1,5 +1,16 @@
 # Audit complet — module Timers (2026-07-20)
 
+> **État au moment de la publication de la v1.0.42 (même jour).** Ce document est l'audit **initial**. La majeure
+> partie de ce qu'il décrit a été corrigée dans la journée : l'attribution par ligne, le tri par blocs, l'atlas
+> d'icônes, le curseur d'espacement, la largeur du champ de comptage des cibles, le cache de rechargement, et la
+> mise en accord de l'aide. Voir le message de commit de la v1.0.42 et
+> [`../game-data/timers.md`](../game-data/timers.md) pour l'état réel du code.
+>
+> **Restent ouverts** : le bouton « Réinitialiser » qui vide durablement la colonne Durée, le nettoyage des buffs
+> alliés piloté depuis le chemin de dessin, les buffs sur membres d'alliance indessinables, les trois parcours de
+> cibles encore à pas fixe, l'absence de garde de longueur sur `on_set_update`, et l'absence de troncature par
+> points de suspension. Ne pas relire ce document comme une liste de bugs actifs.
+
 Audit sur quatre axes : **sources & filtrage**, **tri & catégories**, **rendu & config**, **cycle de vie**.
 
 ## Statut de vérification — à lire en premier

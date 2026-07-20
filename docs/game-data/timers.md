@@ -73,6 +73,15 @@ The mechanism now:
 - **Stale ids read as unknown.** Trusts get new entity ids on re-summon, so a stored caster that no longer
   resolves to a name is discarded and re-derived rather than rendered as a blank owner.
 
+- **Self-only statuses short-circuit everything.** Aftermath (270-273) comes from your own weaponskill under a
+  mythic / relic / empyrean and has **no cast in the 0x028 at all** — so no ring entry can ever explain it, and
+  "unknown" would be a permanently wrong answer for a buff that is yours by construction. Attributed to self
+  directly. Keep that list to certainties: a wrong entry claims someone else's buff as yours.
+- **Not everything in the timer list is drawn.** The GEO aura statuses (542-556) and Colure Active (612) are
+  skipped by the drawer because they re-pulse every ~3 s; the Indi- you carry is redrawn as a stable computed row
+  instead. They still appear in `//aio songlog` dumps, which list every timer — do not read a probe dump as if it
+  were the box.
+
 Consumers: `buff_caster_for(status, expiry, timerIdx)` for the filter, the sort band and the `(Owner)`
 row tag; `self_buff_spell_ranked(...)` for the row name and the hide/focus keys. The filter verdict is a
 single lambda (`srcKeeps`) shared by the row emit **and** the focus monitor — they disagreed before, so a

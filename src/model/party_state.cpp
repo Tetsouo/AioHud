@@ -242,6 +242,11 @@ int PartyState::match_cast(unsigned short status, unsigned expiry, int timerIdx)
 // the one thing the two share: an IDENTICAL expiry tick means they were granted by the same event. Exact equality
 // only (the server stamps them from one action) -- no tolerance, or unrelated buffs would borrow a caster.
 unsigned PartyState::buff_caster_for(unsigned short status, unsigned expiry, int timerIdx) const {
+    // SELF-ONLY statuses : the game gives no one else any way to put these on you, so "unknown" is never the honest
+    // answer -- they are yours by construction. Aftermath (270-273) comes from YOUR OWN weaponskill under a mythic /
+    // relic / empyrean; there is no cast for it in the 0x028 at all, which is why the ring can never explain it.
+    // Keep this list to cases that are certain: a wrong entry here would claim someone else's buff as ours.
+    if (status >= 270 && status <= 273) return selfId_;
     const int k = match_cast(status, expiry, timerIdx);
     if (k >= 0) return selfCasts_[k].caster;
     // A stored caster whose id NO LONGER RESOLVES is stale, not an answer. MEASURED 2026-07-20: re-summoning the
