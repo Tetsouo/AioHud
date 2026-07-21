@@ -66,14 +66,22 @@ static const char* windower_root() {
 // --- XIPivot active overlays (data/settings.xml <overlays>a,b,c</overlays>), in priority order, cached ---
 static char g_ovl[16][64]; static int g_ovlN = 0; static bool g_ovlTried = false;
 static void load_overlays() {
-    if (g_ovlTried) return; g_ovlTried = true;
-    const char* wr = windower_root(); if (!wr) return;
+    // Latch g_ovlTried only when settings.xml was actually READ (whether or not it had <overlays>), NOT on the first
+    // attempt. It runs right after a zone-in -- the disk-busy / AV / Controlled-Folder-Access / XIPivot-mid-rewrite
+    // window -- and giving up on one locked read left every custom/HD map silently disabled for the session, UNDER
+    // the minimap's own retry budget. Mirrors load_tables() below : bounded, spaced retry, then stop. (rule 10)
+    if (g_ovlTried) return;
+    static unsigned nextTryMs = 0; static int tries = 0;
+    const unsigned now = GetTickCount();
+    if (nextTryMs && (int)(now - nextTryMs) < 0) return;   // between attempts
+    const char* wr = windower_root();
     // BOUNDED. wsprintfA is limited by its OWN 1 KB internal buffer, not by the destination -- a deep Windower
     // root overflows a char[MAX_PATH] and smashes the caller's stack frame. Same class the project already paid
     // for in gfx/window.cpp, and this is the path most likely to differ on a Program Files install.
-    char p[MAX_PATH]; _snprintf(p, MAX_PATH, "%s\\addons\\XIPivot\\data\\settings.xml", wr); p[MAX_PATH - 1] = 0;
-    unsigned n = 0; unsigned char* d = read_file(p, n);
-    if (!d) return;
+    char p[MAX_PATH]; unsigned n = 0; unsigned char* d = 0;
+    if (wr) { _snprintf(p, MAX_PATH, "%s\\addons\\XIPivot\\data\\settings.xml", wr); p[MAX_PATH - 1] = 0; d = read_file(p, n); }
+    if (!d) { nextTryMs = now + 3000; if (++tries >= 8) g_ovlTried = true; return; }   // locked/absent -> retry, then give up
+    g_ovlTried = true;   // opened -> authoritative (even if it has no <overlays>)
     char* txt = (char*)HeapAlloc(GetProcessHeap(), 0, n + 1);
     if (txt) {
         memcpy(txt, d, n); txt[n] = 0;

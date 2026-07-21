@@ -14,6 +14,7 @@
 #include "gfx/d3d.h"
 #include "gfx/font.h"
 #include "gfx/window.h"
+#include "ui/tex_retry.h"   // TexRetry : bounded-retry lazy texture load
 #include "model/gamestate.h"
 #include "model/layout.h"
 #include "ui/widget.h"
@@ -29,6 +30,7 @@ public:
 
     void render(u32 dev);   // one game frame (slot-6 hook)
     void dispose();         // release all resources (at //unload)
+    void self_check();      // //aio selfcheck : log the health of every texture-load subsystem (stuck latches, missing icons)
 
     // (re)build the widget list from the layout descriptor (load + place + sort by z).
     // No-op-safe: on a missing/invalid file it keeps the current widgets.
@@ -79,11 +81,11 @@ private:
     bool                 peekHide_ = false;        // End held -> hide the whole HUD (peek at the game) ; reset on focus loss
     bool                 wsFontWarmed_ = false;    // the WS-popup font's big atlases pre-baked (so the first WS never hitches)
     u32                  tpCoffer_ = 0;            // treasure-pool coffer icon texture (forgotten on device change)
-    bool                 tpCofferTried_ = false;
+    TexRetry             tpCoffer_r_;
     u32                  grimLight_ = 0, grimDark_ = 0, grimClosed_ = 0;   // grimoire book textures (forgotten on device change) ; closed = no Arts
-    bool                 grimTried_ = false;
+    TexRetry             grimLight_r_, grimDark_r_, grimClosed_r_;   // PER-TEXTURE retry : one shared flag left a partial load (2 of 3) dead-ending the third for the session
     u32                  weaponIcons_ = 0;         // Sheol resistances : Slashing/Piercing/Blunt icon atlas (96x32, 3 cells)
-    bool                 weaponIconsTried_ = false;
+    TexRetry             weaponIcons_r_;
     u32  ensure_buff_atlas(u32 dev);               // lazy load with a BOUNDED retry -- shared by Timers and Debuffs
     u32                  buffAtlas_ = 0;           // Timers box : the shared status-icon atlas (buff_atlas.raw), like Player/Party
     int                  buffAtlasTries_ = 0;      // bounded RETRY budget (was a one-shot bool : a single transient miss killed every Timers icon for the session)

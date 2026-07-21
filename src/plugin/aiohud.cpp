@@ -873,6 +873,11 @@ static void aio_command_dispatch(const char* cmd)
         g_host.console().print(">>> AioHud : ftrace ARMED (have the Hidden+Focus buff up, then send Windower\\plugins\\aiohud_debug.log ; look for FOCUS lines) <<<");
         return;
     }
+    if (strstr(buf, "selfcheck")) {   // //aio selfcheck -> dump texture-load health to aiohud_debug.log (verify the rule-10 latch fixes held : no stuck give-up, no permanently-missing icon)
+        g_hud.self_check();
+        g_host.console().print(">>> AioHud : selfcheck written to Windower\\plugins\\aiohud_debug.log (look for the AIO SELFCHECK block) <<<");
+        return;
+    }
     if (strstr(buf, "geartrace")) {   // //aio geartrace -> trace the next N gear-icon resolutions to aiohud_debug.log (raw-item-ID diagnosis)
         aio::set_gear_trace(120);
         g_host.console().print(">>> AioHud : gear trace ARMED (open the equipment viewer / change gear, then send Windower\\plugins\\aiohud_debug.log ; look for GEAR lines) <<<");

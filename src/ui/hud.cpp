@@ -191,10 +191,10 @@ void Hud::render(u32 dev) {
         skin_.on_device_lost();
         window_materials_reset();   // forget the procedural box-theme material textures -> regenerated on next draw
         config_.on_device_lost();   // forget the config logo texture -> reloaded on next draw
-        tpCoffer_ = 0; tpCofferTried_ = false;   // forget the treasure-pool coffer icon (belongs to the old device)
-        weaponIcons_ = 0; weaponIconsTried_ = false;   // forget the Sheol weapon-type icon atlas
+        tpCoffer_ = 0; tpCoffer_r_ = {};   // forget the treasure-pool coffer icon (belongs to the old device)
+        weaponIcons_ = 0; weaponIcons_r_ = {};   // forget the Sheol weapon-type icon atlas
         buffAtlas_ = 0; buffAtlasTries_ = 0; buffAtlasNextMs_ = 0;   // forget the buff-timers status-icon atlas (+ re-arm the retry budget)
-        grimLight_ = 0; grimDark_ = 0; grimClosed_ = 0; grimTried_ = false;   // forget the grimoire book textures (belong to the old device)
+        grimLight_ = 0; grimDark_ = 0; grimClosed_ = 0; grimLight_r_ = {}; grimDark_r_ = {}; grimClosed_r_ = {};   // forget the grimoire book textures (belong to the old device)
         // The Help SAMPLES keep their own lazy copies at file scope in their hud_*.cpp -- unreachable from here
         // otherwise, so they used to survive a device recreate and hand a dead device's texture to SetTexture.
         zonetracker_help_forget(); debuffs_help_forget(); timers_help_forget(); treasure_help_forget();
@@ -369,6 +369,16 @@ void Hud::render(u32 dev) {
 }
 
 
+void Hud::self_check() {
+    windower::debug::log("=== AIO SELFCHECK : texture-load health (1 = handle set ; tN = retry misses so far) ===");
+    windower::debug::log("  hud      : buffAtlas=%d(t%u) skin=%s  grim L=%d D=%d C=%d  weapon=%d coffer=%d",
+                         buffAtlas_ ? 1 : 0, buffAtlasTries_, skin_.ready() ? "ready" : "(none/proc)",
+                         grimLight_ ? 1 : 0, grimDark_ ? 1 : 0, grimClosed_ ? 1 : 0, weaponIcons_ ? 1 : 0, tpCoffer_ ? 1 : 0);
+    const char* rk = 0; const char* rom = ffxi_rom_dir_probe(&rk);   // gear-icon ROM path (EquipViewer id-vs-icon)
+    windower::debug::log("  romdir   : %s   (key: %s)", rom ? rom : "<UNRESOLVED : gear icons will be id-text>", rk ? rk : "<none>");
+    for (size_t i = 0; i < widgets_.size(); ++i) widgets_[i]->self_check();
+    windower::debug::log("=== end selfcheck : a `0` handle that never turns 1, or tries climbing to 12, is a stuck load ===");
+}
 void Hud::dispose() {
     for (size_t i = 0; i < widgets_.size(); ++i) widgets_[i]->dispose();
     clear_widgets();

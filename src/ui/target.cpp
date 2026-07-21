@@ -13,6 +13,7 @@
 #include "ui/text_style.h"     // te_sz/te_ow/te_col : shared TextStyle-resolve impl
 #include "ui/ui_colors.h"      // scl / mul_a / lerp_color / hp_color : shared ARGB helpers
 #include "ui/entity_color.h"   // in_my_group / allegiance_color : shared claim/allegiance palette (with the minimap)
+#include "windower_debug.h"   // //aio selfcheck : Target::self_check logging
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -76,14 +77,22 @@ static void draw_lock(u32 dev, float x, float cy, float h, u32 col, float a) {
 
 // rounded stencil CLIP (rrect_clip_begin/end) -> gfx/draw.h (shared with liquid_bars.cpp)
 void Target::ensure(u32 dev) {
-    if (!buff_tex_ && !buff_tried_) { buff_tex_ = load_raw_texture(dev, buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H); buff_tried_ = true; }
-    if (!th_tex_   && !th_tried_)   { th_tex_   = load_raw_texture(dev, TGT_TH_ICON(),    TH_ICON_W,  TH_ICON_H);  th_tried_   = true; }
+    ensure_raw_tex(dev, buff_tex_, buff_r_, buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H);
+    ensure_raw_tex(dev, th_tex_,   th_r_,   TGT_TH_ICON(),     TH_ICON_W,  TH_ICON_H);
 }
-void Target::on_device_lost() { buff_tex_ = 0; buff_tried_ = false; th_tex_ = 0; th_tried_ = false; tgtSkin_.on_device_lost(); tgtSkinVar_ = -1; }   // FORGET handles (don't Release) -> reload
+void Target::on_device_lost() { buff_tex_ = 0; buff_r_ = {}; th_tex_ = 0; th_r_ = {}; tgtSkin_.on_device_lost(); tgtSkinVar_ = -1; }   // FORGET handles (don't Release) -> reload
 void Target::dispose() {
-    release_texture(buff_tex_);    buff_tex_ = 0;    buff_tried_ = false;
-    release_texture(th_tex_);      th_tex_   = 0;    th_tried_   = false;
+    release_texture(buff_tex_);    buff_tex_ = 0;    buff_r_ = {};
+    release_texture(th_tex_);      th_tex_   = 0;    th_r_   = {};
     tgtSkin_.dispose();            tgtSkinVar_ = -1;
+}
+void Target::self_check() const {
+    const auto& c = ui_config();
+    const bool copy = c.tgtThemeCopy != 0; const int th = copy ? c.skinTheme : c.tgtTheme;
+    const char* skin = copy ? "copy-party (no own tex)" : window_theme_is_proc(th) ? "procedural (no tex)"
+                                                        : (tgtSkin_.ready() ? "ready" : "FALLBACK - load FAILED");
+    windower::debug::log("  target   : buff=%d(t%u) th=%d(t%u) skin=%s",
+                         buff_tex_ ? 1 : 0, buff_r_.tries, th_tex_ ? 1 : 0, th_r_.tries, skin);
 }
 
 // ---- per-element typography (ui_config().tgtText[TGT_*]) : each Target text element resolves its own Font
@@ -657,7 +666,10 @@ void Target::draw(const Frame& f) {
     } else {
         // FFXI family (own theme) : the Target owns its OWN window skin so its texture variant is INDEPENDENT of
         // the party's (family 0 -> the flat theme index IS the texture theme index). Reload only when it changes.
-        if (tgtSkinVar_ != theme) { tgtSkin_.dispose(); tgtSkin_.load(dev, window_theme_name(theme)); tgtSkinVar_ = theme; }
+        // Latch the variant ONLY when the skin actually loaded. WindowSkin::load is now atomic (keeps old handles on
+        // a partial miss), so on a transient load failure we leave tgtSkinVar_ unchanged and retry next frame instead
+        // of permanently falling back to the plain box. dispose() only when the theme genuinely CHANGED.
+        if (tgtSkinVar_ != theme) { tgtSkin_.dispose(); if (tgtSkin_.load(dev, window_theme_name(theme))) tgtSkinVar_ = theme; }
         if (tgtSkin_.ready()) {
             draw_window(dev, tgtSkin_, px, py, W, H, tint, S, false, true);
         } else {

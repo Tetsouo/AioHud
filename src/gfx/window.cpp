@@ -82,13 +82,24 @@ bool WindowSkin::load(u32 dev, const char* themeName) {
     // ASSET_BASE() can legitimately return 259 chars (plugin_path caps at 260), and each build appends ~12 more.
     // sprintf here was unbounded -> a deep install path (Program Files + a long user folder, the exact shape that
     // has bitten the NA tester before) would smash this stack buffer at load time and on every theme change.
-    char p[260];
-    _snprintf(p, sizeof(p), "%s\\%s\\corner.raw", ASSET_BASE(), themeName); p[sizeof(p) - 1] = 0; corner = load_raw_texture(dev, p, 32, 32);
-    _snprintf(p, sizeof(p), "%s\\%s\\hframe.raw", ASSET_BASE(), themeName); p[sizeof(p) - 1] = 0; hframe = load_raw_texture(dev, p, 32, 32);
-    _snprintf(p, sizeof(p), "%s\\%s\\vframe.raw", ASSET_BASE(), themeName); p[sizeof(p) - 1] = 0; vframe = load_raw_texture(dev, p, 32, 32);
-    _snprintf(p, sizeof(p), "%s\\%s\\bg.raw",     ASSET_BASE(), themeName); p[sizeof(p) - 1] = 0; bg     = load_raw_texture(dev, p, 128, 128);
+    // ATOMIC : load into LOCALS, commit all four only if all four succeeded. The old code assigned each handle in
+    // place, so (a) a caller that RETRIES load() while some handles are already set (the party path calls load()
+    // every frame until ready(), hud.cpp) leaked the previous handles on each partial load, and (b) a partial load
+    // left the object half-built yet ready()==false forever if the caller latched a "tried" marker. Now a partial
+    // miss releases what it got and keeps the OLD handles intact for the next retry -- no leak, no half-state.
+    char p[260]; u32 c = 0, hf = 0, vf = 0, b = 0;
+    _snprintf(p, sizeof(p), "%s\\%s\\corner.raw", ASSET_BASE(), themeName); p[sizeof(p) - 1] = 0; c  = load_raw_texture(dev, p, 32, 32);
+    _snprintf(p, sizeof(p), "%s\\%s\\hframe.raw", ASSET_BASE(), themeName); p[sizeof(p) - 1] = 0; hf = load_raw_texture(dev, p, 32, 32);
+    _snprintf(p, sizeof(p), "%s\\%s\\vframe.raw", ASSET_BASE(), themeName); p[sizeof(p) - 1] = 0; vf = load_raw_texture(dev, p, 32, 32);
+    _snprintf(p, sizeof(p), "%s\\%s\\bg.raw",     ASSET_BASE(), themeName); p[sizeof(p) - 1] = 0; b  = load_raw_texture(dev, p, 128, 128);
+    if (!(c && hf && vf && b)) {   // partial load -> release the fragments, keep whatever we already had, retry later
+        release_texture(c); release_texture(hf); release_texture(vf); release_texture(b);
+        return false;
+    }
+    release_texture(corner); release_texture(hframe); release_texture(vframe); release_texture(bg);   // swap in atomically
+    corner = c; hframe = hf; vframe = vf; bg = b;
     borderColor = border_from_bg(p);     // derive the border colour from this theme's bg
-    return ready();
+    return true;
 }
 void WindowSkin::on_device_lost() { corner = hframe = vframe = bg = 0; }
 void WindowSkin::dispose() {

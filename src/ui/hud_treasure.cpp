@@ -141,7 +141,7 @@ void treasure_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS
 
 // Live / edit path : the Hud draws the pool at its configured screen position (lazy-loads its coffer icon).
 void Hud::draw_treasure_pool(const Frame& f, bool preview, float ovX, float ovY, float ovS) {
-    if (!tpCofferTried_) { tpCoffer_ = load_raw_texture_mip(f.dev, COFFER_PATH(), 128, 128); tpCofferTried_ = true; }
+    ensure_raw_tex_mip(f.dev, tpCoffer_, tpCoffer_r_, COFFER_PATH(), 128, 128);
     treasure_draw(f, preview, ovX, ovY, ovS, (float)screenW_, (float)screenH_, tpCoffer_);
 }
 

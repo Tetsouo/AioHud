@@ -104,7 +104,11 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         listN = 0; listKey = 0;                                 // closed chain -> burst only, no continuation list
     } else {
         const int mjob = f.game->me.mjob;
-        const unsigned key = f.game->target.id * 2654435761u + (unsigned)step * 131u + (unsigned)props[0] * 7u + (unsigned)mjob * 97u;
+        // Hash ALL active opening properties + their count, not just props[0]. A new resonance that shares the
+        // primary property but differs in props[1..2]/nProp (e.g. a lone WS with two props vs a closed chain leaving
+        // one) reused the stale continuation list -> wrong "what continues" suggestions until the key happened to move.
+        const unsigned key = f.game->target.id * 2654435761u + (unsigned)step * 131u + (unsigned)mjob * 97u
+                           + (unsigned)props[0] * 7u + (unsigned)props[1] * 1013u + (unsigned)props[2] * 65537u + (unsigned)nProp * 40503u;
         if (key != listKey) {
             listKey = key; listN = 0;
             // add a candidate move (weapon skill / job ability / SCH element) IF it continues the active chain.

@@ -363,7 +363,15 @@ void PartyState::load_from_memory() {
         // Keyed on cacheChar_, not a bare one-shot : after a re-login as someone else the old code kept
         // cacheLoaded_ = true, never read the new character's file, and 4 s later wrote the PREVIOUS character's
         // roll pips / song tags / buff casters into it -- destroying the real cache silently.
-        if (!cacheLoaded_ || cacheChar_ != me.id) { load_cache(me.id); cacheLoaded_ = true; cacheChar_ = me.id; lastCacheSaveMs_ = GetTickCount(); }
+        if (!cacheLoaded_ || cacheChar_ != me.id) {
+            // Latch cacheLoaded_ ONLY when load_cache RESOLVED (opened, or the file is genuinely absent). A transient
+            // fopen failure -- the cache file momentarily LOCKED at the //unload+//load moment (AV, or the other
+            // client finishing its own write to the shared path) -- used to latch anyway, losing roll pips / song
+            // tags / buff casters for the whole session. Retry a bounded number of frames, then give up. (rule 10)
+            static unsigned char s_cacheTries = 0;
+            if (cacheChar_ != me.id) s_cacheTries = 0;   // new character -> fresh retry budget
+            if (load_cache(me.id) || ++s_cacheTries >= 120) { cacheLoaded_ = true; cacheChar_ = me.id; lastCacheSaveMs_ = GetTickCount(); s_cacheTries = 0; }
+        }
         const unsigned nowc = GetTickCount();
         if ((unsigned)(nowc - lastCacheSaveMs_) > 4000u) { save_cache(me.id); lastCacheSaveMs_ = nowc; }
     }

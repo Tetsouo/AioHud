@@ -10,6 +10,7 @@
 #pragma once
 #include "ui/widget.h"
 #include "gfx/window.h"   // WindowSkin (the Target owns its OWN FFXI skin, independent of the party's)
+#include "ui/tex_retry.h" // TexRetry : bounded-retry lazy texture load
 
 namespace aio {
 
@@ -21,6 +22,7 @@ public:
     void ensure(u32 dev) override;                     // lazily load the buff/debuff atlas
     void on_device_lost() override;                    // forget the atlas handle (zoning)
     void dispose() override;                            // release the atlas (unload)
+    void self_check() const override;
     void draw(const Frame& f) override;
     // config LIVE PREVIEW : force a demo target (fake name / HP / debuffs) so the Target page shows a
     // sample even with nothing targeted. Set around the preview draw, cleared after.
@@ -44,9 +46,9 @@ private:
     float spdShown_ = 0.0f;                     // eased displayed speed % -> smooths the readout
     float spdWindow_ = 5.0f;                     // MOB : last PLAUSIBLE field speed (yalms/s), held during the bogus 10-17 chase spikes
     u32   buff_tex_   = 0;                     // status-icon atlas (shared layout with the party buffs) for the debuff row
-    bool  buff_tried_ = false;                // attempted the load (don't retry the file every frame)
+    TexRetry buff_r_;                         // bounded retry (was a give-up-once bool)
     u32   th_tex_     = 0;                     // Treasure Hunter coffer icon (icon_th_coffer.raw) for the detail row's icon mode
-    bool  th_tried_   = false;                // attempted the load (don't retry the file every frame)
+    TexRetry th_r_;
     WindowSkin tgtSkin_;                       // the Target's OWN FFXI window skin (its texture variant is independent of the party's)
     int   tgtSkinVar_ = -1;                    // which FFXI theme index tgtSkin_ currently holds (-1 = none) -> reload on change / device loss
 };

@@ -7,6 +7,7 @@
 #pragma once
 #include "widget.h"
 #include "gfx/window.h"   // WindowSkin (own box theme, like the Target box)
+#include "ui/tex_retry.h" // TexRetry : bounded-retry lazy texture load
 
 namespace aio {
 
@@ -33,6 +34,7 @@ public:
     void draw(const Frame& f) override;
     void on_device_lost() override;
     void dispose() override;
+    void self_check() const override;   // //aio selfcheck : log texture-load health (icons, gear slots, skin)
 
     // config preview : force the demo player so the box shows in the config stage even when out of game.
     void set_demo(bool on) { demo_ = on; }
@@ -50,9 +52,9 @@ private:
     bool  demo_ = false;
     bool  pvEq_ = false; float pvEqX_ = 0.0f, pvEqY_ = 0.0f;   // config-preview override for the DETACHED equipment box
 
-    u32   jobicon_tex_ = 0; bool jobicon_tried_ = false;
-    u32   buff_tex_    = 0; bool buff_tried_ = false;
-    u32   gil_tex_     = 0; bool gil_tried_ = false;   // gil coin icon (icon_gil.raw) for the gil/speed band
+    u32   jobicon_tex_ = 0; TexRetry jobicon_r_;
+    u32   buff_tex_    = 0; TexRetry buff_r_;
+    u32   gil_tex_     = 0; TexRetry gil_r_;           // gil coin icon (icon_gil.raw) for the gil/speed band
 
     // equipment viewer : one gear-icon texture per equip slot, loaded from gearicons/<id>.bmp on demand.
     // gearId_[s] is the item id currently loaded in slot s (0 = none) -> reload only when the slot changes.

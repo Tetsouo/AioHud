@@ -69,6 +69,10 @@ public:
     // release all GPU resources at //unload (the device is still alive here).
     virtual void dispose() {}
 
+    // //aio selfcheck : log this widget's texture-load health (handle set ? retry tries spent ?) so a stuck
+    // give-up latch or a permanently-missing icon is visible without a screenshot. Default : nothing to report.
+    virtual void self_check() const {}
+
     // ---- placement (set by the HUD from the layout descriptor) ----
     void set_place(float x, float y, int z, bool visible, bool bare) {
         px_ = x; py_ = y; z_ = z; visible_ = visible; bare_ = bare;

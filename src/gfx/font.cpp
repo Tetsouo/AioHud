@@ -204,12 +204,16 @@ void FontManager::set_default(const char* face, int weight) {
 // no system install / no admin needed). CreateFont then finds them by family name -> ship Roboto etc. with
 // the plugin and they work on any PC. Safe if the folder is missing (just registers nothing).
 static void register_bundled_fonts_once() {
-    static bool done = false; if (done) return; done = true;
+    // Latch on SUCCESS, not on the first attempt : the assets\fonts\ folder can be briefly unreadable while the
+    // updater extracts the zip (the exact scenario CLAUDE.md documents), and giving up then left the bundled faces
+    // unavailable all session (falling back to a system face). Retry a few times, then stop.
+    static bool done = false; static int tries = 0; if (done) return;
     wchar_t dir[MAX_PATH]; plugin_path_w(dir, MAX_PATH, L"assets\\fonts\\");   // runtime-derived (was a hardcoded dev path)
-    if (!dir[0]) return;
+    if (!dir[0]) { if (++tries >= 8) done = true; return; }
     wchar_t pat[600]; wsprintfW(pat, L"%s*.*", dir);
     WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW(pat, &fd);
-    if (h == INVALID_HANDLE_VALUE) return;
+    if (h == INVALID_HANDLE_VALUE) { if (++tries >= 8) done = true; return; }   // transient lock -> retry next call
+    done = true;   // folder opened -> this is the authoritative pass (even if empty)
     do {
         int L = lstrlenW(fd.cFileName);
         if (L > 4) {

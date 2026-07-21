@@ -504,16 +504,27 @@ struct PartyState {
     //     recasts (except the SP 2-hr, whose recast is shared across jobs -> read live, unaffected). We shadow each
     //     member's (mjob,sjob) ; on a change we clear their tracked ally buffs + list the id so the box drops their
     //     FOCUS-monitor rows (no false "missing" alert on a deliberate job change). ---
-    struct JobShadow { unsigned id; unsigned char mj, sj; };
-    JobShadow jobShadow_[24]; int jobShadowN_ = 0;
+    struct JobShadow { unsigned id; unsigned char mj, sj; unsigned seen; };
+    JobShadow jobShadow_[24]; int jobShadowN_ = 0; unsigned jobShadowClock_ = 0;
     unsigned jobChanged_[24]; int jobChangedN_ = 0;
     int job_changes(unsigned* out, int maxN) const { int n = jobChangedN_ < maxN ? jobChangedN_ : maxN; for (int i = 0; i < n; ++i) out[i] = jobChanged_[i]; return n; }
     void note_member_job(const PMember& mm) {   // called per member each load ; records the change into jobChanged_
         if (!mm.id) return;
         if (mm.mjob < 1 || mm.mjob > 22) return;   // job UNREADABLE (member out of zone / mid loading-screen reports 0) -> NOT a real
                                                    //   job change : ignore it, else zoning would falsely "reset" and wipe the member's tracked ally buffs.
+        const unsigned clk = ++jobShadowClock_;
         int s = -1; for (int i = 0; i < jobShadowN_; ++i) if (jobShadow_[i].id == mm.id) { s = i; break; }
-        if (s < 0) { if (jobShadowN_ < 24) { s = jobShadowN_++; jobShadow_[s].id = mm.id; jobShadow_[s].mj = (unsigned char)mm.mjob; jobShadow_[s].sj = (unsigned char)mm.sjob; } return; }
+        if (s < 0) {
+            // EVICT-when-full, don't drop. Trust ids change on every re-summon (they are never freed here), so over a
+            // long session with trust churn the 24 slots fill and NEW members stopped being tracked -> their job
+            // changes went undetected and stale ally-buff rows lingered forever. Reuse the STALEST slot (smallest
+            // seen = a member long gone) instead of ignoring the new id.
+            if (jobShadowN_ < 24) s = jobShadowN_++;
+            else { s = 0; for (int i = 1; i < 24; ++i) if (jobShadow_[i].seen < jobShadow_[s].seen) s = i; }
+            jobShadow_[s].id = mm.id; jobShadow_[s].mj = (unsigned char)mm.mjob; jobShadow_[s].sj = (unsigned char)mm.sjob; jobShadow_[s].seen = clk;
+            return;
+        }
+        jobShadow_[s].seen = clk;   // touch : this member is still around
         if (jobShadow_[s].mj != (unsigned char)mm.mjob || jobShadow_[s].sj != (unsigned char)mm.sjob) {
             jobShadow_[s].mj = (unsigned char)mm.mjob; jobShadow_[s].sj = (unsigned char)mm.sjob;
             if (jobChangedN_ < 24) jobChanged_[jobChangedN_++] = mm.id;
@@ -573,7 +584,7 @@ struct PartyState {
     bool cacheLoaded_ = false; unsigned lastCacheSaveMs_ = 0;
     unsigned cacheChar_ = 0;              // WHICH character cacheLoaded_ refers to (0 = none). See on_character_changed.
     void save_cache(unsigned selfId) const;
-    void load_cache(unsigned selfId);
+    bool load_cache(unsigned selfId);   // true = resolved (opened, or genuinely absent) ; false = fopen failed transiently (locked) -> retry
     // active (non-expired) debuff status ids on target `id`, newest last. Fills `out` (status ids) and, if
     // non-null, `remainSec` (approx seconds left = base duration - elapsed ; exact removal comes from the 0x029
     // wear-off). Returns the count written.

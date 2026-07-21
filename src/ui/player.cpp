@@ -198,27 +198,38 @@ void Player::equip_footprint(float& w, float& h) const {
 void Player::ensure(u32 dev) {
     if (!valid_ptr(dev)) return;
     vials_->ensure(dev);
-    if (!jobicon_tex_ && !jobicon_tried_) { jobicon_tex_ = load_raw_texture(dev, JOBICON_PATH(), JI_W, JI_H); jobicon_tried_ = true; }
-    if (!buff_tex_    && !buff_tried_)    { buff_tex_    = load_raw_texture(dev, buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H); buff_tried_ = true; }
-    if (!gil_tex_     && !gil_tried_)     { gil_tex_     = load_raw_texture(dev, GIL_ICON_PATH(), GIL_ICON_W, GIL_ICON_H); gil_tried_ = true; }
+    ensure_raw_tex(dev, jobicon_tex_, jobicon_r_, JOBICON_PATH(),    JI_W, JI_H);
+    ensure_raw_tex(dev, buff_tex_,    buff_r_,    buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H);
+    ensure_raw_tex(dev, gil_tex_,     gil_r_,     GIL_ICON_PATH(),   GIL_ICON_W, GIL_ICON_H);
 }
 
 void Player::on_device_lost() {   // FORGET handles (dead device) -> reload next ensure. Do NOT Release.
     vials_->on_device_lost();
-    jobicon_tex_ = 0; jobicon_tried_ = false;
-    buff_tex_ = 0; buff_tried_ = false;
-    gil_tex_ = 0; gil_tried_ = false;
+    jobicon_tex_ = 0; jobicon_r_ = {};
+    buff_tex_ = 0; buff_r_ = {};
+    gil_tex_ = 0; gil_r_ = {};
     for (int s = 0; s < 16; ++s) { gearTex_[s] = 0; gearId_[s] = 0; gearTry_[s] = 0; gearNextMs_[s] = 0; }   // FORGET handles + force reload
     plrSkin_.on_device_lost(); plrSkinVar_ = -1;
 }
 
 void Player::dispose() {
     vials_->dispose();
-    release_texture(jobicon_tex_); jobicon_tex_ = 0; jobicon_tried_ = false;
-    release_texture(buff_tex_);    buff_tex_ = 0;    buff_tried_ = false;
-    release_texture(gil_tex_);     gil_tex_ = 0;     gil_tried_ = false;
+    release_texture(jobicon_tex_); jobicon_tex_ = 0; jobicon_r_ = {};
+    release_texture(buff_tex_);    buff_tex_ = 0;    buff_r_ = {};
+    release_texture(gil_tex_);     gil_tex_ = 0;     gil_r_ = {};
     for (int s = 0; s < 16; ++s) { release_texture(gearTex_[s]); gearTex_[s] = 0; gearId_[s] = 0; gearTry_[s] = 0; gearNextMs_[s] = 0; }
     plrSkin_.dispose(); plrSkinVar_ = -1;
+}
+void Player::self_check() const {
+    int slots = 0, drawn = 0, gaveup = 0;   // gear slots : how many are populated, drawn as icon, or gave up (id-text)
+    for (int s = 0; s < 16; ++s) { if (gearId_[s]) { ++slots; if (gearTex_[s]) ++drawn; else if (gearTry_[s] == 255) ++gaveup; } }
+    const auto& c = ui_config();
+    const bool copy = c.plrThemeCopy != 0; const int th = copy ? c.skinTheme : c.plrTheme;
+    const char* skin = copy ? "copy-party (no own tex)" : window_theme_is_proc(th) ? "procedural (no tex)"
+                                                        : (plrSkin_.ready() ? "ready" : "FALLBACK - load FAILED");
+    windower::debug::log("  player   : buff=%d(t%u) job=%d(t%u) gil=%d(t%u) skin=%s  gear=%d/%d icons, %d gave-up",
+                         buff_tex_ ? 1 : 0, buff_r_.tries, jobicon_tex_ ? 1 : 0, jobicon_r_.tries,
+                         gil_tex_ ? 1 : 0, gil_r_.tries, skin, drawn, slots, gaveup);
 }
 
 void Player::draw(const Frame& f) {
@@ -392,7 +403,7 @@ void Player::draw(const Frame& f) {
         } else if (copyParty && f.skin && f.skin->ready()) {
             draw_window(dev, *f.skin, x, y, W, H, tint, S, false, true);   // reuse the party's already-loaded FFXI skin
         } else {
-            if (plrSkinVar_ != theme) { plrSkin_.dispose(); plrSkin_.load(dev, window_theme_name(theme)); plrSkinVar_ = theme; }
+            if (plrSkinVar_ != theme) { plrSkin_.dispose(); if (plrSkin_.load(dev, window_theme_name(theme))) plrSkinVar_ = theme; }   // latch only on success (WindowSkin::load is atomic) -> a transient miss retries instead of latching the fallback box
             if (plrSkin_.ready()) draw_window(dev, plrSkin_, x, y, W, H, tint, S, false, true);
             else rrect_bordered(dev, x, y, W, H, snap(6.0f * S), mul_a(0xFF232E54, ca), mul_a(0xFF080B1A, ca), mul_a(0x6699BBFF, ca), 1.0f);
         }
@@ -571,7 +582,7 @@ void Player::draw(const Frame& f) {
             if (needLoad) {
                 if (gearId_[s] != want) { if (gearTex_[s]) { release_texture(gearTex_[s]); gearTex_[s] = 0; } gearTry_[s] = 0; gearNextMs_[s] = 0; }   // new item -> drop the old + reset retries + back-off
                 if (!want) { gearId_[s] = want; }
-                else if (decodes < MAX_GEAR_DECODES && (int)(GetTickCount() - gearNextMs_[s]) >= 0) {   // back-off : a transient ROM failure retries after a delay, not every frame
+                else if (decodes < MAX_GEAR_DECODES && (!gearNextMs_[s] || (int)(GetTickCount() - gearNextMs_[s]) >= 0)) {   // back-off : retry a transient ROM failure after a delay. `!gearNextMs_` FIRST : 0 is the "try now" sentinel, and a raw GetTickCount() compare against it goes NEGATIVE past 24.8 days uptime -> the first decode would never fire (same bug the buff atlas had ; reintroduced here in 1.0.46).
                     char p[300]; _snprintf(p, sizeof(p), "%s%u.bmp", GEARICON_DIR(), want); p[sizeof(p) - 1] = 0;
                     const bool tr = gear_trace_armed();
                     if (tr) { --s_gearTrace; gear_trace("slot %d  id=%u (0x%04X) '%s'", s, want, want, item_name(want) ? item_name(want) : "?"); }
@@ -622,7 +633,7 @@ void Player::draw(const Frame& f) {
 #endif
                                 if (tr) gear_trace("  RESULT id-text fallback (permanent : step %d)", gi.step);
                             } else if (gearTry_[s] < 15) {   // transient I/O -> back off ~1 s and try again
-                                ++gearTry_[s]; gearNextMs_[s] = GetTickCount() + 1000u;
+                                ++gearTry_[s]; gearNextMs_[s] = (GetTickCount() + 1000u) | 1u;   // |1 : never land on the 0 "try now" sentinel
                                 if (tr) gear_trace("  RESULT transient (step %d errno %d) -> retry #%d in ~1 s", gi.step, gi.err, gearTry_[s]);
                             } else {   // budget spent -- SAY SO (rule 10 corollary), then stop
                                 gearTry_[s] = 255;

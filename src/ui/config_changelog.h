@@ -249,10 +249,26 @@ static const ChangeLine CL_46[] = {
       "Visualiseur d'equipement : une icone qui n'a pas pu etre decodee depuis la ROM du jeu au PREMIER acces -- ce qui arrive sur une installation en Program Files quand l'antivirus ou Controlled Folder Access bloque brievement le fichier -- ne reste plus bloquee en identifiant brut pour toute la session. Les emplacements en echec sont desormais reessayes pendant ~15 secondes avant d'abandonner, et l'abandon est journalise." },
 };
 
+static const ChangeLine CL_47[] = {
+    { "Hardening pass across every module : a texture or icon that failed to load on a bad-timed frame (device not ready at zone-in, an asset briefly held by the updater or antivirus) no longer stays missing for the whole session. The buff-icon atlas, party / player / target / grimoire / zone-tracker / treasure icons, and the FFXI window skin all retry now.",
+      "Passe de durcissement sur tous les modules : une texture ou une icone qui n'a pas pu se charger sur une image mal synchronisee (peripherique pas pret au changement de zone, un fichier brievement tenu par la mise a jour ou l'antivirus) ne reste plus absente toute la session. L'atlas d'icones de buffs, les icones party / player / cible / grimoire / suivi de zone / tresor, et le skin de fenetre FFXI reessaient desormais." },
+    { "Fixed : the moon on the minimap clock could stay a blank hole for up to an hour if its image failed to build on a bad frame.",
+      "Corrige : la lune de l'horloge du minimap pouvait rester un trou vide jusqu'a une heure si son image echouait a se construire sur une mauvaise image." },
+    { "Fixed : your Corsair roll pips, bard song tags and buff casters could all be lost for the session if the cache file was momentarily locked at //unload+//load. It retries now.",
+      "Corrige : les pips de rolls Corsair, les marqueurs de chants barde et les lanceurs de buffs pouvaient tous etre perdus pour la session si le fichier cache etait momentanement verrouille au //unload+//load. Il reessaie desormais." },
+    { "Fixed : a false red buff \"OUT\" alert could flash forever for an alliance member (or a party member out of zone), whose buffs the game simply does not report to us -- \"no data\" was read as \"buff gone\".",
+      "Corrige : une fausse alerte rouge de buff \"OUT\" pouvait clignoter indefiniment pour un membre d'alliance (ou un membre de party hors zone), dont le jeu ne nous transmet simplement pas les buffs -- \"pas de donnees\" etait lu comme \"buff parti\"." },
+    { "Fixed : the Hate list could silently lose rows on multi-target actions (the target list was read with a fixed stride that breaks when an earlier target crits or procs).",
+      "Corrige : la liste de haine pouvait perdre des lignes en silence sur les actions multi-cibles (la liste des cibles etait lue avec un pas fixe qui casse des qu'une cible precedente fait un critique ou un proc)." },
+    { "New command : //aio selfcheck writes the health of every texture/icon load to aiohud_debug.log (used to verify the fixes above).",
+      "Nouvelle commande : //aio selfcheck ecrit la sante de chaque chargement de texture/icone dans aiohud_debug.log (sert a verifier les corrections ci-dessus)." },
+};
+
 // One entry per released version, NEWEST FIRST. The Update tab renders each as a collapsible header ; the newest
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.47", CL_47, (int)(sizeof(CL_47) / sizeof(CL_47[0])) },
     { "1.0.46", CL_46, (int)(sizeof(CL_46) / sizeof(CL_46[0])) },
     { "1.0.45", CL_45, (int)(sizeof(CL_45) / sizeof(CL_45[0])) },
     { "1.0.44", CL_44, (int)(sizeof(CL_44) / sizeof(CL_44[0])) },

@@ -958,6 +958,9 @@ static void sch_recast_info(int level, int jp, int& interval, int& charges) {   
     else                 { interval = 240; charges = 1; }
 }
 static void compute_grimoire(GameState& gs) {
+    // buffsOk false = the buff list is UNAVAILABLE this frame (a transient read miss), NOT "no buffs". Recomputing
+    // the book from an empty list flickered the grimoire to the CLOSED (no-Arts) art. Keep last frame's state.
+    if (!gs.buffsOk) return;
     GrimoireState g{};
     const int SCH = 20;
     auto hasBuff = [&](int id) { for (int i = 0; i < gs.nbuff; ++i) if (gs.buffs[i] == (unsigned short)id) return true; return false; };

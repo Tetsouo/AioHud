@@ -69,7 +69,9 @@ void Hud::draw_grimoire(const Frame& f, bool preview, float ovX, float ovY, floa
         book = g.book; addendum = g.addendum; dim = g.dim; closed = g.closed; charges = g.charges; timerSec = g.timerSec;
     }
 
-    if (!grimTried_) { grimLight_ = load_raw_texture(dev, GRIM_LIGHT_PATH(), 512, 342); grimDark_ = load_raw_texture(dev, GRIM_DARK_PATH(), 512, 342); grimClosed_ = load_raw_texture(dev, GRIM_CLOSED_PATH(), 512, 342); grimTried_ = true; }
+    ensure_raw_tex(dev, grimLight_,  grimLight_r_,  GRIM_LIGHT_PATH(),  512, 342);   // per-texture bounded retry : a partial load no longer strands the missing book for the session
+    ensure_raw_tex(dev, grimDark_,   grimDark_r_,   GRIM_DARK_PATH(),   512, 342);
+    ensure_raw_tex(dev, grimClosed_, grimClosed_r_, GRIM_CLOSED_PATH(), 512, 342);
     u32 tex = closed ? grimClosed_ : (book ? grimDark_ : grimLight_);
     if (closed && !tex) { closed = false; tex = grimLight_; }   // closed art missing -> fall back to the dim light book
     if (!tex) return;

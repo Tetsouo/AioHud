@@ -2,6 +2,7 @@
 #include "ui/party.h"
 #include "model/paths.h"
 #include "ui/edit_box.h"      // edit_box_hover_glow : shared edit-mode hover affordance
+#include "windower_debug.h"      // //aio selfcheck : Party::self_check logging
 #include "ui/liquid_bars.h"   // borrow the real fiole assets for the "Vial" gauge style
 #include "ui/ui_colors.h"     // lerp_color / hp_color / scl : shared ARGB helpers (widgets' truncating versions)
 #include "ui/text_style.h"       // te_* + fit_ellipsis (the ONE width-driven truncation)
@@ -359,12 +360,17 @@ static void draw_job_icon(u32 dev, u32 tex, float x, float y, float sz, int cell
 void Party::ensure(u32 dev) {
     if (!valid_ptr(dev)) return;
     if (!dot_tex_) dot_tex_ = make_dot(dev);
-    if (!icon_tex_ && !icon_tried_) { icon_tex_ = load_raw_texture(dev, ICON_PATH(), 128, 128); icon_tried_ = true; }
-    if (!buff_tex_ && !buff_tried_) { buff_tex_ = load_raw_texture(dev, buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H); buff_tried_ = true; }
-    if (!jobicon_tex_ && !jobicon_tried_) { jobicon_tex_ = load_raw_texture(dev, JOBICON_PATH(), JI_W, JI_H); jobicon_tried_ = true; }
+    ensure_raw_tex(dev, icon_tex_,    icon_r_,    ICON_PATH(),        128, 128);
+    ensure_raw_tex(dev, buff_tex_,    buff_r_,    buff_atlas_path(),  BUFF_ATLAS_W, BUFF_ATLAS_H);
+    ensure_raw_tex(dev, jobicon_tex_, jobicon_r_, JOBICON_PATH(),     JI_W, JI_H);
 }
-void Party::on_device_lost() { dot_tex_ = 0; icon_tex_ = 0; icon_tried_ = false; buff_tex_ = 0; buff_tried_ = false; jobicon_tex_ = 0; jobicon_tried_ = false; }   // forget (dead device), reload next ensure
-void Party::dispose() { release_texture(dot_tex_); dot_tex_ = 0; release_texture(icon_tex_); icon_tex_ = 0; icon_tried_ = false; release_texture(buff_tex_); buff_tex_ = 0; buff_tried_ = false; release_texture(jobicon_tex_); jobicon_tex_ = 0; jobicon_tried_ = false; }
+void Party::on_device_lost() { dot_tex_ = 0; icon_tex_ = 0; icon_r_ = {}; buff_tex_ = 0; buff_r_ = {}; jobicon_tex_ = 0; jobicon_r_ = {}; }   // forget (dead device), reload next ensure
+void Party::dispose() { release_texture(dot_tex_); dot_tex_ = 0; release_texture(icon_tex_); icon_tex_ = 0; icon_r_ = {}; release_texture(buff_tex_); buff_tex_ = 0; buff_r_ = {}; release_texture(jobicon_tex_); jobicon_tex_ = 0; jobicon_r_ = {}; }
+void Party::self_check() const {
+    if (tier_ != 0) return;   // one line for the main party (alliance boxes share the same textures)
+    windower::debug::log("  party    : buff=%d(t%u) cursor=%d(t%u) job=%d(t%u)",
+                         buff_tex_ ? 1 : 0, buff_r_.tries, icon_tex_ ? 1 : 0, icon_r_.tries, jobicon_tex_ ? 1 : 0, jobicon_r_.tries);
+}
 
 // find the persisted animation slot for a member (or claim a free/stale one).
 Party::RowAnim* Party::anim_for(unsigned id) {

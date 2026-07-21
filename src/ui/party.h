@@ -9,6 +9,7 @@
 #pragma once
 #include <string>
 #include "ui/widget.h"
+#include "ui/tex_retry.h"      // TexRetry : bounded-retry lazy texture load (replaces the give-up-once *_tried_ bools)
 #include "model/ui_config.h"   // gauge H/W scales (barHeight / barWidth)
 
 namespace aio {
@@ -36,6 +37,7 @@ public:
     void ensure(u32 dev) override;           // create the AA dot texture (leader/QM bullets)
     void on_device_lost() override;          // forget the dot handle (zoning)
     void dispose() override;                  // release the dot texture (unload)
+    void self_check() const override;        // //aio selfcheck : log texture-load health
     void draw(const Frame& f) override;
     int  tier() const { return tier_; }      // 0 = main party, 1/2 = alliance boxes (used by the config preview)
     float buff_reserve_w() const { return buffReserveW_; }   // last-drawn width of the left buff strip (0 for alliances) -> the preview centres the box+buffs cluster
@@ -76,11 +78,11 @@ private:
 
     u32 dot_tex_ = 0;                         // shared white AA disc, tinted per marker
     u32 icon_tex_ = 0;                        // selection-cursor icon (hand pointing right), loaded from assets
-    bool icon_tried_ = false;                 // attempted to load icon_tex_ (don't retry the file every frame)
+    TexRetry icon_r_;                         // bounded retry (was a give-up-once bool -> a zone-in miss killed it for the session)
     u32 buff_tex_ = 0;                        // status-icon atlas (buffs drawn to the left of each party row)
-    bool buff_tried_ = false;                 // attempted to load buff_tex_ (don't retry the file every frame)
+    TexRetry buff_r_;
     u32 jobicon_tex_ = 0;                     // job-emblem atlas (white masks, tinted per role ; job badge "Icons" mode)
-    bool jobicon_tried_ = false;              // attempted to load jobicon_tex_
+    TexRetry jobicon_r_;
 
     static const int MAXM = 6;
     int count_ = 6;

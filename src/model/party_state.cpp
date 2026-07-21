@@ -18,6 +18,7 @@
 #include "windower_debug.h"   // debug::log (//aio bcaptlog : buff-caster capture diagnostic)
 #include <windows.h>
 #include <time.h>
+#include <errno.h>   // load_cache : distinguish a LOCKED cache file (retry) from an ABSENT one (done)
 #include <stdio.h>
 #include <cstring>
 #include <ctime>        // time() for the treasure-pool expiry (unix timestamps)
@@ -385,19 +386,20 @@ void PartyState::save_cache(unsigned selfId) const {
     { const int head = selfCastHead_ % 64; fwrite(&head, 4, 1, f); }   // WRAPPED : selfCastHead_ is monotonic, so writing it raw made the read below reject the whole ring after 24 casts
     fclose(f);
 }
-void PartyState::load_cache(unsigned selfId) {
-    if (!selfId) return;
+bool PartyState::load_cache(unsigned selfId) {
+    if (!selfId) return true;
     char rel[48]; cache_name(rel, sizeof(rel), selfId);
-    FILE* f = fopen(plugin_path_r(rel), "rb"); if (!f) return;
+    FILE* f = fopen(plugin_path_r(rel), "rb");
+    if (!f) return (errno == ENOENT);   // absent = nothing to restore (resolved) ; locked (EACCES etc) = transient -> caller retries
     unsigned magic = 0, ver = 0; unsigned long long wt = 0;
-    if (fread(&magic, 4, 1, f) != 1 || magic != CACHE_MAGIC || fread(&ver, 4, 1, f) != 1 || ver != CACHE_VER || fread(&wt, 8, 1, f) != 1) { fclose(f); return; }
+    if (fread(&magic, 4, 1, f) != 1 || magic != CACHE_MAGIC || fread(&ver, 4, 1, f) != 1 || ver != CACHE_VER || fread(&wt, 8, 1, f) != 1) { fclose(f); return true; }   // opened but stale/foreign -> resolved, no retry
     // Freshness is now PER SECTION, not all-or-nothing. Everything below is keyed on ABSOLUTE FFXI ticks (expiries,
     // predicted expiries) and stays exactly as valid after a 10-minute unload as after a 10-second one -- expired
     // entries are dropped on load anyway. The old blanket 120 s gate meant that unloading, applying an update and
     // loading again emptied the whole Duration column until the next zone, which is indistinguishable from a bug.
     // Ally rows are the one estimate-based section (GetTickCount deltas), so they keep the tight window.
     const unsigned long long age = (unsigned long long)time(0) - wt;
-    if (age > 7200ull) { fclose(f); return; }   // >2 h : the session is certainly not the one that wrote this
+    if (age > 7200ull) { fclose(f); return true; }   // >2 h : not our session, but the file opened -> resolved
     const bool freshEstimates = (age <= 120ull);
     (void)freshEstimates;
     unsigned short cnt = 0;
@@ -444,6 +446,7 @@ void PartyState::load_cache(unsigned selfId) {
           selfCastHead_ = ((head % 64) + 64) % 64;   // tolerate ANY stored value : self_buff_spell_ranked() scans all 24 slots
       } }                                            // and sorts by tick, so it never reads the head -- rejecting the ring over it lost the data for nothing
     fclose(f);
+    return true;
 }
 void PartyState::arm_bcapt_log(int seconds) {
     bcaptUntilMs_ = GetTickCount() + (unsigned)(seconds > 0 ? seconds : 60) * 1000u;
@@ -557,15 +560,28 @@ void PartyState::on_action(const unsigned char* p) {
         // >= 0x01000000 that isn't friendly. refresh_hate verifies spawnType 0x10 in memory at display.
         const bool actorFriend = is_party_or_pet(actor);
         const bool actorEnemy = (actor >= 0x01000000u) && !actorFriend;
-        u32 tcount = getbits(p, 72, 6, size); if (tcount < 1) tcount = 1; if (tcount > 16) tcount = 16;
-        for (u32 i = 0; i < tcount; ++i) {
-            const int base = 150 + (int)i * 123;
-            if (base + 32 > size * 8) break;
-            const u32 tid = getbits(p, base, 32, size);
+        // VARIABLE stride, NOT the old fixed 150 + i*123. The 0x028 target block is variable-length (each earlier
+        // target's add-effect +37 / spike +35 / extra action +87 shifts every following target), so the fixed stride
+        // read GARBAGE ids the moment an earlier target crit / procced / took a spike -> ally rows silently lost on
+        // exactly the busy multi-target actions a hate list is for. Proven wrong in Ghidra (see action-packet.md) ;
+        // this is the same walk the buff-caster / debuff blocks already use.
+        u32 tc2 = getbits(p, 72, 6, size); if (tc2 < 1) tc2 = 1; if (tc2 > 16) tc2 = 16;
+        int off = 150;
+        for (u32 t = 0; t < tc2; ++t) {
+            if (off + 36 > size * 8) break;
+            const u32 tid = getbits(p, off, 32, size);
+            unsigned ac = getbits(p, off + 32, 4, size); off += 36;
             unsigned mob = 0, pc = 0;
             if (actorFriend) pc = actor; else if (actorEnemy) mob = actor;
             if (is_party_or_pet(tid)) pc = tid; else if (tid >= 0x01000000u) mob = tid;
             if (mob && pc) record_hate(hate_, mob, pet_owner(pc));   // show the OWNER (not the pet) in the Target column
+            for (unsigned a = 0; a < ac && a < 12; ++a) {            // skip this target's actions to reach the next target
+                if (off + 86 > size * 8) { off = size * 8; break; }
+                const unsigned hasAdd = getbits(p, off + 85, 1, size);
+                off += 86;
+                if (hasAdd) off += 37;                               // add-effect body
+                if (getbits(p, off, 1, size)) off += 35; else off += 1;   // spike block (+1 flag, +34 body)
+            }
         }
     }
 
@@ -859,6 +875,7 @@ void PartyState::on_action(const unsigned char* p) {
                 }
                 otherBuffs_[slot].target = tid; otherBuffs_[slot].status = (unsigned short)b->effect; otherBuffs_[slot].spell = (unsigned short)sid;
                 otherBuffs_[slot].startMs = nowMs;
+                otherBuffs_[slot].expTick = 0;   // fresh estimate-based buff : NO frozen expiry yet (prune snapshots one later via mirrorSelf). A recycled/stolen slot kept the PREVIOUS occupant's frozen expTick -> the row was dropped early or held too long.
                 otherBuffs_[slot].mirrorSelf = aoeSelf ? 1 : 0;   // AoE-on-self -> the drawer uses your exact self timer
                 otherBuffs_[slot].aoe = (tc >= 2) ? 1 : 0;        // the cast hit >=2 targets -> a REAL AoE (Protectra / a spell under SCH Accession) ; 1-target = single-cast, don't force-group it
                 unsigned long long ms;

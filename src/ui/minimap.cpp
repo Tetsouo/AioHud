@@ -428,7 +428,7 @@ void Minimap::draw(const Frame& f) {
                 static u32 moonBuf[64 * 64];
                 build_moon_argb(moonBuf, 64, VANA_DAYCOL[di], g.vana.moonPct / 100.0f, g.vana.waning);
                 moonTex_ = make_texture_argb_mip(dev, 64, 64, moonBuf);
-                moonKey_ = mkey;
+                if (moonTex_) moonKey_ = mkey;   // latch the key ONLY on success : a failed bake (not-ready device) left moonKey_ committed while moonTex_=0, so the rebuild never re-entered and the moon was a blank hole for up to ~57 min (the Help path already guards this way)
             }
         }
         color_state(dev);

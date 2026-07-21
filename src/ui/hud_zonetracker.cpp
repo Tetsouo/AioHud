@@ -615,7 +615,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
 
 // Live / edit path : the Hud draws the box at its configured screen position (lazy-loads the Odyssey weapon icons).
 void Hud::draw_zonetracker(const Frame& f, bool preview, float ovX, float ovY, float ovS) {
-    if (!weaponIconsTried_) { weaponIcons_ = load_raw_texture(f.dev, WEAPON_ICONS_PATH(), 96, 32); weaponIconsTried_ = true; }
+    ensure_raw_tex(f.dev, weaponIcons_, weaponIcons_r_, WEAPON_ICONS_PATH(), 96, 32);
     zonetracker_draw(f, preview, ovX, ovY, ovS, (float)screenW_, (float)screenH_, weaponIcons_);
 }
 
