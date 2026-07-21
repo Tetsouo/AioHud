@@ -806,8 +806,8 @@ void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const Mouse
 
             // on-screen HOW-TO banner (top-centre) so the drag-to-draw gesture is discoverable without reading the panel.
             {
-                const char* bn = tr("Drag on an empty area to draw a zone   -   move by its body, resize by its corners",
-                                    "Glissez sur une zone vide pour dessiner   -   déplacez par le corps, coins pour redimensionner");
+                const char* bn = tr("Drag on an empty area to draw a zone   -   move by its body, resize by its corners or edges",
+                                    "Glissez sur une zone vide pour dessiner   -   déplacez par le corps, coins ou côtés pour redimensionner");
                 const float bnw = fo->measure(bn, snap(13.0f)) + snap(30.0f), bnx = snap((sw - bnw) * 0.5f), bny = snap(sh * 0.12f), bnh = snap(30.0f);
                 drop_shadow(dev, bnx, bny, bnw, bnh, snap(4.0f), 50);
                 vg(dev, bnx, bny, bnw, bnh, 0xE0202B3C, 0xE0141C28);
@@ -817,7 +817,7 @@ void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const Mouse
 
             // ---- draw + edit each ZONE rectangle on screen ----
             const float HS = snap(9.0f);   // corner-handle half-size
-            static int grabZone = -1, grabMode = 0;   // grabMode : 0 move ; 1..4 = TL/TR/BL/BR corner resize
+            static int grabZone = -1, grabMode = 0;   // grabMode : 0 move ; 1..4 = TL/TR/BL/BR corner resize ; 5..8 = T/B/L/R edge (single-axis) resize
             static float gzOffX = 0.0f, gzOffY = 0.0f, grabPX = 0.0f, grabPY = 0.0f; static bool grabMoved = false;
             if (!(mo && mo->down)) { if (grabZone >= 0 && grabMoved) save_ui_config(); grabZone = -1; grabMoved = false; }
             for (int i = 0; i < C.guideGroupCount; ++i) {
@@ -829,9 +829,11 @@ void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const Mouse
                 flat(dev, rx, ry, rw, rh, (col & 0x00FFFFFF) | (openZone ? 0x40000000 : 0x60000000));   // less transparent fill
                 outline(dev, rx, ry, rw, rh, sel ? 0xFFFFE59E : col);
                 if (sel) outline(dev, rx + snap(1.0f), ry + snap(1.0f), rw - snap(2.0f), rh - snap(2.0f), (col & 0x00FFFFFF) | 0x88000000);
-                if (sel) {   // corner handles for the selected zone
+                if (sel) {   // resize handles for the selected zone : 4 corners (both axes) + 4 edge centres (one axis)
                     const float cxs[4] = { rx, rx + rw, rx, rx + rw }, cys[4] = { ry, ry, ry + rh, ry + rh };
                     for (int cci = 0; cci < 4; ++cci) { vg(dev, cxs[cci] - HS, cys[cci] - HS, 2 * HS, 2 * HS, 0xFFFFE59E, 0xFFD9B24A); outline(dev, cxs[cci] - HS, cys[cci] - HS, 2 * HS, 2 * HS, C_STROKE); }
+                    const float exs[4] = { rx + rw * 0.5f, rx + rw * 0.5f, rx, rx + rw }, eys[4] = { ry, ry + rh, ry + rh * 0.5f, ry + rh * 0.5f };   // T B L R : resize a single axis
+                    for (int e = 0; e < 4; ++e) { vg(dev, exs[e] - HS, eys[e] - HS, 2 * HS, 2 * HS, 0xFF9EE5FF, 0xFF4AB2D9); outline(dev, exs[e] - HS, eys[e] - HS, 2 * HS, 2 * HS, C_STROKE); }   // cyan = edge (single-axis)
                 }
                 char zl[28]; if (z.name[0]) sprintf(zl, "%s", z.name); else sprintf(zl, tr("Zone %d", "Zone %d"), i + 1);
                 fo->begin(dev); fo->draw_lc(dev, rx + snap(6.0f), ry + snap(11.0f), zl, snap(11.0f), sel ? 0xFFFFFFFF : col, C_STROKE, 1.2f);
@@ -845,6 +847,8 @@ void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const Mouse
                     const float rx = z.x * sw, ry = z.y * sh, rw = z.w * sw, rh = z.h * sh;
                     const float cxs[4] = { rx, rx + rw, rx, rx + rw }, cys[4] = { ry, ry, ry + rh, ry + rh };
                     for (int cci = 0; cci < 4 && !got; ++cci) if (inrect(mo, cxs[cci] - HS, cys[cci] - HS, 2 * HS, 2 * HS)) { grabZone = groupSel_; grabMode = 1 + cci; grabPX = mo->x; grabPY = mo->y; grabMoved = false; got = true; }
+                    const float exs[4] = { rx + rw * 0.5f, rx + rw * 0.5f, rx, rx + rw }, eys[4] = { ry, ry + rh, ry + rh * 0.5f, ry + rh * 0.5f };   // T B L R : single-axis resize
+                    for (int e = 0; e < 4 && !got; ++e) if (inrect(mo, exs[e] - HS, eys[e] - HS, 2 * HS, 2 * HS)) { grabZone = groupSel_; grabMode = 5 + e; grabPX = mo->x; grabPY = mo->y; grabMoved = false; got = true; }
                 }
                 if (!got) for (int i = C.guideGroupCount - 1; i >= 0 && !got; --i) {
                     GuideGroup& z = C.guideGroup[i];
@@ -855,15 +859,23 @@ void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const Mouse
             if (grabZone >= 0 && grabZone < C.guideGroupCount && mo && !grabMoved) {   // 4px dead-zone : a plain click only SELECTS
                 const float dx = mo->x - grabPX, dy = mo->y - grabPY; if (dx * dx + dy * dy > 16.0f) grabMoved = true;
             }
-            if (grabZone >= 0 && grabZone < C.guideGroupCount && mo && grabMoved) {   // apply an active move / corner resize
+            if (grabZone >= 0 && grabZone < C.guideGroupCount && mo && grabMoved) {   // apply an active move / corner / edge resize
                 GuideGroup& z = C.guideGroup[grabZone];
                 if (grabMode == 0) { z.x = clampf((mo->x - gzOffX) / sw, 0.0f, 1.0f - z.w); z.y = clampf((mo->y - gzOffY) / sh, 0.0f, 1.0f - z.h); }
                 else {
                     float x0 = z.x, y0 = z.y, x1 = z.x + z.w, y1 = z.y + z.h;
                     const float mx = clampf(mo->x / sw, 0.0f, 1.0f), my = clampf(mo->y / sh, 0.0f, 1.0f);
-                    if (grabMode == 1) { x0 = mx; y0 = my; } else if (grabMode == 2) { x1 = mx; y0 = my; } else if (grabMode == 3) { x0 = mx; y1 = my; } else { x1 = mx; y1 = my; }
-                    if (x1 < x0) { float t = x0; x0 = x1; x1 = t; grabMode = (grabMode == 1) ? 2 : (grabMode == 2) ? 1 : (grabMode == 3) ? 4 : 3; }
-                    if (y1 < y0) { float t = y0; y0 = y1; y1 = t; grabMode = (grabMode <= 2) ? grabMode + 2 : grabMode - 2; }
+                    // 1..4 = TL/TR/BL/BR corners (both axes) ; 5..8 = T/B/L/R edges (ONE axis only).
+                    switch (grabMode) {
+                        case 1: x0 = mx; y0 = my; break;  case 2: x1 = mx; y0 = my; break;
+                        case 3: x0 = mx; y1 = my; break;  case 4: x1 = mx; y1 = my; break;
+                        case 5: y0 = my; break;           case 6: y1 = my; break;         // Top / Bottom : height only
+                        case 7: x0 = mx; break;           case 8: x1 = mx; break;         // Left / Right : width only
+                    }
+                    if (x1 < x0) { float t = x0; x0 = x1; x1 = t;   // dragged past the opposite side -> swap + relabel the X-handle
+                        switch (grabMode) { case 1: grabMode = 2; break; case 2: grabMode = 1; break; case 3: grabMode = 4; break; case 4: grabMode = 3; break; case 7: grabMode = 8; break; case 8: grabMode = 7; break; } }
+                    if (y1 < y0) { float t = y0; y0 = y1; y1 = t;   // dragged past -> swap + relabel the Y-handle
+                        switch (grabMode) { case 1: grabMode = 3; break; case 2: grabMode = 4; break; case 3: grabMode = 1; break; case 4: grabMode = 2; break; case 5: grabMode = 6; break; case 6: grabMode = 5; break; } }
                     z.x = x0; z.y = y0; z.w = (x1 - x0 < 0.01f) ? 0.01f : (x1 - x0); z.h = (y1 - y0 < 0.01f) ? 0.01f : (y1 - y0);
                 }
             }

@@ -275,10 +275,24 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_49[] = {
+    { "*Minimap dots no longer spill past the frame.* Party, NPC and monster markers are now cut cleanly at the map's edge instead of poking outside it just before they vanish -- on the round map and the square one, with or without a border.",
+      "*Les points du minimap ne debordent plus du cadre.* Les marqueurs de joueurs, PNJ et monstres sont desormais coupes net au bord de la carte au lieu de depasser juste avant de disparaitre -- en carte ronde comme carree, avec ou sans bordure." },
+    { "*The Vana'diel clock now fits its text in French.* The long day names (\"Jour de Lumiere\") no longer run under the frame, and the clock keeps the same centred margins whether it sits above, below, left or right of the map (left / right now hug the map with a clean gap).",
+      "*L'horloge de Vana'diel s'adapte au texte francais.* Les noms de jour longs (\"Jour de Lumiere\") ne passent plus sous le cadre, et l'horloge garde les memes marges centrees qu'elle soit en haut, en bas, a gauche ou a droite de la carte (gauche / droite collent proprement a la carte)." },
+    { "*Point Watch no longer shifts when you switch XP, CP or ML.* The three modes share one layout now -- the box keeps the same size and the numbers stay aligned across modes -- and the live preview plus the edit-mode box show the mode you actually picked.",
+      "*Point Watch ne bouge plus quand on passe de XP a CP ou ML.* Les trois modes partagent une meme disposition -- la boite garde la meme taille et les nombres restent alignes d'un mode a l'autre -- et l'apercu live comme la boite en mode edition affichent le mode reellement choisi." },
+    { "*Keep-out zones can be resized one side at a time.* In the Rules editor, a selected zone now has a handle in the middle of each side (on top of the corner handles), so you can stretch just the width or just the height without changing the other.",
+      "*Les zones interdites se redimensionnent cote par cote.* Dans l'editeur Rules, une zone selectionnee a maintenant une poignee au milieu de chaque cote (en plus des coins), pour etirer seulement la largeur ou seulement la hauteur sans changer l'autre." },
+    { "Small fix : in the party-buffs preview, the \"+N\" more-buffs marker is no longer glued to the last icon.",
+      "Petit correctif : dans l'apercu des buffs de groupe, l'indicateur \"+N\" (buffs supplementaires) n'est plus colle a la derniere icone." },
+};
+
 // One entry per released version, NEWEST FIRST. The Update tab renders each as a collapsible header ; the newest
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.49", CL_49, (int)(sizeof(CL_49) / sizeof(CL_49[0])) },
     { "1.0.48", CL_48, (int)(sizeof(CL_48) / sizeof(CL_48[0])) },
     { "1.0.47", CL_47, (int)(sizeof(CL_47) / sizeof(CL_47[0])) },
     { "1.0.46", CL_46, (int)(sizeof(CL_46) / sizeof(CL_46[0])) },

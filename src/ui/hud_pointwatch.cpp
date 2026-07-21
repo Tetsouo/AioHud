@@ -49,9 +49,15 @@ void pointwatch_draw(const Frame& f, bool preview, float ovX, float ovY, float o
     char kb1[12], kb2[12];
 
     if (preview || editing) {
-        // //aio edit uses the WIDEST realistic values so the box you place reserves the max in-game footprint
-        // (it never grows past this in live) : max master level, near-cap EP, a high rate, full merits.
-        { PWRow& r = rows[nrows]; strcpy(r.label, helpSample ? "ML30" : "ML50"); r.lcol = cOrange; r.cur = 999800; r.mx = 999900; strcpy(r.val, helpSample ? "45.2k/50k EP" : "999.9k/999.9k EP"); r.extra[0] = 0; r.extraCol = cVal;
+        // Reflect the SELECTED mode (XP / CP / ML) so the live preview and //aio edit show what you'll actually get
+        // (Auto -> ML sample). The box stays a FIXED size across modes -- the width pass reserves the label column,
+        // the CP job-points column and the max value template regardless -- so switching mode changes the TEXT, not
+        // the box footprint. Values are near-cap so the placed box reserves the max in-game footprint.
+        int pm = C.pwMode; if (pm < 1 || pm > 3) pm = 3;   // 1=XP 2=CP 3=ML ; Auto(0) / invalid -> ML
+        { PWRow& r = rows[nrows];
+          if (pm == 1)      { strcpy(r.label, "XP"); r.lcol = cGreen; r.cur = 999800; r.mx = 999900; strcpy(r.val, helpSample ? "6.8k/9k" : "999.9k/999.9k"); r.extra[0] = 0; r.extraCol = cVal; }
+          else if (pm == 2) { strcpy(r.label, "CP"); r.lcol = cBlue;  r.cur = 29000;  r.mx = 30000;  strcpy(r.val, helpSample ? "1.2k/30k" : "29k/30k"); strcpy(r.extra, helpSample ? "JP210" : "JP9999"); r.extraCol = cJp; }
+          else              { strcpy(r.label, helpSample ? "ML30" : "ML50"); r.lcol = cOrange; r.cur = 999800; r.mx = 999900; strcpy(r.val, helpSample ? "45.2k/50k EP" : "999.9k/999.9k EP"); r.extra[0] = 0; r.extraCol = cVal; }
           if (C.pwRate) { strcpy(r.rate, helpSample ? "2.4k/h" : "999.9k/h"); r.rateSlot = 1; } else { r.rate[0] = 0; r.rateSlot = 0; }   // mirror the live 'Show rate' toggle so //aio edit == in-game
           ++nrows; }
         { PWRow& r = rows[nrows]; strcpy(r.label, "Merits"); r.lcol = cPurple; r.cur = 9900; r.mx = 10000; strcpy(r.val, "9.9k/10k"); strcpy(r.extra, helpSample ? "12/15" : "75/75"); r.extraCol = cPool; r.rate[0] = 0; r.rateSlot = 0; ++nrows; }
@@ -111,17 +117,22 @@ void pointwatch_draw(const Frame& f, bool preview, float ovX, float ovY, float o
     const float minW = (C.pwDisplay == 1) ? 0.0f : 150.0f * S * txScale;
     const float rateSlotW = fRate->measure(helpSample ? "9.9k/h" : "999.9k/h", zRate);   // X/h slot : MAX rate reservation live/edit ; the Help sample hugs its compact value
     float rowW[2] = { minW, minW }; float contentW = minW;
+    // fixed LABEL column : "XP"/"CP" (2 chars) vs "MLxx" (4) would otherwise shift the value/extra/rate columns and
+    // resize the box when the mode (or master level) changes. Reserve row 0 at the WIDEST realistic row-0 label so
+    // the value column + box width stay put across XP/CP/ML ; other rows hug their own (constant) label.
+    float labColW = fLabel->measure(pw_up(PW_LABEL, "ML50", lb, 12), zLabel);   // baseline row-0 reservation (>= "XP"/"CP")
+    for (int i = 0; i < nrows; ++i) { const float aw = fLabel->measure(pw_up(PW_LABEL, rows[i].label, lb, 12), zLabel); if (aw > labColW) labColW = aw; }   // ONE shared label column = the widest row label ("Merits") -> every value/extra/rate aligns across BOTH rows AND all modes
     for (int i = 0; i < nrows; ++i) {
         // value + extra reserved at a fixed MAX template (row 0 = progression, row 1 = Merits) so the //aio edit
         // sample and the live box compute the SAME width, and changing digits never resize the box (>= actual).
         const char* vtmpl = helpSample ? rows[i].val : ((i == 0) ? "999.9k/999.9k EP" : "9.9k/10k");
         float vw = fVal->measure(pw_up(PW_VALUE, vtmpl, vb, 28), zVal);
         { float aw = fVal->measure(pw_up(PW_VALUE, rows[i].val, vb, 28), zVal); if (aw > vw) vw = aw; }
-        float lw = fLabel->measure(pw_up(PW_LABEL, rows[i].label, lb, 12), zLabel) + gap + vw;
-        if (rows[i].extra[0]) {
-            const char* etmpl = helpSample ? rows[i].extra : ((i == 1) ? "75/75" : "JP9999");   // Merits (75/75) vs CP job-points (JP####)
+        float lw = labColW + gap + vw;
+        if (i == 0 || rows[i].extra[0]) {   // row 0 ALWAYS reserves the extra column (CP's JP####) so XP/CP/ML share ONE skeleton
+            const char* etmpl = (i == 0) ? "JP9999" : (helpSample ? rows[i].extra : "75/75");   // row 0 = CP job-points slot ; Merits = 75/75
             float ew = fVal->measure(pw_up(PW_VALUE, etmpl, eb, 16), zVal);
-            { float aw = fVal->measure(pw_up(PW_VALUE, rows[i].extra, eb, 16), zVal); if (aw > ew) ew = aw; }
+            if (rows[i].extra[0]) { float aw = fVal->measure(pw_up(PW_VALUE, rows[i].extra, eb, 16), zVal); if (aw > ew) ew = aw; }
             lw += gap * 0.6f + ew;
         }
         if (rows[i].rateSlot) {   // progression stat : ALWAYS reserve the X/h slot (>= the actual rate width)
@@ -163,7 +174,7 @@ void pointwatch_draw(const Frame& f, bool preview, float ovX, float ovY, float o
             const float hcy = yB + headH * 0.5f;
             const char* lbl = pw_up(PW_LABEL, R.label, lb, 12);
             fLabel->begin(dev); fLabel->draw_lc(dev, xB, hcy, lbl, zLabel, pw_col(PW_LABEL, R.lcol), strk, oLabel);
-            float vx = xB + fLabel->measure(lbl, zLabel) + gap;
+            float vx = xB + labColW + gap;   // value at the shared FIXED label column -> same x across BOTH rows and all XP/CP/ML modes
             const char* vv = pw_up(PW_VALUE, R.val, vb, 28);
             fVal->begin(dev); fVal->draw_lc(dev, vx, hcy, vv, zVal, pw_col(PW_VALUE, cVal), strk, oVal);
             if (R.extra[0]) { vx += fVal->measure(vv, zVal) + gap * 0.6f; const char* ex = pw_up(PW_VALUE, R.extra, eb, 16); fVal->draw_lc(dev, vx, hcy, ex, zVal, R.extraCol, strk, oVal); }

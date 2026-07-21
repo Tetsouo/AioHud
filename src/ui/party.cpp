@@ -405,6 +405,8 @@ static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
     const float bs    = iconH;                          // constant icon size (row grows to fit)
     const float totalH = twoMode ? (2.0f * bs + vgap) : bs;
     const int   rowsN = twoMode ? 2 : 1;
+    const float bmgn  = snap(bs * 0.35f);               // "+N" breathing gap : the inter-buff bgap is ~1px (buffs nearly touch),
+                                                        // so the overflow chip needs its OWN margin or it reads glued to the last icon.
     // CONFIG-PREVIEW ONLY : cap the LEFTWARD strip at the stage's left edge so it can't spill the rect ; the
     // clipped buffs collapse into a "+N" marker at the leftmost fitting cell. lim <= 0 (live HUD) = no cap.
     const float lim  = g_previewBuffLeft;
@@ -427,7 +429,7 @@ static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
             int drawN = cnt;                            // icons to draw as real icons
             bool clip = false;                          // clipped -> reserve the leftmost cell for "+N"
             if (cap) {
-                int fit = (int)((xr - bs - lim) / (bs + bgap)) + 1;   // cells with left edge >= lim
+                int fit = (int)((xr - bs - (lim + bmgn)) / (bs + bgap)) + 1;   // cells with left edge >= lim (+ reserve the "+N" margin)
                 if (fit < 0) fit = 0; if (fit > cnt) fit = cnt;
                 if (fit < cnt) { clip = true; drawN = fit - 1; if (drawN < 0) drawN = 0; }   // last fitting cell -> "+N"
                 else drawN = cnt;
@@ -443,7 +445,7 @@ static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
             }
             if (clip && drawN >= 0 && nmark < 12) {     // "+N" (hidden count) in the leftmost fitting cell
                 const int cellIdx = drawN;              // the cell just left of the last drawn icon
-                marks[nmark].x  = snap(xr - (float)(cellIdx + 1) * bs - (float)cellIdx * bgap);
+                marks[nmark].x  = snap(xr - (float)(cellIdx + 1) * bs - (float)cellIdx * bgap - bmgn);   // pushed left by the margin -> not glued to the last buff
                 marks[nmark].y  = y;
                 marks[nmark].nn = cnt - drawN;          // buffs not shown as icons
                 ++nmark;

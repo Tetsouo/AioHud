@@ -365,17 +365,22 @@ void Minimap::draw(const Frame& f) {
     const float Hh = clock_header_height(c, S);                 // clock header height (enabled rows only ; 0 if off)
     const bool  hasClock = (c.mmClock != 0);                    // clock header shown at all
     const int   cpos = hasClock ? ((c.mmClockPos < 0 || c.mmClockPos > 3) ? 0 : c.mmClockPos) : -1;   // header placement (-1 = none)
-    // header BAND width : TOP/BOTTOM keep the natural hdrW (centred over the map) ; LEFT/RIGHT hug the actual
-    // content so the header<->map gap equals the TOP margin (bm) instead of hdrW's empty side padding.
+    // header BAND width (the content is CENTRED in `hbw`) + the box layout.
+    const float cw = (cpos >= 0) ? clock_header_width(f, g.vana, c, elemTex_, S) : 0.0f;   // widest enabled row (incl. the long FR day row)
+    const float fc = bm + snap(5.0f * S);                       // OUTER frame clearance : keeps the content off the themed box border
+    // TOP/BOTTOM : band = content + fc on EACH side (the frame is on both left AND right of the header).
+    // LEFT/RIGHT : band = TIGHT to the content ; the outer clearance is added by hx, and the MAP side keeps only a
+    //              small bm gap. (A symmetric band here shoved a big empty margin between the text and the map.)
     float hbw = hdrW;
-    if (cpos == 2 || cpos == 3) { float cw = clock_header_width(f, g.vana, c, elemTex_, S); if (cw > snap(20.0f * S)) hbw = cw + snap(6.0f * S); }
+    if (cpos == 0 || cpos == 1) { if (cw > snap(20.0f * S)) hbw = cw + 2.0f * fc; }
+    else if (cpos == 2 || cpos == 3) { if (cw > snap(20.0f * S)) hbw = cw; }
     float Wbox, boxH;
     if (cpos == 0 || cpos == 1) {                               // TOP / BOTTOM : header stacked with the map
         const float needW = mapD + 2.0f * bm;                  // width the map + side margins want
         Wbox = (needW > hbw ? needW : hbw);                   // box width = max(header, map+margins)
         boxH = Hh + mapD + 2.0f * bm;                          // header + gap + map + margins
-    } else if (cpos == 2 || cpos == 3) {                       // LEFT / RIGHT : header beside the map
-        Wbox = hbw + mapD + 2.0f * bm;                        // header (hugged) + gap(bm) + map + outer bm  == TOP margin
+    } else if (cpos == 2 || cpos == 3) {                       // LEFT / RIGHT : [fc][content][bm gap][map][bm]
+        Wbox = fc + hbw + bm + mapD + bm;                     // content clears the OUTER frame (fc) and hugs the map (small bm gap)
         boxH = (Hh > mapD ? Hh : mapD) + 2.0f * bm;            // box height = max(header, map) + margins
     } else {                                                   // no clock : the box is just the map
         Wbox = mapD;
@@ -408,12 +413,12 @@ void Minimap::draw(const Frame& f) {
         // subtract the header's intrinsic top lead (draw_clock_header starts at y+6S) so the map<->clock gap == bm
         // (the TOP reference) ; the freed 6S lands under the header, mirroring TOP's top pad.
         hx = px + (Wbox - hbw) * 0.5f;  hy = py + bm + mapD + bm - snap(6.0f * S);
-    } else if (cpos == 2) {                                    // LEFT : header flush left, gap(bm), map
-        hx = px;                        hy = py + (boxH - Hh) * 0.5f;
-        ccx = px + hbw + bm + r;        ccy = py + boxH * 0.5f;
-    } else if (cpos == 3) {                                    // RIGHT : header right of the map
+    } else if (cpos == 2) {                                    // LEFT : [fc][content][bm gap][map][bm]
+        hx = px + fc;                   hy = py + (boxH - Hh) * 0.5f;   // content clears the outer (left) frame by fc
+        ccx = px + fc + hbw + bm + r;   ccy = py + boxH * 0.5f;         // map hugs the content : only a bm gap
+    } else if (cpos == 3) {                                    // RIGHT : [bm][map][bm gap][content][fc]
         ccx = px + bm + r;              ccy = py + boxH * 0.5f;
-        hx = px + bm + mapD + bm;       hy = py + (boxH - Hh) * 0.5f;
+        hx = px + bm + mapD + bm;       hy = py + (boxH - Hh) * 0.5f;   // content hugs the map (bm) ; fc clears the outer (right) frame
     } else {                                                   // no clock : the map fills the box
         ccx = px + Wbox * 0.5f;         ccy = py + boxH * 0.5f;
     }
@@ -645,6 +650,25 @@ void Minimap::draw(const Frame& f) {
         }
     }
 
+    // ---- clip the entity blips to the map so a blip crossing the rim is CUT at the frame instead of popping off
+    //      whole. NB the stencil mask (rrect_clip) is NOT used here : Windower renders the overlay with no
+    //      depth-stencil bound, so stencil ops no-op even when the device was created with one -> the mask never
+    //      clips. Instead :
+    //        SQUARE -> a sub-VIEWPORT is a hard rasterizer scissor (works with no stencil, clips even XYZRHW).
+    //                  Blips may cross the rim ; the viewport cuts the overhang -> true slide-out.
+    //        ROUND  -> no rectangle can be a circle, so keep the WHOLE blip inside the disc (it stops AT the rim,
+    //                  no overhang). A true round slide would need a working stencil, which we don't have here.
+    //      Only the mob + NPC/PC loops are wrapped ; the target-line reticle deliberately stays on the edge. ----
+    const bool clipBlips = g.mapEntN > 0 && (c.mmMob || c.mmNPC || c.mmPC);
+    D3DVIEWPORT8 vpSave; bool vpSet = false;
+    if (clipBlips && !round && dGetViewport(dev, vpSave)) {
+        long L = (long)wx0, T = (long)wy0, R = (long)wx1 + 1, B = (long)wy1 + 1;   // round the clip rect OUT by <=1px
+        const long vl = (long)vpSave.X, vt = (long)vpSave.Y, vr = vl + (long)vpSave.Width, vb = vt + (long)vpSave.Height;
+        if (L < vl) L = vl; if (T < vt) T = vt; if (R > vr) R = vr; if (B > vb) B = vb;   // never exceed the saved viewport
+        if (R > L && B > T) { D3DVIEWPORT8 vp = vpSave; vp.X = (u32)L; vp.Y = (u32)T; vp.Width = (u32)(R - L); vp.Height = (u32)(B - T); dSetViewport(dev, vp); vpSet = true; }
+    }
+    const bool clipped = vpSet;   // only the square viewport clip lets a blip cross the rim ; round keeps blips wholly inside
+
     // ---- mob markers : the Arrow icon rotated by heading, tinted by claim colour ----
     if (g.mapEntN > 0 && mkMob_ && c.mmMob) {
         const float mkSz = clampf(2.4f + 1.0f * Z, 4.4f, 11.0f) * S * MSc;
@@ -655,8 +679,9 @@ void Minimap::draw(const Frame& f) {
             const float ex = (g.map.scale * me.x) / 5.0f - (float)g.map.offX;
             const float ey = (g.map.scale * -me.z) / 5.0f - (float)g.map.offY;
             const float sx = ccx + (ex - mapX) * pn, sy = ccy + (ey - mapY) * pn;
-            if (round) { const float dx = sx - ccx, dy = sy - ccy, lim = rc - mkSz * 0.61f; if (lim < 0.0f || dx * dx + dy * dy > lim * lim) continue; }   // keep the whole marker inside the disc
-            else if (sx < wx0 || sx > wx1 || sy < wy0 || sy > wy1) continue;
+            const float mh = mkSz * 0.61f, pad = clipped ? mh : -mh;   // clipped: let it cross (the clip cuts the overhang) ; else keep the whole marker inside
+            if (round) { const float dx = sx - ccx, dy = sy - ccy, lim = rc + pad; if (lim < 0.0f || dx * dx + dy * dy > lim * lim) continue; }
+            else if (sx < wx0 - pad || sx > wx1 + pad || sy < wy0 - pad || sy > wy1 + pad) continue;
             const float ang = eased_angle(me.id, me.heading + 1.5708f);
             tquad_rot(dev, snap(sx), snap(sy), mkSz * 1.22f, mkSz * 1.22f, ang, 0x99000000u);   // dark outline
             tquad_rot(dev, snap(sx), snap(sy), mkSz, mkSz, ang, mm_ent_color(me));              // colour fill
@@ -675,12 +700,14 @@ void Minimap::draw(const Frame& f) {
             const float ex = (g.map.scale * me.x) / 5.0f - (float)g.map.offX;
             const float ey = (g.map.scale * -me.z) / 5.0f - (float)g.map.offY;
             const float sx = ccx + (ex - mapX) * pn, sy = ccy + (ey - mapY) * pn;
-            if (round) { const float dx = sx - ccx, dy = sy - ccy, lim = rc - dO; if (lim < 0.0f || dx * dx + dy * dy > lim * lim) continue; }   // keep the whole dot inside the disc
-            else if (sx < wx0 || sx > wx1 || sy < wy0 || sy > wy1) continue;
+            const float pad = clipped ? dO : -dO;   // clipped: let it cross (the clip cuts the overhang) ; else keep the whole dot inside
+            if (round) { const float dx = sx - ccx, dy = sy - ccy, lim = rc + pad; if (lim < 0.0f || dx * dx + dy * dy > lim * lim) continue; }
+            else if (sx < wx0 - pad || sx > wx1 + pad || sy < wy0 - pad || sy > wy1 + pad) continue;
             disc(dev, snap(sx), snap(sy), dO, 0x88000000u);
             disc(dev, snap(sx), snap(sy), dF, mm_ent_color(me));
         }
     }
+    if (vpSet) dSetViewport(dev, vpSave);   // restore the full viewport
 
     // ---- player marker : the Location pin at the centre, rotated to face the heading, navy + halo ----
     if (mkPlayer_) {

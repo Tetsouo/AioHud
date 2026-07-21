@@ -53,6 +53,7 @@ inline void dSetVS (u32 d, u32 fvf)               { auto f = vmethod<long(__stdc
 inline void dDrawUP(u32 d, u32 pt, u32 n, const void* v, u32 st){ auto f = vmethod<long(__stdcall*)(u32,u32,u32,const void*,u32)>(d,72); if(f) f(d,pt,n,v,st); }
 inline u32  dCreateSB(u32 d, u32 type)            { auto f = vmethod<long(__stdcall*)(u32,u32,u32*)>(d,57); u32 t=0; if(f) f(d,type,&t); return t; }
 inline bool dGetViewport(u32 d, D3DVIEWPORT8& vp) { auto f = vmethod<long(__stdcall*)(u32,D3DVIEWPORT8*)>(d,41); return f && f(d,&vp) >= 0; }   // vtbl 41 : GetViewport (current viewport)
+inline void dSetViewport(u32 d, const D3DVIEWPORT8& vp) { auto f = vmethod<long(__stdcall*)(u32,const D3DVIEWPORT8*)>(d,40); if(f) f(d,&vp); }   // vtbl 40 : SetViewport -- a sub-rect acts as a hard scissor even for XYZRHW quads
 
 // TRUE backbuffer size (follows a windowed resize / device reset, unlike GetViewport which can
 // be a temporary sub-viewport). GetBackBuffer (dev vtbl 16) -> Surface8::GetDesc (surf vtbl 8 ;
