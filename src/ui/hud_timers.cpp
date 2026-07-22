@@ -207,8 +207,13 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         // how many people ACTUALLY carry `st` right now : you (real buffs) + party members (their 0x076 icons). This is
         // the AoE count, robust vs the 0x028 target parse (songs/rolls only hit your party, so no alliance).
         auto countHas = [&](int st) -> int {
-            int c = meHas(st) ? 1 : 0;
+            // Count SELF only when your copy is actually YOUR cast. If someone re-cast the buff over you (an ally
+            // re-Protects you over your own Majesty AoE), your copy is no longer part of THIS group -- counting it
+            // kept a stale "(AoE 2)" and let your row FOLD into the group, hiding the real caster (only the timer
+            // updated). buff_caster_for resolves the single live timer to the cast that produced it (see match_cast).
             const unsigned me = party().self_id();
+            const bool selfMine = meHas(st) && party().buff_caster_for((unsigned short)st, party().self_buff_expiry((unsigned short)st), -1) == me;
+            int c = selfMine ? 1 : 0;
             for (int i = 0; i < party().count; ++i) {
                 if (party().m[i].id == 0 || party().m[i].id == me) continue;
                 const BuffSet* bs = party().buffs_for(party().m[i].id);
