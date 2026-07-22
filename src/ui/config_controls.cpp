@@ -233,7 +233,7 @@ void row_band(u32 dev, float x, float y, float w, float h, bool alt, float hov) 
     (void)alt;                                                       // no zebra bands : the category card is a full solid surface
     const int a = (int)(0x14 * clampf(hov, 0.0f, 1.0f) + 0.5f);      // hover highlight (base is flat)
     if (a > 0) flat(dev, x, y, w, h, ((u32)a << 24) | 0x00FFFFFF);
-    flat(dev, x + snap(8.0f), y + h - 1.0f, w - snap(16.0f), 1, 0x16FFFFFF);   // interligne : a thin divider between rows
+    if (h >= snap(24.0f)) flat(dev, x + snap(8.0f), y + h - 1.0f, w - snap(16.0f), 1, 0x16FFFFFF);   // interligne between SETTINGS rows only ; skip the dense 21px spell-checklist rows (a divider under every spell was too busy)
 }
 
 // ---- rectangular stencil CLIP for the scrolling controls viewport (D3D8 has no scissor rect ; same
