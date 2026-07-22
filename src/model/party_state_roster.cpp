@@ -77,43 +77,11 @@ static bool streq(const char* a, const char* b) { while (*a && *a == *b) { ++a; 
 static int  job_id(const char* a) { if (!a || !a[0]) return 0; for (int i = 1; i <= 23; ++i) if (streq(JOBS[i], a)) return i; return 0; }
 int job_id_from_abbr(const char* a) { return job_id(a); }   // public wrapper for the job-icon atlas lookup
 
-// Trust -> job table, ported from XivParty (jobs.lua jobs.trusts). The party member array
-// holds NO job for trusts, so we resolve it by internal name (matches the in-game name field,
-// e.g. 'Joachim','Monberaux'). Name-only lookup (first match wins) -- the few I/II variants
-// that differ would need the entity model id to disambiguate; not worth a second pointer hop.
-struct TrustJob { const char* name; const char* mj; const char* sj; };
-static const TrustJob TRUSTS[] = {
-    {"Amchuchu","RUN","WAR"},{"ArkEV","PLD","WHM"},{"ArkHM","WAR","NIN"},{"August","PLD","WAR"},
-    {"Curilla","PLD",0},{"Gessho","NIN","WAR"},{"Mnejing","PLD","WAR"},{"Rahal","PLD","WAR"},
-    {"Rughadjeen","PLD",0},{"Trion","PLD","WAR"},{"Valaineral","PLD","WAR"},
-    {"Abenzio","THF","WAR"},{"Abquhbah","WAR",0},{"Aldo","THF",0},{"Areuhat","WAR",0},
-    {"ArkGK","SAM","DRG"},{"ArkMR","BST","THF"},{"Ayame","SAM",0},{"BabbanMheillea","MNK",0},
-    {"Balamor","DRK",0},{"Chacharoon","THF",0},{"Cid","WAR",0},{"Darrcuiln","SPC",0},
-    {"Excenmille","PLD",0},{"Fablinix","RDM","BLM"},{"Gilgamesh","SAM",0},{"Halver","PLD","WAR"},
-    {"Ingrid","WAR","WHM"},{"Iroha","SAM",0},{"IronEater","WAR",0},{"Klara","WAR",0},
-    {"LehkoHabhoka","THF","BLM"},{"LheLhangavo","MNK",0},{"LhuMhakaracca","BST","WAR"},
-    {"Lilisette","DNC",0},{"Lion","THF",0},{"Luzaf","COR","NIN"},{"Maat","MNK",0},
-    {"Maximilian","WAR","THF"},{"Mayakov","DNC",0},{"Mildaurion","PLD","WAR"},{"Morimar","BST",0},
-    {"Mumor","DNC","WAR"},{"NajaSalaheem","MNK","WAR"},{"Naji","WAR",0},{"NanaaMihgo","THF",0},
-    {"Nashmeira","PUP","WHM"},{"Noillurie","SAM","PLD"},{"Prishe","MNK","WHM"},{"Rainemard","RDM",0},
-    {"RomaaMihgo","THF",0},{"Rongelouts","WAR",0},{"Selh'teus","SPC",0},{"ShikareeZ","DRG","WHM"},
-    {"Tenzen","SAM",0},{"Teodor","SAM","BLM"},{"UkaTotlihn","DNC","WAR"},{"Volker","WAR",0},
-    {"Zazarg","MNK",0},{"Zeid","DRK",0},{"Matsui-P","NIN","BLM"},
-    {"Elivira","RNG","WAR"},{"Makki-Chebukki","RNG",0},{"Margret","RNG",0},{"Najelith","RNG",0},
-    {"SemihLafihna","RNG",0},
-    {"Adelheid","SCH",0},{"Ajido-Marujido","BLM","RDM"},{"ArkTT","BLM","DRK"},{"D.Shantotto","BLM",0},
-    {"Gadalar","BLM",0},{"Kayeel-Payeel","BLM",0},{"Kukki-Chebukki","BLM",0},{"Leonoyne","BLM",0},
-    {"Ovjang","RDM","WHM"},{"Robel-Akbel","BLM",0},{"Rosulatia","BLM",0},{"Shantotto","BLM",0},
-    {"Ullegore","BLM",0},
-    {"Cherukiki","WHM",0},{"FerreousCoffin","WHM","WAR"},{"Karaha-Baruha","WHM","SMN"},{"Kupipi","WHM",0},
-    {"MihliAliapoh","WHM",0},{"Monberaux","SPC",0},{"Ygnas","WHM",0},
-    {"Arciela","RDM",0},{"Joachim","BRD","WHM"},{"KingOfHearts","RDM","WHM"},{"Koru-Moru","RDM",0},
-    {"Qultada","COR",0},{"Ulmia","BRD",0},
-    {"Brygid","GEO",0},{"Cornelia","GEO",0},{"Kupofried","GEO",0},{"KuyinHathdenna","GEO",0},
-    {"Moogle","GEO",0},{"Sakura","GEO",0},{"StarSibyl","GEO",0},
-    {"Apururu","WHM","RDM"},{"Flaviria","DRG","WAR"},{"InvincibleShield","WAR","MNK"},
-    {"JakohWahcondalo","THF","WAR"},{"Pieuje","WHM",0},{"Sylvie","GEO","WHM"},{"Yoran-Oran","WHM",0},
-};
+// Trust -> job table : GENERATED (scripts/gen_trusts.py) from res/spells.lua (type="Trust" party_name, the
+// field the roster reads) + curated jobs. The party member array holds NO job for a trust, so is_trust()'s
+// name fallback (used when the entity SpawnType is unreadable -- e.g. ANOTHER player's trust, out of range)
+// matches on that party_name. Regenerate after a game update ; do NOT hand-edit trusts_gen.h.
+#include "model/trusts_gen.h"
 // resolve a trust's main/sub job by name -> true if found (mj/sj are job ids, 0 if none/SPC).
 static bool trust_job(const char* name, int& mj, int& sj) {
     if (!name || !name[0]) return false;
