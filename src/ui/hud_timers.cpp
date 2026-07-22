@@ -189,6 +189,18 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             bufs[nb].rem = 62;   bufs[nb].icon = 41;  bufs[nb].name = "Shell V"; bufs[nb].tag = " (SV)"; bufs[nb].tagCol = 0xFFE8C55Au; bufs[nb].post = " (Monberaux)"; bufs[nb].postCol = 0xFF9AB0C8u; bufs[nb].both = 0; bufs[nb].order = 2; ++nb;
             bufs[nb].rem = 1200; bufs[nb].icon = 33;  bufs[nb].name = "Aeryn - Haste";     bufs[nb].both = 1; bufs[nb].order = 5; ++nb;   // 33 = Haste (was 40 = Protect -- wrong icon)
         }
+        // Reflect the live BUFF FILTER in the preview : drop a demo buff the family filter HIDES, unless it's Hidden+focus
+        // AND "low" (rem < warn) -- exactly what the real HUD does, so hiding a family empties it here too. (Recasts unfiltered.)
+        { int w = 0;
+          for (int r = 0; r < nb; ++r) {
+              const unsigned st = (unsigned)bufs[r].icon;
+              const bool focusLow = C.tm_buff_off(UiConfig::TM_KEY_FOCUS | st) && bufs[r].rem >= 0 && bufs[r].rem < C.tmFocusWarn;
+              if (C.tm_buff_off(st) && !focusLow) continue;   // Hidden (and not a low Hidden+focus) -> filtered out of the preview
+              if (w != r) bufs[w] = bufs[r];
+              ++w;
+          }
+          nb = w;
+        }
         static const struct { int icon, rem; const char* nm; } SR[4] = { {66, 8, "Mighty Strikes"}, {143, 22, "Haste"}, {160, 3, "Provoke"}, {56, 45, "Berserk"} };
         for (int i = 0; i < 4; ++i) { recs[nr].rem = SR[i].rem; recs[nr].icon = SR[i].icon; recs[nr].name = SR[i].nm; recs[nr].both = 0; recs[nr].order = 0; ++nr; }
     } else {
