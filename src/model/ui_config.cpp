@@ -261,6 +261,11 @@ static void save_config_to(const char* path) {
         for (int i = 0; i < c.tmTrackOffN[j]; ++i) fprintf(f, "%s%u", i ? "," : "", (unsigned)c.tmTrackOff[j][i]);
         fprintf(f, "\n");
     }
+    if (c.tmBuffOffN > 0) {                                                       // Timers BUFF-FAMILY filter : job-agnostic disabled keys (per profile)
+        fprintf(f, "tmBuffOff=");
+        for (int i = 0; i < c.tmBuffOffN; ++i) fprintf(f, "%s%u", i ? "," : "", (unsigned)c.tmBuffOff[i]);
+        fprintf(f, "\n");
+    }
     fprintf(f, "sc2=%d,%d,%d,%d,%d,%.4f\n", c.scTimer, c.scStep, c.scProps, c.scList, c.scTitle, c.scListGap);   // skillchains : element toggles (title + WS-list spacing appended)
     for (int i = 0; i < SC_TE_COUNT; ++i) {                                       // skillchains : per-element typography
         const TextStyle& ts = c.scText[i];
@@ -476,6 +481,7 @@ static bool load_config_from(const char* path) {
     UiConfig& c = ui_config();
     c.guideGroupCount = 0;   // dynamic list -> rebuilt from the file (a full-config load)
     for (int j = 1; j <= 23; ++j) c.tmTrackOffN[j] = 0;   // per-job track blacklists are REBUILT from the file : a job with no tmTrkOff line
+    c.tmBuffOffN = 0;                                     // job-agnostic buff-family filter : rebuilt from the file too
                                                           //   means "track everything" -> must not inherit the previous config's keys (else a profile that cleared a job stays stale + re-saves polluted).
     c.tmPreset = 0;          // reflect THIS file's value (fields overlay ; reset so an un-seeded file re-seeds even if a prior config was seeded)
     static char line[8192];  // BIG : a "tmTrkOff<job>=" line can hold up to TM_TRACK_MAX (512) comma-separated keys ~= 3 KB.
@@ -604,6 +610,15 @@ static bool load_config_from(const char* path) {
                     unsigned k = (unsigned)strtoul(p, (char**)&p, 10);
                     if (k) c.tmTrackOff[j][c.tmTrackOffN[j]++] = (unsigned short)k;
                 }
+            }
+        }
+        else if (!strncmp(line, "tmBuffOff=", 10)) {                              // Timers BUFF-FAMILY filter : job-agnostic disabled keys
+            c.tmBuffOffN = 0;
+            for (const char* p = line + 10; *p && c.tmBuffOffN < UiConfig::TM_TRACK_MAX; ) {
+                while (*p == ',' || *p == ' ') ++p;
+                if (*p < '0' || *p > '9') break;
+                unsigned k = (unsigned)strtoul(p, (char**)&p, 10);
+                if (k) c.tmBuffOff[c.tmBuffOffN++] = (unsigned short)k;
             }
         }
         else if (!strncmp(line, "scbox=", 6)) parse_box(line + 6, c.scBox);
@@ -1130,6 +1145,8 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
         if (a.tmTrackOffN[j] != b.tmTrackOffN[j]) return false;
         for (int i = 0; i < a.tmTrackOffN[j]; ++i) if (a.tmTrackOff[j][i] != b.tmTrackOff[j][i]) return false;
     }
+    if (a.tmBuffOffN != b.tmBuffOffN) return false;                          // job-agnostic buff-family filter -> part of the profile too
+    for (int i = 0; i < a.tmBuffOffN; ++i) if (a.tmBuffOff[i] != b.tmBuffOff[i]) return false;
     for (int k = 0; k < TM_TE_COUNT; ++k) {
         const TextStyle& x = a.tmText[k], & y = b.tmText[k];
         if (x.face != y.face || x.size != y.size || x.outline != y.outline || x.bold != y.bold || x.italic != y.italic || x.upper != y.upper || x.colorOn != y.colorOn || x.color != y.color) return false;
@@ -1260,6 +1277,7 @@ void reset_ui_config() {   // general Default : everything
     c.tmFocusWarn = d.tmFocusWarn; c.tmFocusHold = d.tmFocusHold; c.tmPreset = d.tmPreset; c.tmBox = d.tmBox;
     for (int k = 0; k < TM_TE_COUNT; ++k) c.tmText[k] = TextStyle();
     for (int j = 0; j < 24; ++j) c.tmTrackOffN[j] = 0;   // clearing the COUNT empties each job's blacklist
+    c.tmBuffOffN = 0;                                     // and the job-agnostic buff-family filter
     // Stragglers : the draggable Zones-panel corner. `lang` is deliberately NOT reset -- a language reset would
     // leave the user reading a UI they may not understand, with the setting to fix it also in that language.
     c.zonePanelX = d.zonePanelX; c.zonePanelY = d.zonePanelY;

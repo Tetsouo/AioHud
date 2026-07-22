@@ -375,6 +375,24 @@ struct UiConfig {
         if (off) { if (idx < 0 && tmTrackOffN[job] < TM_TRACK_MAX) tmTrackOff[job][tmTrackOffN[job]++] = (unsigned short)key; }
         else if (idx >= 0) tmTrackOff[job][idx] = tmTrackOff[job][--tmTrackOffN[job]];
     }
+    // ---- Timers BUFF-FAMILY filter : JOB-AGNOSTIC (one state per buff STATUS, shared across every job, per profile).
+    //      This is the family-organised filter (see BUFF_FAM in job_track_gen.h) : a buff is HIDDEN if its status key
+    //      is present, FOCUSED if TM_KEY_FOCUS|status is. Job Abilities keep the per-job list above ; this covers the
+    //      cross-job buffs a support can put on ANYONE (Protect/Shell/Haste/Bar/Songs/Rolls/Geo...). Keyed by status
+    //      only (no ALLY / RECAST band -> a raw status < 1024, or TM_KEY_FOCUS|status). ----
+    unsigned short tmBuffOff[TM_TRACK_MAX];
+    unsigned short tmBuffOffN = 0;
+    bool tm_buff_off(unsigned key) const {
+        if (!key) return false;
+        for (int i = 0; i < tmBuffOffN; ++i) if (tmBuffOff[i] == key) return true;
+        return false;
+    }
+    void tm_buff_set(unsigned key, bool off) {
+        if (!key) return;
+        int idx = -1; for (int i = 0; i < tmBuffOffN; ++i) if (tmBuffOff[i] == key) { idx = i; break; }
+        if (off) { if (idx < 0 && tmBuffOffN < TM_TRACK_MAX) tmBuffOff[tmBuffOffN++] = (unsigned short)key; }
+        else if (idx >= 0) tmBuffOff[idx] = tmBuffOff[--tmBuffOffN];
+    }
     // Per-module box appearance (shared bundle ; Target/Player inline their own). Default = follow Party theme.
     BoxStyle scBox, tpBox, hlBox, pwBox, ztBox, mmBox, epBox;   // mmBox = the Minimap CLOCK box (day / moon header), not the map
     TextStyle mmText[MM_TE_COUNT];   // clock per-element typography : [MM_TIME] time, [MM_DAY] day, [MM_MOON] moon, [MM_REAL] real/GMT
