@@ -187,6 +187,7 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         const float chipW = snap(84.0f), chipH = snap(28.0f);
         float yL = ry, yR = ry;     // per-column cursors, both starting at the grid top
         int   riL = ri, riR = ri;   // per-column zebra/stagger index (the global ri would alternate wrong across two side-by-side columns)
+        int   flatN = 0;            // running index of rendered flat families -> STABLE column by parity (never reflows on toggle)
         for (int cat = 0; cat < TC_COUNT; ++cat) {
             // ---- SPECIAL CASE : Job Abilities are grouped BY JOB (the per-job tables), not flat from BUFF_FAM.
             //      The player's current main job comes FIRST, gold-tinted + expanded ; every other job with a
@@ -313,8 +314,9 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             static const char* const SN_FR[4] = { "Afficher", "Aff+al", "Masquer", "Masq+al" };
             const char* glbl = (catState < 0) ? tr("Mixed", "Mixte") : tr(SN_EN[catState], SN_FR[catState]);
             const bool lit = (catState == 1 || catState == 3);   // a focus state -> highlight
-            // ---- pick the SHORTER column (masonry balance ; ties -> left). That column owns this whole family. ----
-            const int   ci = (yL <= yR) ? 0 : 1;
+            // ---- STABLE column : a family's column is fixed by its ORDER PARITY, not the running heights -- so expanding
+            //      one family NEVER makes another jump columns (the masonry reflow the user hit). That column owns it. ----
+            const int   ci = (flatN++ & 1);
             float&      yc = ci ? yR : yL;
             int&        rc = ci ? riR : riL;
             const float cx = colX[ci];
