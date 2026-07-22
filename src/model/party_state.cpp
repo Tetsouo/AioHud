@@ -779,13 +779,18 @@ void PartyState::on_action(const unsigned char* p) {
     if (cat == 4 && actor != selfId_ && selfId_) {
         const u32 fsid = getbits(p, 86, 16, size);
         const SpellBuff* fb = spell_buff(fsid);
-        const BuffSet* cb = (fb && fb->skill == 40 && fsid < 1024) ? buffs_for(actor) : 0;
-        if (cb) {
+        const bool isSong = (fb && fb->skill == 40 && fsid < 1024);
+        const BuffSet* cb = isSong ? buffs_for(actor) : 0;
+        if (isSong) {
+            // ALWAYS refresh the SPELL-keyed tag from THIS caster. It used to be gated on `if (cb)`, so when the
+            // caster's 0x076 buff set wasn't cached (an alliance singer, OR a trust momentarily out of the 5-slot
+            // party cache) the tag KEPT the PREVIOUS caster's value -> e.g. Ulmia's Madrigal wore Tetsouo's stale
+            // "NT". A caster we can't read leaves fm=0 (no tag) -- a MISSING tag beats a WRONG (stale) one.
             unsigned char fm = 0;
-            for (int q = 0; q < cb->n; ++q)
+            if (cb) for (int q = 0; q < cb->n; ++q)
                 switch (cb->ids[q]) { case 52: fm |= 1; break; case 347: fm |= 2; break;
                                       case 348: fm |= 4; break; case 231: fm |= 8; break; }
-            songMod_[fsid] = fm;   // keyed by SPELL, like the self path -- same tier from two casters shares a tag
+            songMod_[fsid] = fm;   // keyed by SPELL, like the self path -- same tier from two casters shares one tag
         }
         // Instrument EVERY branch, success included. The first cut of this block silently did nothing and looked
         // exactly like "the game does not expose the data" -- which the JA-VIS probe had already disproved.
