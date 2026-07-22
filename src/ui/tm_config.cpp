@@ -163,6 +163,13 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
                 fo->draw_lc(dev, dcx + lr + snap(6.0f), cyy, tr(lg[i].en, lg[i].fr), snap(11.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
             }
         } ROW_NEXT(58.0f)
+        { ROW_BAND(32.0f)   // "Collapse all" : fold every expanded family + JA sub-job in one click
+            const float bw = snap(120.0f), bh = snap(24.0f), bx = coX + ctrlW - bw, by = ry + yo + (snap(28.0f) - bh) * 0.5f;
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx, by, bw, bh, tr("Collapse all", "Tout replier"), false)) {
+                for (int cc = 0; cc < TC_COUNT; ++cc) trkCatOpen_[cc] = false;
+                for (int jj = 0; jj < 24; ++jj) jaJobOpen_[jj] = false;
+            }
+        } ROW_NEXT(32.0f)
         // Job-agnostic filter : one GLOBAL state per buff STATUS (shared across every job, stored per profile via tmBuffOff).
         // HIDDEN if the raw status key is set ; FOCUSED if TM_KEY_FOCUS|status is. Direct, no recast/ally/mirror logic.
         #define BF_OFF(st)      ( c.tm_buff_off((unsigned)(st)) )
@@ -250,6 +257,7 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
                         } ROW_NEXT(26.0f)
                         // ---- this job's JA checklist : the SAME column-major grid + 4-state dots as the flat categories ----
                         if (jopen) {
+                            ry += snap(4.0f);   // breathing room between the job sub-header and its first ability
                             const float avail = ctrlW - snap(32.0f), x0 = coX + snap(32.0f);   // one indent deeper than a flat category
                             const int cols = (avail > snap(560.0f)) ? 3 : (avail > snap(300.0f)) ? 2 : 1;
                             const float colW = avail / cols;
@@ -333,6 +341,7 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             //      ROW_NEXT (that moves the GLOBAL ry and would cross-wire the two columns). The 1/2/3-column rule now
             //      keys off cellW, so a half-width family uses fewer inner columns. Same 4-state dots / BF_* / cycle. ----
             if (open) {
+                yc += snap(6.0f);   // breathing room between the category bar and its first entry (else the top item touches the bar)
                 int idx[256], m = 0;
                 for (int i = 0; i < BUFF_FAM_N && m < 256; ++i) if (BUFF_FAM[i].cat == cat) idx[m++] = i;
                 const float avail = cellW - snap(20.0f), x0 = cx + snap(14.0f);
