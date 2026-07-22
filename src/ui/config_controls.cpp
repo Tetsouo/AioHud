@@ -467,7 +467,10 @@ bool row_slider(u32 dev, Font* fo, const MouseState* mo, int id,
 // ---- HSV colour picker (shared) : an SV square + a rainbow hue bar + a live swatch. Replaces the per-channel
 // R/G/B slider triples in every module. The two draggable zones (SV square, hue bar) share the g_slider latch.
 // HSV is CACHED per-uid so dragging Value to black or Saturation to 0 doesn't lose the hue (RGB can't encode it).
-float color_picker_height() { return 200.0f; }   // SV square (112) + gap + horizontal hue slider (18) + gap + 2 preset rows (20 each)
+float color_picker_height() {   // SV square (112) + hue slider + 2 preset rows + a "Favourites" label + 1-2 favourite rows
+    const int favRows = (ui_config().favColorN + 1) <= 8 ? 1 : 2;   // "+" button + up to 15 favourites -> at most 2 rows of 8
+    return 210.0f + 15.0f + (float)favRows * 24.0f;
+}
 
 static void rgb2hsv(u32 c, float& h, float& s, float& v) {
     const float r = ((c >> 16) & 0xFF) / 255.0f, g = ((c >> 8) & 0xFF) / 255.0f, b = (c & 0xFF) / 255.0f;
@@ -525,6 +528,8 @@ bool color_picker(u32 dev, Font* fo, const MouseState* mo, int uidSV, int uidHue
     const int   PC = 8;                                    // preset columns (8 + 7 = 15)
     const float cg = snap(4.0f);
     const float cw = snap((w - (PC - 1) * cg) / (float)PC), ch = snap(20.0f);
+    const float favLabelY = preY + 2.0f * (ch + cg) + snap(4.0f);   // FAVOURITES : small label, then a "+" add button + the saved swatches
+    const float favY = favLabelY + snap(15.0f);
 
     // ---- interaction : SV square + hue slider share the row_slider latch ; presets are one-shot clicks ----
     const bool hotSV  = inrect(mo, x, y, sqW, sqH);
@@ -548,6 +553,16 @@ bool color_picker(u32 dev, Font* fo, const MouseState* mo, int uidSV, int uidHue
                 if (nc != *color) { *color = nc; rgb2hsv(nc, p->h, p->s, p->v); p->col = nc; changed = true; save_ui_config(); }
                 break;
             }
+        }
+    }
+    if (mo && mo->clicked && g_slider < 0) {                                            // FAVOURITES : "+" adds the current colour ; a swatch applies it (its top-right corner removes it)
+        if (inrect(mo, x, favY, cw, ch)) { if (ui_config().fav_color_add(*color)) save_ui_config(); }   // "+" button (slot 0)
+        else for (int i = 0; i < ui_config().favColorN; ++i) {
+            const int gp = i + 1; const float sx = x + (gp % PC) * (cw + cg), sy = favY + (gp / PC) * (ch + cg);
+            if (!inrect(mo, sx, sy, cw, ch)) continue;
+            if (inrect(mo, sx + cw - snap(11.0f), sy, snap(11.0f), snap(11.0f))) { ui_config().fav_color_remove(i); save_ui_config(); }   // top-right corner -> remove
+            else { const u32 nc = (ui_config().favColors[i] & 0x00FFFFFFu) | alpha; if (nc != *color) { *color = nc; rgb2hsv(nc, p->h, p->s, p->v); p->col = nc; changed = true; save_ui_config(); } }
+            break;
         }
     }
 
@@ -577,6 +592,25 @@ bool color_picker(u32 dev, Font* fo, const MouseState* mo, int uidSV, int uidHue
         rrect_bordered(dev, sx, sy, cw, ch, snap(4.0f), CP_PRESETS[i], CP_PRESETS[i], C_BORDER, snap(1.0f));
         if (((*color) & 0x00FFFFFFu) == (CP_PRESETS[i] & 0x00FFFFFFu))
             rrect_stroke(dev, sx - snap(1.0f), sy - snap(1.0f), cw + snap(2.0f), ch + snap(2.0f), snap(5.0f), 0xFFFFFFFFu, snap(1.8f));
+    }
+
+    // ---- favourites : small label + a "+" add button (slot 0) + the saved swatches (hover a swatch shows a remove x) ----
+    if (fo) { fo->begin(dev); fo->draw_lc(dev, x, favLabelY + snap(7.0f), tr("Favourites", "Favoris"), snap(11.0f), C_DIM, C_STROKE, 1.0f); }
+    { const bool hov = inrect(mo, x, favY, cw, ch);                                     // "+" add button
+      rrect_bordered(dev, x, favY, cw, ch, snap(4.0f), hov ? 0xFF2A343Cu : 0xFF171D22u, hov ? 0xFF2A343Cu : 0xFF171D22u, C_BORDERHI, snap(1.0f));
+      const float pcx = x + cw * 0.5f, pcy = favY + ch * 0.5f, pr = snap(5.0f), pt = snap(1.6f);
+      flat(dev, pcx - pr, pcy - pt * 0.5f, pr * 2.0f, pt, 0xFFCDD6DEu); flat(dev, pcx - pt * 0.5f, pcy - pr, pt, pr * 2.0f, 0xFFCDD6DEu); }
+    for (int i = 0; i < ui_config().favColorN; ++i) {
+        const int gp = i + 1; const float sx = x + (gp % PC) * (cw + cg), sy = favY + (gp / PC) * (ch + cg);
+        const u32 fc = ui_config().favColors[i] | 0xFF000000u;
+        rrect_bordered(dev, sx, sy, cw, ch, snap(4.0f), fc, fc, C_BORDER, snap(1.0f));
+        if (((*color) & 0x00FFFFFFu) == (fc & 0x00FFFFFFu))
+            rrect_stroke(dev, sx - snap(1.0f), sy - snap(1.0f), cw + snap(2.0f), ch + snap(2.0f), snap(5.0f), 0xFFFFFFFFu, snap(1.8f));
+        if (fo && inrect(mo, sx, sy, cw, ch)) {                                         // hover : a small remove "x" in the top-right corner
+            const float xr = sx + cw - snap(11.0f);
+            flat(dev, xr, sy, snap(11.0f), snap(11.0f), 0xE0101418u);
+            fo->begin(dev); fo->draw_c(dev, xr + snap(5.5f), sy + snap(5.5f), "x", snap(10.0f), 0xFFFFFFFFu, C_STROKE, 1.0f);
+        }
     }
     return changed;
 }

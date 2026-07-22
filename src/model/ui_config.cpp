@@ -266,6 +266,11 @@ static void save_config_to(const char* path) {
         for (int i = 0; i < c.tmBuffOffN; ++i) fprintf(f, "%s%u", i ? "," : "", (unsigned)c.tmBuffOff[i]);
         fprintf(f, "\n");
     }
+    if (c.favColorN > 0) {                                                        // favourite colours : personal palette (global to every picker)
+        fprintf(f, "favColors=");
+        for (int i = 0; i < c.favColorN; ++i) fprintf(f, "%s%u", i ? "," : "", c.favColors[i]);
+        fprintf(f, "\n");
+    }
     fprintf(f, "sc2=%d,%d,%d,%d,%d,%.4f\n", c.scTimer, c.scStep, c.scProps, c.scList, c.scTitle, c.scListGap);   // skillchains : element toggles (title + WS-list spacing appended)
     for (int i = 0; i < SC_TE_COUNT; ++i) {                                       // skillchains : per-element typography
         const TextStyle& ts = c.scText[i];
@@ -493,6 +498,15 @@ static bool load_config_from(const char* path) {
         if (parse_db_line(line, c)) continue;   // out-of-line : Debuffs module (same nesting-limit reason)
         if (parse_mm_line(line, c)) continue;   // out-of-line : Minimap extra options mm5= (same nesting-limit reason)
         if (parse_zt_line(line, c)) continue;   // out-of-line : Limbus row toggles ztlimbus= (same nesting-limit reason)
+        if (!strncmp(line, "favColors=", 10)) {  // out-of-line : favourite colours (sticky ; same C1061 nesting-limit reason)
+            c.favColorN = 0;
+            for (const char* p = line + 10; *p && c.favColorN < UiConfig::FAV_COLOR_MAX; ) {
+                while (*p == ',' || *p == ' ') ++p;
+                if (*p < '0' || *p > '9') break;
+                c.favColors[c.favColorN++] = (unsigned)strtoul(p, (char**)&p, 10) | 0xFF000000u;
+            }
+            continue;
+        }
         if      (sscanf(line, "partyShow=%d", &v) == 1) c.partyShow = v;
         else if (sscanf(line, "allyShow=%d", &v) == 1)  c.allyShow = v;
         else if (sscanf(line, "tgtShow=%d", &v) == 1)   c.tgtShow = v;

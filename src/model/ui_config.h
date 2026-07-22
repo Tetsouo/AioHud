@@ -393,6 +393,23 @@ struct UiConfig {
         if (off) { if (idx < 0 && tmBuffOffN < TM_TRACK_MAX) tmBuffOff[tmBuffOffN++] = (unsigned short)key; }
         else if (idx >= 0) tmBuffOff[idx] = tmBuffOff[--tmBuffOffN];
     }
+    // ---- Favourite colours : a personal palette the user builds inside the colour picker. GLOBAL (one list, every
+    //      picker) and STICKY : saved with the active config, NOT wiped by loading a profile that omits it. ----
+    static const int FAV_COLOR_MAX = 15;
+    unsigned favColors[FAV_COLOR_MAX] = { 0 };
+    int      favColorN = 0;
+    bool fav_color_add(unsigned col) {                       // add (deduped by RGB) ; when full, FIFO-drop the oldest. true if changed.
+        col |= 0xFF000000u;
+        for (int i = 0; i < favColorN; ++i) if ((favColors[i] & 0x00FFFFFFu) == (col & 0x00FFFFFFu)) return false;
+        if (favColorN < FAV_COLOR_MAX) { favColors[favColorN++] = col; return true; }
+        for (int i = 1; i < FAV_COLOR_MAX; ++i) favColors[i - 1] = favColors[i];
+        favColors[FAV_COLOR_MAX - 1] = col; return true;
+    }
+    void fav_color_remove(int idx) {
+        if (idx < 0 || idx >= favColorN) return;
+        for (int i = idx + 1; i < favColorN; ++i) favColors[i - 1] = favColors[i];
+        --favColorN;
+    }
     // Per-module box appearance (shared bundle ; Target/Player inline their own). Default = follow Party theme.
     BoxStyle scBox, tpBox, hlBox, pwBox, ztBox, mmBox, epBox;   // mmBox = the Minimap CLOCK box (day / moon header), not the map
     TextStyle mmText[MM_TE_COUNT];   // clock per-element typography : [MM_TIME] time, [MM_DAY] day, [MM_MOON] moon, [MM_REAL] real/GMT
