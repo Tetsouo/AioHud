@@ -254,6 +254,11 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         // Half a feature reachable, half not. Same verdict for both, so they are reachable or unreachable together.
         auto srcKeeps = [&](unsigned short status, unsigned expiry, int timerIdx) -> bool {
             if (C.tmBuffSrc == TMSRC_ALL) return true;
+            // A trust/chemist multi-stat MIX boost (a STR..CHR you did NOT cast, co-expiring with a sibling boost) is
+            // decided FIRST -- ahead of the caster lookup -- because a stale buffCaster_ can still name YOU on it (the
+            // attribution is never cleared when the buff wears off), which would otherwise keep it as "your own".
+            if (party().is_foreign_stat_mix(status, expiry, timerIdx))
+                return (C.tmBuffSrc == TMSRC_TRUSTS);                           //   "me+trusts" keeps it ; "mine"/"players" hide it
             const unsigned caster = party().buff_caster_for(status, expiry, timerIdx), me = party().self_id();
             if (caster != 0 && caster == me) return true;                       // your own -> always kept
             if (caster != 0) {
@@ -263,8 +268,6 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 if (C.tmBuffSrc == TMSRC_TRUSTS  && !trust) return false;
                 return true;
             }
-            if (party().is_foreign_stat_mix(status, expiry, timerIdx))              // trust/chemist multi-stat MIX boost you didn't cast
-                return (C.tmBuffSrc == TMSRC_TRUSTS);                               //   "me+trusts" keeps it ; "mine"/"players" hide it
             if (party().self_can_produce_buff(status, jaBits, jaOk)) return true;   // unknown but your job can make it
             if (C.tmBuffSrc == TMSRC_MINE) return false;
             bool ph = false, th = false; party().buff_source_jobs(status, ph, th);

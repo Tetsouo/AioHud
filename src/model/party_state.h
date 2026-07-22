@@ -488,19 +488,16 @@ struct PartyState {
     unsigned self_id() const { return selfId_; }
     int self_main_job() const { for (int i = 0; i < count; ++i) if (m[i].id == selfId_) return m[i].mjob; return 0; }   // current MAIN job id (Timers "track per job" filter) ; 0 if unknown
     bool is_trust(unsigned id) const { for (int i = 0; i < count; ++i) if (m[i].id == id) return m[i].isTrust != 0; return false; }   // a caster id -> is it a Trust NPC ? (Timers buff-source filter)
-    // A multi-stat Trust/chemist MIX (Monberaux/Ygnas) grants many stat-boosts at ONE identical expiry tick, while a
-    // player casts a SINGLE Gain-X per cast, so two of your own Gains never share an exact expiry. A stat-boost (STR..
-    // CHR Boost = 119..125) you did NOT cast that co-expires with ANOTHER stat-boost is therefore a foreign mix, not
-    // yours -- and this holds even when its caster was never named/attributed (the reliable way to tell after a
-    // zone/reload, when buffCaster_ is empty). Your own Gain-X stays a self-cast in the recent ring, so it is kept.
+    // On YOU, a stat-boost (STR..CHR Boost = 119..125) comes from exactly two places: your OWN Gain-X spell, or a
+    // foreign Trust/chemist MIX (Monberaux's "Mix: Samson's Strength" -> STR Boost, Ygnas's full-stat boost, etc.).
+    // Players cannot put Gain-X on you. So the reliable test is the self-cast ring: a 119..125 boost that is NOT one
+    // of YOUR recent casts is a foreign mix -- true even for a SINGLE-stat mix (no co-expiring sibling), and true
+    // after a zone/reload when buffCaster_ is empty (which the attribution path could not handle). Your own Gain-MND
+    // is a ring self-cast, so it stays. NB: uses match_cast (the cast ring), NOT buffCaster_ -- so a stale attribution
+    // that still names YOU (never cleared when a buff wears off) cannot keep a foreign boost alive.
     bool is_foreign_stat_mix(unsigned short status, unsigned expiry, int timerIdx) const {
-        if (status < 119 || status > 125) return false;
-        if (match_cast(status, expiry, timerIdx) >= 0) return false;                              // your own Gain-X (in the cast ring) -> yours
-        for (int i = 0; i < buffTimerN_; ++i) {
-            if (buffTimers_[i].id == status || buffTimers_[i].expiry != expiry) continue;
-            if (buffTimers_[i].id >= 119 && buffTimers_[i].id <= 125) return true;                // a SIBLING stat-boost at the same tick -> a mix
-        }
-        return false;
+        if (status < 119 || status > 125) return false;                     // STR/DEX/VIT/AGI/INT/MND/CHR Boost only
+        return match_cast(status, expiry, timerIdx) < 0;                    // not one of YOUR recent Gain-X casts -> foreign mix
     }
     // --- Timers module : BUFFS YOU cast on OTHER players (person name + ESTIMATED timer). The client sends
     //     NO per-buff timer for other players, so on_action estimates from tb_buff_gen's base duration when a
