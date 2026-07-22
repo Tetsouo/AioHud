@@ -278,6 +278,21 @@ int PartyState::match_cast(unsigned short status, unsigned expiry, int timerIdx)
         idx[b + 1] = ii; pe[b + 1] = pp;
     }
     if (rank >= nc) return -1;             // no candidate for this rank -> honest "unknown", never someone else's spell
+    // SINGLE-INSTANCE buff (Protect / Shell / Phalanx...) : exactly ONE live timer, but a cross-caster or cross-tier
+    // overwrite leaves TWO casts in the ring. Rank-pairing returns the LONGEST-predicted cast -- which may be the
+    // OVERWRITTEN one, not the cast that produced the current timer -> stale name/owner (the occasional "a trust wrote
+    // over my Protect but the row still shows MY name", and vice-versa). Our self-casts are predicted WITH gear/JP
+    // (accurate) and a foreign cast ~= its base, so the cast whose predExp is NEAREST the real timer is the one that
+    // made it. Songs KEEP the rank path below : they run several concurrent timers and their predictions are too loose
+    // (Troubadour) for a closeness test -- exactly the case the DURATION-SANITY note was written for.
+    { int nTimers = 0; for (int j = 0; j < buffTimerN_; ++j) if (buffTimers_[j].id == status) ++nTimers;
+      if (nTimers <= 1 && nc > 1) {
+          int best = idx[0], bestD = 0x7FFFFFFF;
+          for (int a = 0; a < nc; ++a) { int d = (int)(selfCasts_[idx[a]].predExp - expiry); if (d < 0) d = -d; if (d < bestD) { bestD = d; best = idx[a]; } }
+          const SelfCast& mm = selfCasts_[best];
+          if (mm.caster != selfId_ && is_trust(mm.caster) && (int)(expiry - mm.predExp) > 90 * 60) return -1;   // keep the trust-overshoot guard
+          return best;
+      } }
     // DURATION SANITY, and it is deliberately asymmetric. The real buff list is the authority: a trust's cast cannot
     // produce a buff that outlives its own base duration by minutes, so if the live timer runs far past what this
     // FOREIGN cast predicted, the pairing is wrong and the row is almost certainly ours. Returning "unknown" keeps the
@@ -732,7 +747,11 @@ void PartyState::on_action(const unsigned char* p) {
                     // 3000-TP moves (CHR/VIT/STR/Attack Boost...) -- without these the stat boosts leaked the filter.
                     unsigned st = 0;
                     if (mMsg == 186 || mMsg == 194 || mMsg == 205 || mMsg == 230 || mMsg == 266 || mMsg == 280 || mMsg == 319 || mMsg == 365 || mMsg == 762) st = mParam;
-                    else if (a == 0 && bstTab) st = bstTab;
+                    // "No effect" (mMsg 75 : resisted, or the target ALREADY HAS a stronger version -- e.g. a weaker Phalanx
+                    // over your Phalanx II ; reversed on real data, same field/packet as the debuff path ~L1033). The status
+                    // was NOT (re)applied, so it must NOT enter the cast ring : recording it left a phantom same-status cast
+                    // that match_cast could pair to the live timer and mis-name/mis-own it. bstTab fallback ONLY when applied.
+                    else if (a == 0 && bstTab && mMsg != 75) st = bstTab;
                     // DON'T let someone else's cast steal an attribution that is still YOURS. MEASURED 2026-07-20:
                     // all marches share status 214 and all madrigals 199, so when Ulmia/Joachim sang over the
                     // player, buffCaster_[214] went Tetsouo -> Ulmia -> Joachim while the player's OWN Honor March
