@@ -102,16 +102,16 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         { ROW_BAND(46.0f)   // Focus WARN : a "Hidden + focus" buff surfaces when it drops below this many seconds
             const float lo = 10.0f, hi = 300.0f; char b[16]; sprintf(b, "%ds", c.tmFocusWarn);
             float v01 = ((float)c.tmFocusWarn - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Focus: warn under", "Focus : alerte sous"), b, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); v = (v / 5) * 5; c.tmFocusWarn = v < 10 ? 10 : (v > 300 ? 300 : v); }
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Alert under", "Alerter sous"), b, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); v = (v / 5) * 5; c.tmFocusWarn = v < 10 ? 10 : (v > 300 ? 300 : v); }
         } ROW_NEXT(46.0f)
         { ROW_BAND(46.0f)   // Focus HOLD : how long a lost "Hidden + focus" alert stays before it clears itself
             const float lo = 5.0f, hi = 300.0f; char b[16]; sprintf(b, "%ds", c.tmFocusHold);
             float v01 = ((float)c.tmFocusHold - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Focus: hold alert", "Focus : garder alerte"), b, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); v = (v / 5) * 5; c.tmFocusHold = v < 5 ? 5 : (v > 300 ? 300 : v); }
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Alert duration", "Dur\xC3\xA9""e de l'alerte"), b, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); v = (v / 5) * 5; c.tmFocusHold = v < 5 ? 5 : (v > 300 ? 300 : v); }
         } ROW_NEXT(46.0f)
         { ROW_BAND(38.0f)   // hint
             const float ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("These tune \"Hidden + focus\" tracked spells.", "R\xC3\xA8gle les sorts suivis en \"Masqu\xC3\xA9 + focus\"."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("These tune the \"+ alert\" states (when they blink / appear).", "R\xC3\xA8gle les \xC3\xA9tats \"+ alerte\" (quand ils clignotent / apparaissent)."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
         } ROW_NEXT(38.0f)
         { ROW_BAND(52.0f)   // Reset : flush live buff/recast timers + focus "OUT" alerts (clears a stuck row). Same as //aio timers reset.
             const float bh = snap(34.0f), bw = snap(150.0f), ty = ry + yo + (snap(40.0f) - bh) * 0.5f; fo->begin(dev);
@@ -142,10 +142,10 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             const float ty = ry + yo, lx = coX + snap(6.0f), lr = snap(4.0f), colW = ctrlW * 0.5f;
             struct LG { int focus, off; const char* en; const char* fr; };
             static const LG lg[4] = {
-                { 0, 0, "Tracked",         "Suivi" },              // shown
-                { 1, 0, "Tracked + focus", "Suivi + focus" },      // shown + red alert if lost
-                { 0, 1, "Hidden",          "Masqu\xC3\xA9" },          // hidden
-                { 1, 1, "Hidden + focus",  "Masqu\xC3\xA9 + focus" },  // hidden + alert if < 1 min or lost
+                { 0, 0, "Show",         "Afficher" },               // always visible, no alert
+                { 1, 0, "Show + alert", "Afficher + alerte" },      // visible + blinks when low + OUT if lost
+                { 0, 1, "Hide",         "Masquer" },                // never shown
+                { 1, 1, "Hide + alert", "Masquer + alerte" },       // hidden ; appears + blinks when low + OUT if lost
             };
             for (int i = 0; i < 4; ++i) {                                                     // PASS 1 : all dots (quads) -- keep quads and text apart or the font binding breaks
                 const float dcx = lx + ((i & 1) ? colW : 0.0f) + lr;
@@ -193,8 +193,8 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
                 const float gchipW = snap(96.0f), hbX = hdrX + snap(14.0f);
                 if (cat_header(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, cat), hbX, ry, hdrW - snap(14.0f) - gchipW - snap(6.0f), hl, trkCatOpen_[cat])) trkCatOpen_[cat] = !trkCatOpen_[cat];
                 {
-                    static const char* const SN_EN[4] = { "Tracked", "Track+foc", "Hidden", "Hid+foc" };
-                    static const char* const SN_FR[4] = { "Suivi", "Suivi+f", "Masqu\xC3\xA9", "Masq+f" };
+                    static const char* const SN_EN[4] = { "Show", "Show+al", "Hide", "Hide+al" };
+                    static const char* const SN_FR[4] = { "Afficher", "Aff+al", "Masquer", "Masq+al" };
                     const char* glbl = (catState < 0) ? tr("Mixed", "Mixte") : tr(SN_EN[catState], SN_FR[catState]);
                     const bool lit = (catState == 1 || catState == 3);
                     if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, cat), hdrX + hdrW - gchipW, ry + snap(4.0f), gchipW, snap(30.0f), glbl, lit)) {
@@ -290,8 +290,8 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             const float gchipW = snap(96.0f), hbX = hdrX + snap(14.0f);
             if (cat_header(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, cat), hbX, ry, hdrW - snap(14.0f) - gchipW - snap(6.0f), hl, trkCatOpen_[cat])) trkCatOpen_[cat] = !trkCatOpen_[cat];
             {
-                static const char* const SN_EN[4] = { "Tracked", "Track+foc", "Hidden", "Hid+foc" };
-                static const char* const SN_FR[4] = { "Suivi", "Suivi+f", "Masqu\xC3\xA9", "Masq+f" };
+                static const char* const SN_EN[4] = { "Show", "Show+al", "Hide", "Hide+al" };
+                static const char* const SN_FR[4] = { "Afficher", "Aff+al", "Masquer", "Masq+al" };
                 const char* glbl = (catState < 0) ? tr("Mixed", "Mixte") : tr(SN_EN[catState], SN_FR[catState]);
                 const bool lit = (catState == 1 || catState == 3);   // a focus state -> highlight
                 if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, cat), hdrX + hdrW - gchipW, ry + snap(4.0f), gchipW, snap(30.0f), glbl, lit)) {
