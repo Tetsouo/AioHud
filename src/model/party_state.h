@@ -488,6 +488,20 @@ struct PartyState {
     unsigned self_id() const { return selfId_; }
     int self_main_job() const { for (int i = 0; i < count; ++i) if (m[i].id == selfId_) return m[i].mjob; return 0; }   // current MAIN job id (Timers "track per job" filter) ; 0 if unknown
     bool is_trust(unsigned id) const { for (int i = 0; i < count; ++i) if (m[i].id == id) return m[i].isTrust != 0; return false; }   // a caster id -> is it a Trust NPC ? (Timers buff-source filter)
+    // A multi-stat Trust/chemist MIX (Monberaux/Ygnas) grants many stat-boosts at ONE identical expiry tick, while a
+    // player casts a SINGLE Gain-X per cast, so two of your own Gains never share an exact expiry. A stat-boost (STR..
+    // CHR Boost = 119..125) you did NOT cast that co-expires with ANOTHER stat-boost is therefore a foreign mix, not
+    // yours -- and this holds even when its caster was never named/attributed (the reliable way to tell after a
+    // zone/reload, when buffCaster_ is empty). Your own Gain-X stays a self-cast in the recent ring, so it is kept.
+    bool is_foreign_stat_mix(unsigned short status, unsigned expiry, int timerIdx) const {
+        if (status < 119 || status > 125) return false;
+        if (match_cast(status, expiry, timerIdx) >= 0) return false;                              // your own Gain-X (in the cast ring) -> yours
+        for (int i = 0; i < buffTimerN_; ++i) {
+            if (buffTimers_[i].id == status || buffTimers_[i].expiry != expiry) continue;
+            if (buffTimers_[i].id >= 119 && buffTimers_[i].id <= 125) return true;                // a SIBLING stat-boost at the same tick -> a mix
+        }
+        return false;
+    }
     // --- Timers module : BUFFS YOU cast on OTHER players (person name + ESTIMATED timer). The client sends
     //     NO per-buff timer for other players, so on_action estimates from tb_buff_gen's base duration when a
     //     buff spell (0x028 cat 4) you cast lands on an ally. Keyed by (target id, status) ; refreshed on recast.

@@ -263,6 +263,8 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 if (C.tmBuffSrc == TMSRC_TRUSTS  && !trust) return false;
                 return true;
             }
+            if (party().is_foreign_stat_mix(status, expiry, timerIdx))              // trust/chemist multi-stat MIX boost you didn't cast
+                return (C.tmBuffSrc == TMSRC_TRUSTS);                               //   "me+trusts" keeps it ; "mine"/"players" hide it
             if (party().self_can_produce_buff(status, jaBits, jaOk)) return true;   // unknown but your job can make it
             if (C.tmBuffSrc == TMSRC_MINE) return false;
             bool ph = false, th = false; party().buff_source_jobs(status, ph, th);
