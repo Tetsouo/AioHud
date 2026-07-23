@@ -245,7 +245,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         };
 
         // ---- pass 1 : group the buffs YOU cast on ALLIES by spell -> AoE groups (songs / rolls hit the whole party) ----
-        struct AoeGrp { unsigned short spell, status; int allies, rem; unsigned expTick; unsigned char isAbil, selfHas, aoe; };   // expTick : the exact self-expiry the ally copies were frozen on -> identifies WHICH cast they came from
+        struct AoeGrp { unsigned short spell, status; int allies, rem; unsigned expTick; unsigned char isAbil, selfHas, aoe, fresh; };   // expTick : the exact self-expiry the ally copies were frozen on -> identifies WHICH cast they came from ; fresh=1 : the ally copies track YOUR current cast ; fresh=0 : a LAGGARD group (members left on an older, shorter cast because a re-sing missed them)
         static AoeGrp grp[32]; int ng = 0;
         int no = 0; const PartyState::OtherBuff* ob = 0;
         auto obRem = [&](const PartyState::OtherBuff& o) -> int {
@@ -253,14 +253,35 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             if (o.expTick) return (int)(o.expTick - now) / 60;   // frozen on the exact self expiry (same FFXI clock as self rows)
             return (int)((o.startMs + o.durMs) - nowMs) / 1000;  // estimate
         };
+        // FRESH vs LAGGARD. A song copy on an ally is FRESH only when it tracks YOUR CURRENT cast of THIS SPELL : still
+        // mirroring your live self timer (just re-sung), or its frozen expTick matches your current self expiry for this
+        // spell. Otherwise it is a LAGGARD -> a named per-ally row on its own timer, never folded into a self AoE :
+        //   - a re-sing MISSED the member : it keeps the OLD expTick (older/shorter cast).
+        //   - you no longer hold THIS SPELL yourself (selfExp==0) : e.g. Victory March was pushed off you by 4 new songs
+        //     but is still on Kaories. This case is why selfExp==0 must be LAGGARD, not fresh : status ids family-collapse
+        //     (Honor March + Victory March are BOTH 214), so countHas(214) would count YOUR Honor March into Victory
+        //     March's group and draw a phantom "(AoE 2)". Songs are self-centred -- a real current AoE song is always on
+        //     you (selfExp!=0) -- so selfExp==0 reliably means "not a self AoE, list the ally who still carries it".
+        // Only REAL AoE spells split (rolls/single-target keep their existing one-row-per-ally path). Shared by the
+        // pass-1 grouping and the pass-3 per-ally emit so the two ALWAYS agree on which members are laggards.
+        auto obFresh = [&](const PartyState::OtherBuff& o) -> bool {
+            if (o.isAbil || !o.aoe) return true;
+            if (o.mirrorSelf) return true;   // just cast (< 2s, still mirroring your live self timer) -> fresh, even before your 0x063 self timer has landed (no post-cast flicker)
+            const unsigned selfExp = party().self_buff_expiry_for(o.status, o.spell);
+            if (!selfExp) return false;      // you no longer hold this song -> the ally copy is orphan/laggard, not a self AoE
+            int d = (int)(o.expTick - selfExp); if (d < 0) d = -d;
+            return d <= 600;                 // 600 ticks = 10s : casts more than 10s apart are distinct generations
+        };
         if (C.tmMine) {
             party().prune_other_buffs_worn();   // drop any that wore off early (dispel/overwrite/death) per the member's 0x076 icons
             ob = party().other_buffs(no);
             for (int i = 0; i < no; ++i) {
-                if (obRem(ob[i]) <= 0) continue;
-                int gi = -1; for (int k = 0; k < ng; ++k) if (grp[k].spell == ob[i].spell) { gi = k; break; }
-                if (gi < 0 && ng < 32) { gi = ng++; grp[gi].spell = ob[i].spell; grp[gi].status = ob[i].status; grp[gi].allies = 0; grp[gi].rem = obRem(ob[i]); grp[gi].isAbil = ob[i].isAbil; grp[gi].selfHas = 0; grp[gi].aoe = 0; grp[gi].expTick = ob[i].expTick; }
-                if (gi >= 0) { grp[gi].allies++; grp[gi].aoe |= ob[i].aoe; }   // aoe = this spell was ever cast as a REAL AoE (>=2 targets at once)
+                const int r = obRem(ob[i]);
+                if (r <= 0) continue;
+                const unsigned char fb = obFresh(ob[i]) ? 1 : 0;   // FRESH (your current cast) vs LAGGARD (an older cast a re-sing missed) -- see obFresh
+                int gi = -1; for (int k = 0; k < ng; ++k) if (grp[k].spell == ob[i].spell && grp[k].fresh == fb) { gi = k; break; }
+                if (gi < 0 && ng < 32) { gi = ng++; grp[gi].spell = ob[i].spell; grp[gi].status = ob[i].status; grp[gi].allies = 0; grp[gi].rem = r; grp[gi].isAbil = ob[i].isAbil; grp[gi].selfHas = 0; grp[gi].aoe = 0; grp[gi].expTick = ob[i].expTick; grp[gi].fresh = fb; }
+                if (gi >= 0) { grp[gi].allies++; grp[gi].aoe |= ob[i].aoe; if (r < grp[gi].rem) grp[gi].rem = r; }   // aoe = this spell was ever cast as a REAL AoE (>=2 targets) ; rem = SHORTEST in the group (drives the laggard row ; a fresh row overwrites it with your self timer)
             }
         }
 
@@ -371,8 +392,10 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             const unsigned ssid = party().self_buff_spell_ranked(bt[i].id, bt[i].expiry, i);   // spell/tier (Valor Minuet V), disambiguating same-status buffs by expiry rank
             int sameSt = 0; for (int k = 0; k < n; ++k) if (bt[k].id == bt[i].id) ++sameSt;
             int gi = -1;
-            for (int k = 0; k < ng; ++k) if (grp[k].spell == ssid) { gi = k; break; }
-            if (gi < 0 && sameSt < 2) for (int k = 0; k < ng; ++k) if (grp[k].status == bt[i].id) { gi = k; break; }
+            for (int k = 0; k < ng; ++k) if (grp[k].spell == ssid && grp[k].fresh) { gi = k; break; }   // fold ONLY into the FRESH group : your self buff IS the current cast, never a laggard row
+            if (gi < 0 && sameSt < 2) for (int k = 0; k < ng; ++k) if (grp[k].status == bt[i].id && grp[k].fresh) { gi = k; break; }
+            // no fresh group (you re-sang on yourself only, the ally is a laggard) -> gi stays -1 : your buff emits as its
+            // own row and the laggard group draws separately, which is exactly the split.
             // Fold your own copy into the ally row ONLY when that row will actually be a grouped "(AoE N)" line (real AoE
             // or "group ally buffs" on). In per-person mode a single-target spell you also put on yourself must stay a
             // SELF row -- pass 3's per-ally branch only emits allies, so folding here would make your own buff vanish.
@@ -389,8 +412,13 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // change -- so countHas saw only YOU and the "(AoE N)" group never re-formed even after a recast (captured :
             // countHas=1 while gi=0/aoe=1). ob[] holds your OWN fresh casts (restored rows are discarded on load), so it
             // is an authoritative floor ; prune_other_buffs_worn drops it once 0x076 flows again and shows a real loss.
-            int effHas = countHas(bt[i].id);
-            if (gi >= 0) { const int est = grp[gi].allies + (meHas(bt[i].id) ? 1 : 0); if (est > effHas) effHas = est; }
+            // When a LAGGARD sibling exists for this spell, the fresh count MUST come from ob[]'s per-cast buckets, not
+            // countHas : 0x076 (countHas) sees the status on the laggard member too and can't tell it from a fresh copy,
+            // so it would re-inflate the fresh "(AoE N)" back to including the laggard -- the exact merge we're undoing.
+            bool hasLag = false; for (int k = 0; k < ng; ++k) if (grp[k].spell == ssid && !grp[k].fresh) { hasLag = true; break; }
+            int effHas;
+            if (hasLag) { effHas = (gi >= 0 ? grp[gi].allies : 0) + (meHas(bt[i].id) ? 1 : 0); }   // split : fresh members only (you + allies you re-hit) ; solo re-sing -> 1 -> no fold, own row
+            else { effHas = countHas(bt[i].id); if (gi >= 0) { const int est = grp[gi].allies + (meHas(bt[i].id) ? 1 : 0); if (est > effHas) effHas = est; } }
             const bool folds = (gi >= 0 && effHas >= 2 && (grp[gi].aoe || C.tmAllyGroup != 0) && !allyHides);
             // THROTTLE : this runs per timer per FRAME. Unthrottled it is 60 Hz x the whole window -- the log would be
             // useless and huge. Log a status only when its verdict or its whole-second countdown actually changed.
@@ -470,23 +498,38 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         static char obLabel[64][44], tagBuf[64][16];
         const bool graceOB = party().in_zone_grace();   // just zoned : the real 0x076 caches are still refilling -> trust the estimate, don't validate
         if (C.tmMine) for (int k = 0; k < ng && nb < 50; ++k) {
-            const int total = countHas(grp[k].status);   // self + party members who REALLY carry it right now
-            int effN = total;
-            // Floor the real-carrier count by the allies you FRESHLY cast on (ob[]) -- not only across a zone (graceOB)
-            // but ALWAYS : right after a //reload the 0x076 ally-buff cache is empty and never re-counts them, so a song
-            // you AoE'd onto the party stopped regrouping as "(AoE N)" until a zone. ob[] is your own recent casts
-            // (honest -- pruned against 0x076 once it flows), so it is the right floor here too.
-            { const int est = grp[k].allies + (meHas(grp[k].status) ? 1 : 0); if (est > effN) effN = est; }
+            const bool lag = !grp[k].fresh;   // LAGGARD group : members left on an older/shorter cast a re-sing missed
+            // Count. For a FRESH group the "(AoE N)" number comes from its own ob[] bucket when a laggard sibling exists
+            // (countHas / 0x076 can't tell an old copy from a fresh one, so it would re-absorb the laggard back into the
+            // AoE count -- the exact merge we're undoing). For a LAGGARD group effN is just the draw-guard : how many
+            // un-refreshed members there are to LIST by name below (they don't share a count row).
+            int effN;
+            if (lag) { effN = grp[k].allies; }
+            else {
+                // NB : hasLag keys on SPELL, so this only de-counts a laggard of the SAME spell. A same-STATUS DIFFERENT
+                // spell (Honor + Victory March both 214) is NOT caught here -> a fresh Honor group still uses countHas(214)
+                // and can over-count a member who carries only Victory. Known residual (0x076 has no spell id) ; the
+                // orphan case (selfExp==0) IS fixed via obFresh. See timers-songs-brd.md §4. Fix only if it surfaces.
+                bool hasLag = false; for (int j = 0; j < ng; ++j) if (grp[j].spell == grp[k].spell && !grp[j].fresh) { hasLag = true; break; }
+                if (hasLag) { effN = grp[k].allies + (meHas(grp[k].status) ? 1 : 0); }
+                // Floor the real-carrier count by the allies you FRESHLY cast on (ob[]) -- not only across a zone (graceOB)
+                // but ALWAYS : right after a //reload the 0x076 ally-buff cache is empty and never re-counts them, so a song
+                // you AoE'd onto the party stopped regrouping as "(AoE N)" until a zone. ob[] is your own recent casts
+                // (honest -- pruned against 0x076 once it flows), so it is the right floor here too.
+                else { effN = countHas(grp[k].status); const int est = grp[k].allies + (meHas(grp[k].status) ? 1 : 0); if (est > effN) effN = est; }
+            }
             if (effN < 1) continue;                        // nobody has it anymore (worn / replaced roll) -> drop the group
             if (C.tm_buff_off((unsigned)grp[k].status)) {   // hidden buff (family filter) -- UNLESS Hidden+Focus & expiring (pops under the warn threshold)
                 if (!(C.tm_buff_off(UiConfig::TM_KEY_FOCUS | (unsigned)grp[k].status) && grp[k].rem < C.tmFocusWarn)) continue;
             }
             const char* en = grp[k].isAbil ? abil_name_by_id(grp[k].spell) : (spell_info(grp[k].spell) ? spell_info(grp[k].spell)->en : 0);   // rolls -> ability name ; spells -> spell name
-            int rem = grp[k].rem;
+            int rem = grp[k].rem;   // used by the GROUP branch only (fresh) ; the per-ally branch reads each member's own obRem
             if (grp[k].aoe) { int sr = party().self_buff_remaining_for(grp[k].status, grp[k].spell); if (sr > 0) rem = sr; }   // a REAL AoE shares your exact self 0x063 timer -- for the SPECIFIC song (two Marches run two 214 timers ; borrowing the first showed Victory March with Honor's countdown). A single-target buff you ALSO have on yourself keeps the ally estimate (else Haste on an ally shows YOUR self-Haste duration)
             // GROUP into one "(AoE N)" row when : it was a REAL AoE cast (Protectra / a spell under SCH Accession /
             // a roll) OR the user keeps "group ally buffs" on. Otherwise (single-target spread) -> one row PER ally.
-            const bool group = (grp[k].aoe || C.tmAllyGroup != 0) && effN >= 2;
+            // A LAGGARD group NEVER groups : it lists each un-refreshed person by NAME (Kaories, Gab, ...) on their own
+            // timer in the per-ally branch below -- that named-per-person listing is the whole point of the split.
+            const bool group = lag ? false : ((grp[k].aoe || C.tmAllyGroup != 0) && effN >= 2);
             if (group) {   // AoE : one grouped row (Minuet V (AoE 6))
                 PartyState::RollInfo ri = grp[k].isAbil ? party().roll_info(grp[k].status) : PartyState::RollInfo{ 0, 0 };   // COR roll -> pip value (double-up included)
                 bufs[nb].rem = rem; bufs[nb].icon = grp[k].status; bufs[nb].both = meHas(grp[k].status) ? 0 : 1;
@@ -508,13 +551,16 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 }
                 bufs[nb].src = 4;   // pass 3 : a buff YOU cast on allies, shown as one AoE group
                 ++nb;   // your AoE -> group first
-            } else {   // PER-ALLY : one "Person - Spell" row for each ally who really carries it (self is in pass 2)
-                for (int i = 0; i < no && nb < 50; ++i) if (ob[i].spell == grp[k].spell && obRem(ob[i]) > 0) {
+            } else {   // PER-ALLY : one "Person - Spell" row for each ally who really carries it (self is in pass 2).
+                       // For a LAGGARD group this is the whole point : one NAMED row per un-refreshed person (Kaories,
+                       // Gab, ...) on THEIR own shorter timer, as a block AFTER your fresh ally-casts (order 30+ vs 11-28).
+                const int poBase = lag ? 30 : 11;
+                for (int i = 0; i < no && nb < 50; ++i) if (ob[i].spell == grp[k].spell && (obFresh(ob[i]) ? 1 : 0) == grp[k].fresh && obRem(ob[i]) > 0) {   // ONLY this generation's members -> a laggard row lists exactly the people the re-sing missed
                     const BuffSet* bs = party().buffs_for(ob[i].target); bool has = false; if (bs) for (int j = 0; j < bs->n; ++j) if (bs->ids[j] == grp[k].status) { has = true; break; }
                     if (!has && !graceOB) continue;   // that ally lost it (stale) -> skip ; during the zone grace trust the estimate
                     if (en) { _snprintf(obLabel[nb], sizeof(obLabel[nb]), "%s - %s", ob[i].name, en); obLabel[nb][sizeof(obLabel[nb]) - 1] = 0; bufs[nb].name = obLabel[nb]; }
                     else bufs[nb].name = ob[i].name;
-                    bufs[nb].rem = obRem(ob[i]); bufs[nb].icon = ob[i].status; bufs[nb].both = 1; bufs[nb].order = 11 + party().party_order(ob[i].target); bufs[nb].src = 5; ++nb;   // your ally-casts tier, GROUPED BY ally (after your own buffs, before players-on-you)
+                    bufs[nb].rem = obRem(ob[i]); bufs[nb].icon = ob[i].status; bufs[nb].both = 1; bufs[nb].order = poBase + party().party_order(ob[i].target); bufs[nb].src = 5; ++nb;   // ally-cast rows GROUPED BY ally ; laggards form a named block after the fresh ones
                 }
             }
         }
@@ -607,6 +653,20 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             auto songUnrecoverable = [&](const FocusMem& e) -> bool {
                 return songBaseValid && !e.self && song_family(e.spell) > 0 && !ccUp && ccOnRecast && songCount >= songBase;
             };
+            // A song you cast on an ally that vanished because YOU just SINGLE-TARGETed a DIFFERENT song onto that SAME
+            // ally (Pianissimo) is a DELIBERATE slot swap, not a loss -> no red OUT, just depop. Signal : a newer,
+            // different, SINGLE-TARGET song on the same target, cast in the last few seconds (the slot casualty leaves in
+            // the same 0x076 update the replacement lands in). The `!ob[i].aoe` gate is load-bearing : an AoE song
+            // re-stamps startMs on EVERY member each cast, so without it the 6s window would sit open across your whole
+            // rotation and mask a real dispel on anyone you're singing to. Pianissimo is the only way to single-target a
+            // song, so `!aoe` isolates the deliberate swap. Ally songs only : your own re-song is handled elsewhere.
+            auto songReplaced = [&](const FocusMem& e) -> bool {
+                if (e.self || song_family(e.spell) <= 0) return false;
+                for (int i = 0; i < no; ++i)
+                    if (ob[i].target == e.target && ob[i].spell != e.spell && song_family(ob[i].spell) > 0 && !ob[i].aoe
+                        && (unsigned)(nowMs - ob[i].startMs) < 6000u) return true;   // single-target replacer only ; 6s covers the 0x076 cadence, short enough a real later dispel still OUTs
+                return false;
+            };
             int w = 0;                                                                        // prune : ally left the party/alliance, or the focus flag was turned off
             for (int q = 0; q < fmN; ++q) {
                 const bool live = fm[q].self ? true : (zoneGrace || party().party_order(fm[q].target) <= 17);   // 0..5 party, 6..17 alliance ; 99 = gone (roster is unstable mid-zone -> keep during grace)
@@ -636,6 +696,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 if (!fm[q].zoneCheck && fm[q].lostMs && !focusHas(fm[q])) {
                     const bool dkOn = C.tm_buff_off((unsigned)fm[q].status);   // self & ally share ONE global hidden state
                     if (songUnrecoverable(fm[q])) continue;   // un-refillable 5th Clarion-Call song -> free the slot (no OUT will ever draw ; without this the un-drawn entry lingers and fills fm[24])
+                    if (songReplaced(fm[q])) continue;        // deliberately swapped out by a new song on the same ally (Pianissimo) -> free the slot, never an OUT
                     if (dkOn && (unsigned)(nowMs - fm[q].lostMs) > (unsigned)C.tmFocusHold * 1000u) continue;
                 }
                 if (w != q) fm[w] = fm[q]; ++w;
@@ -675,6 +736,12 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     if (focus_trace_live())
                         windower::debug::log("SONGOUT st=%u '%s' SUPPRESSED count=%d base=%d ccUp=%d ccRc=%d -> no OUT (unrecoverable extra song)",
                                              (unsigned)fm[q].status, buff_status_name(fm[q].status), songCount, songBase, ccUp ? 1 : 0, ccOnRecast ? 1 : 0);
+                    continue;
+                }
+                if (songReplaced(fm[q])) {   // deliberately swapped out by a new song on the same ally (Pianissimo Ballad) -> no OUT, not even a one-frame flash (prune frees the slot next frame)
+                    if (focus_trace_live())
+                        windower::debug::log("SONGOUT st=%u '%s' target=%08X SUPPRESSED -> no OUT (song deliberately replaced on this ally)",
+                                             (unsigned)fm[q].status, buff_status_name(fm[q].status), fm[q].target);
                     continue;
                 }
                 if (fm[q].self) {
