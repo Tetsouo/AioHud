@@ -275,6 +275,10 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_59[] = {
+    { "Small fix : the gold bullets in the Update and Debug tabs no longer spill outside the list when you scroll -- only the bullet markers were affected (the text was already clipped to the box).",
+      "Petit correctif : les puces dorees des onglets Mise a jour et Debug ne debordent plus hors de la liste quand on fait defiler -- seules les puces etaient concernees (le texte etait deja clippe a la box)." },
+};
 static const ChangeLine CL_58[] = {
     { "*More guards against malformed packets.* Several Zone Tracker packet handlers (Odyssey / Limbus / Nyzul) now reject a truncated packet instead of reading stale bytes past its real end -- the same length check the rest of the packet handlers already do. Purely defensive : no change to normal behaviour.",
       "*Plus de protections contre les paquets malformes.* Plusieurs handlers de paquets du Zone Tracker (Odyssey / Limbus / Nyzul) rejettent desormais un paquet tronque au lieu de lire des octets perimes au-dela de sa fin -- le meme controle de longueur que font deja les autres handlers. Purement defensif : aucun changement en fonctionnement normal." },
@@ -350,6 +354,7 @@ static const ChangeLine CL_49[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.59", CL_59, (int)(sizeof(CL_59) / sizeof(CL_59[0])) },
     { "1.0.58", CL_58, (int)(sizeof(CL_58) / sizeof(CL_58[0])) },
     { "1.0.57", CL_57, (int)(sizeof(CL_57) / sizeof(CL_57[0])) },
     { "1.0.56", CL_56, (int)(sizeof(CL_56) / sizeof(CL_56[0])) },

@@ -1746,7 +1746,7 @@ void ConfigPage::draw_update_tab(const Frame& f, u32 dev, Font* fo, const MouseS
             y += hdrH + hdrGap;
             if (relOpen_[r]) {
                 for (int i = 0; i < RELEASES[r].n; ++i) {
-                    cs(dev); rrect_fill(dev, clX + snap(9.0f), snap(y + lh * 0.5f - 2.0f), snap(4.0f), snap(4.0f), snap(2.0f), fa(C_GOLDHI), fa(C_GOLDHI));   // gold bullet
+                    cs(dev); { const float by = snap(y + lh * 0.5f - 2.0f); if (by >= listTop && by + snap(4.0f) <= listBot) rrect_fill(dev, clX + snap(9.0f), by, snap(4.0f), snap(4.0f), snap(2.0f), fa(C_GOLDHI), fa(C_GOLDHI)); }   // gold bullet -- ONLY inside the viewport (the stencil clip can be a no-op on a stencil-less backbuffer, like the header onScreen check) else scrolled-off bullets spill out of the box
                     const char* txt = (ui_config().lang == 1) ? RELEASES[r].lines[i].fr : RELEASES[r].lines[i].en;
                     y = draw_wrapped(dev, fo, clX + snap(22.0f), y, clW - snap(30.0f), listTop, listBot, txt, tsz, C_TEXT, lh);
                     y += snap(7.0f);                                         // gap between entries
@@ -1797,7 +1797,7 @@ void ConfigPage::draw_debug_tab(const Frame& f, u32 dev, Font* fo, const MouseSt
         y += hdrH + hdrGap;
         if (dbgOpen_[r]) {
             for (int i = 0; i < DEBUG_SECTIONS[r].n; ++i) {
-                cs(dev); rrect_fill(dev, clX + snap(9.0f), snap(y + lh * 0.5f - 2.0f), snap(4.0f), snap(4.0f), snap(2.0f), fa(C_GOLDHI), fa(C_GOLDHI));   // gold bullet
+                cs(dev); { const float by = snap(y + lh * 0.5f - 2.0f); if (by >= listTop && by + snap(4.0f) <= listBot) rrect_fill(dev, clX + snap(9.0f), by, snap(4.0f), snap(4.0f), snap(2.0f), fa(C_GOLDHI), fa(C_GOLDHI)); }   // gold bullet -- ONLY inside the viewport (stencil clip may be a no-op), like the header onScreen check
                 const char* txt = (ui_config().lang == 1) ? DEBUG_SECTIONS[r].lines[i].fr : DEBUG_SECTIONS[r].lines[i].en;
                 y = draw_wrapped(dev, fo, clX + snap(22.0f), y, clW - snap(30.0f), listTop, listBot, txt, tsz, C_TEXT, lh);
                 y += snap(7.0f);
