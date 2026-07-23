@@ -82,6 +82,11 @@ static bool is_wearoff_msg(unsigned m) {
 // //aio dbflog : a countdown of target-debuff mutations still to trace to aiohud_debug.log (0 = off). File-scope
 // so the static record_* helpers can log too. Each traced line decrements it, so a capture self-limits.
 static int s_dbfTrace = 0;
+// //aio ftrace : a GetTickCount deadline (0 = off) while the 0x076-arrival / zone-marker trace is armed. Duration-
+// based (not a count) so it survives the whole zone-in settle, the one moment we need to observe. Model-side twin
+// of the ui focus trace : both are armed together by the one //aio ftrace command (the plugin layer bridges them,
+// keeping model independent of ui). Answers "does an ally's 0x076 buff set actually refresh after a zone, and how fast".
+static unsigned s_b076Until = 0;
 // Says so when the budget runs out : a probe that goes quiet is indistinguishable from a bug that stopped
 // reproducing, which is exactly how two captures were misread during the Timers hunt.
 #define DBFTRACE(...) do { if (s_dbfTrace > 0) { --s_dbfTrace; windower::debug::log(__VA_ARGS__); \
@@ -198,9 +203,34 @@ int PartyState::self_buff_remaining(unsigned short status) const {
     for (int i = 0; i < buffTimerN_; ++i) if (buffTimers_[i].id == status) { int r = ticks_to_sec_ceil((int)(buffTimers_[i].expiry - now)); return r > 0 ? r : -1; }
     return -1;
 }
+int PartyState::self_buff_remaining_for(unsigned short status, unsigned short spell) const {
+    if (!spell) return self_buff_remaining(status);   // caller doesn't know the spell -> old behaviour (first same-status timer)
+    const unsigned now = ffxi_now_tick();
+    for (int i = 0; i < buffTimerN_; ++i) {
+        if (buffTimers_[i].id != status) continue;
+        if (self_buff_spell_ranked(status, buffTimers_[i].expiry, i) != spell) continue;   // this 214 timer ranks to a DIFFERENT song -> not the one we want
+        int r = ticks_to_sec_ceil((int)(buffTimers_[i].expiry - now));
+        return r > 0 ? r : -1;
+    }
+    return -1;   // no self timer resolves to `spell` (e.g. ring empty right after a reload) -> caller keeps its estimate
+}
 unsigned PartyState::self_buff_expiry(unsigned short status) const {
     for (int i = 0; i < buffTimerN_; ++i) if (buffTimers_[i].id == status) return buffTimers_[i].expiry;
     return 0;
+}
+unsigned PartyState::self_buff_expiry_for(unsigned short status, unsigned short spell) const {
+    if (!spell) return self_buff_expiry(status);   // spell unknown -> first same-status timer
+    for (int i = 0; i < buffTimerN_; ++i) {
+        if (buffTimers_[i].id != status) continue;
+        if (self_buff_spell_ranked(status, buffTimers_[i].expiry, i) != spell) continue;   // a DIFFERENT song of this status -> not the one we froze on
+        return buffTimers_[i].expiry;
+    }
+    return 0;   // no self timer resolves to `spell`
+}
+bool PartyState::ob_self_alive(const OtherBuff& o) const {
+    if (o.expTick) return (int)(o.expTick - ffxi_now_tick()) > 0;   // frozen on the real self timer
+    if (o.mirrorSelf) { const int r = o.isAbil ? self_buff_remaining(o.status) : self_buff_remaining_for(o.status, o.spell); return r >= 0; }
+    return false;   // not an AoE-on-self entry -> only its own estimate governs its life
 }
 int PartyState::geo_aura_remaining(unsigned short status) const {   // computed lifetime of the Indi- YOU carry (not the 3s pulse)
     if (!selfGeo_.status || selfGeo_.status != status) return -1;
@@ -358,6 +388,12 @@ int PartyState::party_order(unsigned id) const {   // roster position : 0..5 own
     for (int t = 0; t < 2; ++t) for (int i = 0; i < alliN_[t]; ++i) if (alli_[t * 6 + i].id == id) return 6 + t * 6 + i;
     return 99;
 }
+bool PartyState::member_offzone(unsigned id) const {   // same lookup as party_order, returning the roster's per-member offzone flag (0x0DD zone id vs ours)
+    if (!id) return false;
+    for (int i = 0; i < count; ++i) if (m[i].id == id) return m[i].offzone;
+    for (int t = 0; t < 2; ++t) for (int i = 0; i < alliN_[t]; ++i) if (alli_[t * 6 + i].id == id) return alli_[t * 6 + i].offzone;
+    return false;   // not in the roster -> don't assert out-of-zone (the party_order>17 / disband path already drops a truly-gone member)
+}
 bool PartyState::self_can_produce_buff(unsigned status, const unsigned char* jaBits, bool jaOk) const {
     if (!status || status >= 1024) return true;        // unknown status -> keep (never hide on a guess)
     int mj = 0, sj = 0;
@@ -439,14 +475,18 @@ bool PartyState::load_cache(unsigned selfId) {
     unsigned short obn = 0;
     if (fread(&obn, 2, 1, f) == 1 && obn <= 32) {
         if (fread(otherBuffs_, sizeof(OtherBuff), obn, f) == obn) {
-            // READ AND DISCARD. Ally rows are deliberately NOT restored: they are validated against everyone's
-            // real 0x076 buff lists before being drawn, and those lists only exist while packets are flowing.
-            // After a reload they are empty (and trusts never appear in them at all), so restoring these rows
-            // showed AoE groups that the live session never displayed -- visible for the ~8 s post-load grace,
-            // during which the drawer trusts the estimate instead of validating, then vanishing when it expires.
-            // Your OWN buff timers below ARE restored: those are exact, absolute, and are what a reload loses.
-            otherBuffN_ = 0;
-        }
+            // RESTORE the ally rows so a //reload KEEPS your "(AoE N)" groups without a recast. They were discarded
+            // before for a real reason: back then hud_timers only trusted these estimates during the ~8 s post-load
+            // grace, then fell back to the 0x076 real-carrier count -- which is EMPTY after a reload (the server does
+            // not re-send party buffs until a member's set changes), so restored groups blinked in then vanished.
+            // hud_timers now FLOORS the AoE count by these ob[] estimates at ALL times (not only in grace), so they
+            // persist. GetTickCount survives a plugin reload, so startMs/durMs stay accurate ; prune_other_buffs_worn
+            // runs on the very next frame and drops any whose estimate has already elapsed, so a stale cache cannot
+            // resurrect a worn song. Only YOUR casts live here (never a trust's / another player's), so nothing a
+            // filter would hide is reintroduced.
+            otherBuffN_ = obn;
+            for (int k = 0; k < otherBuffN_; ++k) otherBuffs_[k].name[19] = 0;   // force-terminate : the render path strcpy walks the name to a NUL (see note above)
+        } else otherBuffN_ = 0;
     }
     // self buff timers (absolute FFXI-tick expiries -> valid across a reload)
     unsigned short btn = 0;
@@ -833,7 +873,7 @@ void PartyState::on_action(const unsigned char* p) {
         if (b) {
             const unsigned nowMs = GetTickCount();
             int w = 0;                                          // prune expired before (re)recording -> keep the list tight
-            for (int k = 0; k < otherBuffN_; ++k) if ((int)((otherBuffs_[k].startMs + otherBuffs_[k].durMs) - nowMs) > 0) { if (w != k) otherBuffs_[w] = otherBuffs_[k]; ++w; }
+            for (int k = 0; k < otherBuffN_; ++k) if ((int)((otherBuffs_[k].startMs + otherBuffs_[k].durMs) - nowMs) > 0 || ob_self_alive(otherBuffs_[k])) { if (w != k) otherBuffs_[w] = otherBuffs_[k]; ++w; }   // keep while EITHER the estimate OR the real self timer runs -> recasting one song no longer prunes siblings whose estimate lapsed early (Troubadour)
             otherBuffN_ = w;
             // Enhancing Magic duration on ALLIES (reproduces the Windower Timers model, see enh_dur.h + docs/
             // game-data/buffs-on-allies.md). The duration-GEAR (native "listed" + augments) applies to buffs on
@@ -981,7 +1021,7 @@ void PartyState::on_action(const unsigned char* p) {
         if (st >= 310 && (st <= 339 || st == 600)) {                       // a Phantom Roll status (310-339 + Runeist's Roll 600)
             const unsigned nowMs = GetTickCount();
             int w = 0;                                                     // prune expired before (re)recording -> keep the list tight
-            for (int k = 0; k < otherBuffN_; ++k) if ((int)((otherBuffs_[k].startMs + otherBuffs_[k].durMs) - nowMs) > 0) { if (w != k) otherBuffs_[w] = otherBuffs_[k]; ++w; }
+            for (int k = 0; k < otherBuffN_; ++k) if ((int)((otherBuffs_[k].startMs + otherBuffs_[k].durMs) - nowMs) > 0 || ob_self_alive(otherBuffs_[k])) { if (w != k) otherBuffs_[w] = otherBuffs_[k]; ++w; }   // keep while EITHER the estimate OR the real self timer runs -> recasting one song no longer prunes siblings whose estimate lapsed early (Troubadour)
             otherBuffN_ = w;
             u32 tc = getbits(p, 72, 6, size); if (tc < 1) tc = 1; if (tc > 16) tc = 16;
             bool aoeSelf = false;                                          // the roll landed on YOU -> ally copies mirror your exact 0x063 timer
@@ -1207,6 +1247,11 @@ void PartyState::on_076(const unsigned char* p) {
             if (buff == 255) continue;                         // empty buff
             bs.ids[bs.n++] = (unsigned short)buff;
         }
+        if (s_b076Until && (int)(s_b076Until - GetTickCount()) > 0) {   // //aio ftrace : one line per member per 0x076 -> the arrival cadence around a zone. Sentinel-guard s_b076Until!=0 FIRST : (int)(0-GetTickCount()) reads POSITIVE once uptime passes ~25 days, which would self-arm a disarmed probe and spam a shipped log.
+            char ids[160]; int o = 0; ids[0] = 0;
+            for (int i = 0; i < bs.n && i < 32 && o < 150; ++i) o += _snprintf(ids + o, sizeof(ids) - o, "%u ", (unsigned)bs.ids[i]);
+            windower::debug::log("B076 mem=%08X slot=%d n=%d t=%u ids=[%s]", mid, slot, bs.n, (unsigned)GetTickCount(), ids);
+        }
     }
 }
 
@@ -1239,6 +1284,7 @@ void PartyState::prune_other_buffs_worn() {
     for (int k = 0; k < otherBuffN_; ++k) {
         OtherBuff& ob = otherBuffs_[k];
         if (!zoneGrace && party_order(ob.target) > 17) { drop[k] = true; continue; }   // target left the party/alliance (disband) -> drop
+        if (!zoneGrace && song_family(ob.spell) > 0 && member_offzone(ob.target)) { drop[k] = true; continue; }   // SONG on a member who left YOUR zone : 0x076 no longer refreshes them -> unverifiable, clean it (matches the hud_timers song-offzone rule ; also keeps such a frozen song out of the AoE song-count / base learning)
         if (ob.isAbil) {   // ROLLS are always on you + the party TOGETHER : lock the ally copy to YOUR live 0x063 roll
             const unsigned e = self_buff_expiry(ob.status);   // timer, and drop it the moment you lose the roll (worn OR replaced by a newer roll).
             if (e != 0) { ob.expTick = e; ob.mirrorSelf = 0; }
@@ -1254,7 +1300,7 @@ void PartyState::prune_other_buffs_worn() {
             // reload. Assigning that 0 unconditionally destroyed the good expiry restored from the cache and
             // dropped back to the estimate, which then expired almost immediately: songs vanished from the
             // Timers box a few seconds after every reload. Keep what we have until a real timer shows up.
-            const unsigned e = self_buff_expiry(ob.status);
+            const unsigned e = self_buff_expiry_for(ob.status, ob.spell);   // THIS song's own timer, not the first same-status one -> two Marches no longer share the shorter's expiry
             if (e != 0) { ob.expTick = e; ob.mirrorSelf = 0; }
         }
         if (ob.expTick) { if ((int)(ob.expTick - ffxi_now_tick()) <= 0) { drop[k] = true; continue; } }   // frozen on the self expiry
@@ -1280,6 +1326,8 @@ int PartyState::target_th(unsigned id) const {
 }
 
 void PartyState::set_debuff_trace(int n) { s_dbfTrace = n; }   // //aio dbflog
+void PartyState::set_buff076_trace(int seconds) { s_b076Until = GetTickCount() + (unsigned)seconds * 1000u; windower::debug::log("=== B076 trace armed for %ds ===", seconds); }   // //aio ftrace (model-side twin)
+bool PartyState::buff076_trace_active() const { return s_b076Until && (int)(s_b076Until - GetTickCount()) > 0; }   // sentinel-guard : 0 = off ; (int)(0-GetTickCount()) would read positive past ~25 days uptime and self-arm the probe
 void PartyState::set_treasure_trace(int n) { s_tpoolTrace = n; }        // //aio tpool
 bool PartyState::treasure_trace_active() const { return s_tpoolTrace > 0; }   // //aio tpool : gate the zone-in/out markers in the packet dispatch
 

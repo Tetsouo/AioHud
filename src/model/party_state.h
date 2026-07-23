@@ -551,7 +551,20 @@ struct PartyState {
     // remaining seconds of the caster's OWN copy of `status` (exact 0x063 self timer), or -1 if not present.
     // Used to mirror an EXACT timer onto an AoE buff you cast that ALSO landed on yourself (songs, -ra, Accession).
     int self_buff_remaining(unsigned short status) const;
+    // Same, but for the specific SPELL that produced the copy -- two same-status songs (Honor + Victory March, both
+    // 214 ; Minuet IV + V, both 198) run TWO 0x063 timers, and self_buff_remaining returns whichever sits first in the
+    // list, so an AoE / mirror row borrowed the WRONG song's countdown (reported : "recast Victory March, the timer
+    // doesn't update -- it shows Honor March's"). Resolve each 214 timer to its spell (the same ranking the row LABEL
+    // uses) and return the one matching `spell`, so label and countdown always agree. -1 if none resolves to it.
+    int self_buff_remaining_for(unsigned short status, unsigned short spell) const;
     unsigned self_buff_expiry(unsigned short status) const;   // the caster's own 0x063 expiry (FFXI ticks) for `status`, 0 if none
+    // Same, per SPELL : two same-status songs run two timers, and freezing an AoE/mirror row on the FIRST one made
+    // the longer song's row die when the SHORTER one expired (~1 min early -- "the AoE rows depop with time left").
+    unsigned self_buff_expiry_for(unsigned short status, unsigned short spell) const;
+    // true while an AoE-on-self ob[] entry's own SELF 0x063 timer is still running. Recording a new cast prunes the
+    // ob[] list ; an estimate-only test dropped sibling songs whose BASE estimate had lapsed but whose real
+    // (Troubadour-extended) timer had ~1 min left -- so recasting one song made every other song lose its "(AoE N)".
+    bool ob_self_alive(const OtherBuff& o) const;
     void prune_other_buffs_worn();   // drop entries whose target no longer shows the status (0x076) -> early wear-off
     // --- GEO self Indi- aura : a GEO carries ONE Indi- ; the effect status in 0x063 is REFRESHED every ~3s by the
     //     aura pulse, so it never shows the real aura lifetime. When YOU cast an Indi- on yourself we compute the
@@ -565,6 +578,7 @@ struct PartyState {
     const GeoAura& self_geo() const { return selfGeo_; }
     const char* pc_name_by_id(unsigned id) const;   // roster / alliance server id -> player name (0 if unknown)
     int party_order(unsigned id) const;             // roster position (0..5 party, 6..17 alliance ; 99 unknown) -> sort order
+    bool member_offzone(unsigned id) const;          // PARTY members only : true iff that party member is in a DIFFERENT zone than us (PMember.offzone, computed for the 6-member party in party_state_roster). Alliance members and unknown ids -> false (offzone isn't tracked past the party, and we must never ASSERT out-of-zone on missing data). Fine for the "clean ally SONG rows when the target left my zone" rule : AoE songs are party-scoped, and a truly-gone member is already dropped via party_order>17.
     void on_exp_msg(const unsigned char* p, unsigned id);   // 0x029 / 0x02D : live gains (Param1) + X/h rate
     BuffSet  buffs_[18];
     DebuffSet tdebuffs_[DEBUFF_SLOTS];    // debuffs per tracked target id (roomy : AoE/-ga/Horde songs debuff a whole same-name pack at once)
@@ -616,6 +630,8 @@ struct PartyState {
     void set_debuff_trace(int n);        // //aio dbflog : log the next N target-debuff mutations (add/reset/wipe/wake) to aiohud_debug.log
     void set_treasure_trace(int n);      // //aio tpool : log the next N treasure-pool packets (0x0D2/0x0D3) + expiry math to aiohud_debug.log
     bool treasure_trace_active() const;  // //aio tpool : true while the trace budget is unspent (gates the zone-in/out markers in the dispatch)
+    void set_buff076_trace(int seconds); // //aio ftrace : DURATION-armed (mirrors the ui-side focus trace) -> log every 0x076 party-buff arrival + zone markers, to prove whether an ally's buff set actually refreshes after a zone
+    bool buff076_trace_active() const;   // true while that window is open (gates the 0x00A/0x00B zone markers in the dispatch)
     void treasure_mem_probe();           // //aio tmem : one-shot hex dump of the in-game treasure view (*(g+0x5C)) -> reconcile treasure_[] against memory ground truth
     void note_mob_hp(unsigned id, int hpp);   // per-frame HP feed for a mob : clears its debuffs on death (hpp<=0) or when a fresh mob RECYCLED this id (was near-dead, now near-full)
     unsigned debuff_dur_ms(unsigned status) const;   // LEARNED real duration if observed, else the base estimate

@@ -179,6 +179,61 @@ Voir *Song Potency* pour la puissance exacte de chaque buff/debuff.
 
 ---
 
+## Song state in client memory — RE verdict (2026-07-22, Ghidra `re/ffximain_dump.bin`, base `0x05C60000`)
+
+**Question:** does FFXiMain store a bard-song list / current count / max count that AioHUD could read
+instead of reconstructing? **Answer: no dedicated song state exists.** The client holds only a generic,
+family-collapsed status-effect array. Song-limit enforcement and the overwrite-the-oldest rule are
+**server-side** (consistent with: no song-management strings in the image — only the `/song`
+auto-translate — and no code that groups the song status range 195–223).
+
+### What DOES exist: the local player's status-effect + duration array
+
+Found by walking the `0x063` "char info" packet dispatcher **`FUN_05cf91a0`** (RVA `0x991A0`; the same
+one that writes `PW_FM_MERIT` — see [luacore-verified-offsets](luacore-verified-offsets.md)). It is a
+sub-type jump table (`order = body[+4]`, arms 2..10 at jump table `0x05CF930C`). Sub-type **9**
+(arm `0x05cf92cc`) does `rep movsd ecx=0x30` (48 dwords = **192 bytes**) from the packet body into a
+static block:
+
+```
+STATUS_BLOCK = 0x060E5904   (RVA 0x485904)          // gated accessor FUN_05cf9160 (RVA 0x99160)
+  +0x00  u16 statusId[32]    (64 bytes)   0xFFFF or 0x0000 = empty slot
+  +0x40  u32 timer[32]       (128 bytes)  per-status expiry timestamp
+"received" flag byte @ 0x060E5824 (RVA 0x485824) bit 0x10 -> accessor returns NULL until set.
+```
+
+Layout **confirmed by the reader** at `0x05e87760` (RVA `0x227760`, the buff-bar builder): it loads the
+block, sets `ids = base`, `timers = base+0x40`, loops 32×, skips id `0xFFFF`/`0`, and pairs `id[i]`
+(stride 2) with `timer[i]` (stride 4). This is the authoritative "my buffs with real timers" block —
+distinct from, and richer than, the icon-only mirror at `player+0x1C` (which has no timers).
+
+### Why this still cannot give (1) list / (2) count / (3) max as a stored value
+
+- **No caster, no order, no tier.** Ids are **family-collapsed** (all Minuets = 198, all Marches = 214),
+  exactly the limitation that forces reconstruction. Two co-existing songs that share a family status
+  (Victory + Honor **March**; any two same-family) occupy **one** slot here → the array **under-counts**.
+- **Excludes single-target Etudes placed on other members** — those live on the *ally's* entity buff
+  array, never in your own status block.
+- **No count field, no max field, nowhere.** The client never computes "max songs"; it never blocks a
+  cast (the server does) and never displays a count.
+
+### Consequences for the fix (priorities 2 & 3)
+
+- **(2) current count** and **(3) max** must stay **plugin-computed** — they are not in memory.
+  Max = `2 + (song+1 gear pieces) + BRD song merits + JP gifts + (Clarion Call active ? 1 : 0)`;
+  Clarion Call is **status 499** (`buffs_gen.h`), already readable in the buff list, and its
+  song-duration merit is read at `*(g+0x48)+0x142` (`read_jp_u8`, `game_mem.cpp`). Count must be tracked
+  from action packets (to catch etudes-on-others and the shared-status double-March/Minuet case).
+- **(1) placed-song list**: not stored — bonus route unavailable from memory.
+- **Bonus win, needs a live probe before shipping:** `STATUS_BLOCK` (`0x485904`) gives **real per-status
+  expiry timers** for the local player, which AioHUD currently reconstructs via the Timers model. It is a
+  version-specific static RVA (same fragility class as the PointWatch seeds) — verify live with a decode
+  probe and confirm the `timer[]` unit against the client clock before relying on it. It shares the
+  `0x485xxx` static region with the confirmed PointWatch block, an independent cross-check that the RVA is
+  right.
+
+---
+
 ## Combat Skills
 
 ### Armes

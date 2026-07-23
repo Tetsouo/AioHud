@@ -283,8 +283,8 @@ static void feed_packet(int id, const unsigned char* b)
         else if (id == 0x0D3) aio::party().on_treasure_lot(b);   // treasure pool : lot info / won
         else if (id == 0x067) aio::party().on_pet_info(b);       // hate list : learn friendly pet ids (Pet Info)
         else if (id == 0x068) aio::party().on_pet_status(b);     // hate list : friendly pet id + its target mob (Pet Status)
-        else if (id == 0x00B) { if (aio::party().treasure_trace_active()) windower::debug::log("TPOOL zone-OUT (0x00B) tick=%u -> pool cleared", (unsigned)GetTickCount()); aio::party().set_zoning(true); aio::party().treasure_clear(); aio::party().hate_clear(); aio::party().pets_clear(); aio::party().buff_timers_clear(); }   // zone-OUT (loading) -> hide HUD + reset pool/hate/pets/self buff timers (0x063 re-sends). Ally buffs (estimates) PERSIST across a zone : the prune drops them on real wear-off / disband / death, not here.
-        else if (id == 0x00A) { if (aio::party().treasure_trace_active()) windower::debug::log("TPOOL zone-IN (0x00A) tick=%u", (unsigned)GetTickCount()); aio::party().set_zoning(false); }   // zone-IN : the new zone is ready -> show the HUD again
+        else if (id == 0x00B) { if (aio::party().treasure_trace_active()) windower::debug::log("TPOOL zone-OUT (0x00B) tick=%u -> pool cleared", (unsigned)GetTickCount()); if (aio::party().buff076_trace_active()) windower::debug::log("B076 ZONE-OUT (0x00B) t=%u", (unsigned)GetTickCount()); aio::party().set_zoning(true); aio::party().treasure_clear(); aio::party().hate_clear(); aio::party().pets_clear(); aio::party().buff_timers_clear(); }   // zone-OUT (loading) -> hide HUD + reset pool/hate/pets/self buff timers (0x063 re-sends). Ally buffs (estimates) PERSIST across a zone : the prune drops them on real wear-off / disband / death, not here.
+        else if (id == 0x00A) { if (aio::party().treasure_trace_active()) windower::debug::log("TPOOL zone-IN (0x00A) tick=%u", (unsigned)GetTickCount()); if (aio::party().buff076_trace_active()) windower::debug::log("B076 ZONE-IN (0x00A) t=%u", (unsigned)GetTickCount()); aio::party().set_zoning(false); }   // zone-IN : the new zone is ready -> show the HUD again
     } __except (EXCEPTION_EXECUTE_HANDLER) { /* short/malformed packet -> ignore, never crash the game */ }
 }
 
@@ -870,7 +870,8 @@ static void aio_command_dispatch(const char* cmd)
     // one as a substring.
     if (strstr(buf, "ftrace")) {   // //aio ftrace -> explain the Timers "track per job" decision for the next N self-buff rows
         aio::timers_focus_trace(180);   // 180 SECONDS -- long enough for a full buff cycle plus the alert window
-        g_host.console().print(">>> AioHud : ftrace ARMED (have the Hidden+Focus buff up, then send Windower\\plugins\\aiohud_debug.log ; look for FOCUS lines) <<<");
+        aio::party().set_buff076_trace(180);   // model-side twin : log 0x076 arrivals + zone markers over the same window (does an ally's buff set refresh after a zone ?)
+        g_host.console().print(">>> AioHud : ftrace ARMED (have the Hidden+Focus buff up, then send Windower\\plugins\\aiohud_debug.log ; look for FOCUS / B076 lines) <<<");
         return;
     }
     if (strstr(buf, "selfcheck")) {   // //aio selfcheck -> dump texture-load health to aiohud_debug.log (verify the rule-10 latch fixes held : no stuck give-up, no permanently-missing icon)

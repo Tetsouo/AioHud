@@ -10,6 +10,7 @@
 #include "model/abilities_gen.h"
 #include "model/spells_gen.h"
 #include "model/buffs_gen.h"
+#include "model/song_family_gen.h"   // song_family(spell) : identify a BRD song (spell-keyed -> no status family-collapse) for the song-OUT rule
 #include "model/action_status_gen.h"   // is_debuff_status : keep enfeebles (Blind/Poison/Slow) out of the buff list
 #include "model/mobskills_gen.h"
 #include "gfx/texture.h"
@@ -183,11 +184,11 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         if (C.tmMine) {   // demo : an AoE song grouped for the whole party (you included) + a COR roll pip + a single-target buff on one ally
             bufs[nb].rem = 168;  bufs[nb].icon = 198; bufs[nb].name = "Minuet V"; bufs[nb].tag = " (SV NT)"; bufs[nb].tagCol = 0xFFE8C55Au; bufs[nb].post = " (AoE 6)"; bufs[nb].both = 0; bufs[nb].order = 0; ++nb;   // 198 = Minuet (was 43 = Refresh -- wrong icon)
             bufs[nb].rem = 280;  bufs[nb].icon = 313; bufs[nb].name = "Chaos Roll"; bufs[nb].pip = 11; bufs[nb].pipCol = 0xFF74D074u; bufs[nb].tag = " (CC)"; bufs[nb].tagCol = 0xFFE8C55Au; bufs[nb].post = " (AoE 6)"; bufs[nb].both = 0; bufs[nb].order = 0; ++nb;   // pip 11 = green, under Crooked Cards
-            // Band 1 = a real PLAYER's buff on you, band 2 = a TRUST's : both carry the owner in parentheses, which is
-            // what the Help page has to teach. The per-ally sample below is band 5+ (it was left at 2, now "trusts").
-            bufs[nb].rem = 540;  bufs[nb].icon = 33;  bufs[nb].name = "Haste"; bufs[nb].post = " (Aeryn)"; bufs[nb].postCol = 0xFF9AB0C8u; bufs[nb].both = 0; bufs[nb].order = 1; ++nb;
-            bufs[nb].rem = 62;   bufs[nb].icon = 41;  bufs[nb].name = "Shell V"; bufs[nb].tag = " (SV)"; bufs[nb].tagCol = 0xFFE8C55Au; bufs[nb].post = " (Monberaux)"; bufs[nb].postCol = 0xFF9AB0C8u; bufs[nb].both = 0; bufs[nb].order = 2; ++nb;
-            bufs[nb].rem = 1200; bufs[nb].icon = 33;  bufs[nb].name = "Aeryn - Haste";     bufs[nb].both = 1; bufs[nb].order = 5; ++nb;   // 33 = Haste (was 40 = Protect -- wrong icon)
+            // Preview the display tiers : your ally-cast (11) sits above a player's buff on you (40) which sits above
+            // a trust's (90), so the sample shows the "mine -> my ally-casts -> players grouped -> trusts last" order.
+            bufs[nb].rem = 1200; bufs[nb].icon = 33;  bufs[nb].name = "Aeryn - Haste";     bufs[nb].both = 1; bufs[nb].order = 11; ++nb;   // a buff YOU put on an ally (your ally-casts tier) ; 33 = Haste
+            bufs[nb].rem = 540;  bufs[nb].icon = 33;  bufs[nb].name = "Haste"; bufs[nb].post = " (Aeryn)"; bufs[nb].postCol = 0xFF9AB0C8u; bufs[nb].both = 0; bufs[nb].order = 40; ++nb;   // a real PLAYER's buff on you -> grouped by that player
+            bufs[nb].rem = 62;   bufs[nb].icon = 41;  bufs[nb].name = "Shell V"; bufs[nb].tag = " (SV)"; bufs[nb].tagCol = 0xFFE8C55Au; bufs[nb].post = " (Monberaux)"; bufs[nb].postCol = 0xFF9AB0C8u; bufs[nb].both = 0; bufs[nb].order = 90; ++nb;   // a TRUST's buff on you -> last
         }
         // Reflect the live BUFF FILTER in the preview : drop a demo buff the family filter HIDES, unless it's Hidden+focus
         // AND "low" (rem < warn) -- exactly what the real HUD does, so hiding a family empties it here too. (Recasts unfiltered.)
@@ -224,7 +225,16 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // kept a stale "(AoE 2)" and let your row FOLD into the group, hiding the real caster (only the timer
             // updated). buff_caster_for resolves the single live timer to the cast that produced it (see match_cast).
             const unsigned me = party().self_id();
-            const bool selfMine = meHas(st) && party().buff_caster_for((unsigned short)st, party().self_buff_expiry((unsigned short)st), -1) == me;
+            // Count SELF when ANY of your same-status timers resolves to YOUR cast. Two same-family songs (Honor +
+            // Victory March, both 214) run TWO timers ; self_buff_expiry returned only the FIRST, so after a reload the
+            // first timer (a song not re-sung yet -> its caster not re-learned) read "unknown", self went uncounted,
+            // effN fell below 2, and the "(AoE N)" group never re-formed even after a recast -- the song drew as if it
+            // were only on you. Scanning every same-status timer lets a SINGLE recast re-count self and repop the group,
+            // while a single-instance buff an ally re-cast over you (Majesty Protect) still has its ONE timer resolve to
+            // the ally -> correctly NOT counted.
+            bool selfMine = false;
+            if (meHas(st)) { int ntc = 0; const BuffTimer* btc = party().buff_timers(ntc);
+                for (int t = 0; t < ntc; ++t) if (btc[t].id == st && party().buff_caster_for((unsigned short)st, btc[t].expiry, t) == me) { selfMine = true; break; } }
             int c = selfMine ? 1 : 0;
             for (int i = 0; i < party().count; ++i) {
                 if (party().m[i].id == 0 || party().m[i].id == me) continue;
@@ -239,7 +249,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         static AoeGrp grp[32]; int ng = 0;
         int no = 0; const PartyState::OtherBuff* ob = 0;
         auto obRem = [&](const PartyState::OtherBuff& o) -> int {
-            if (o.mirrorSelf) { int r = party().self_buff_remaining(o.status); return (r >= 0) ? r : (int)((o.startMs + o.durMs) - nowMs) / 1000; }
+            if (o.mirrorSelf) { int r = party().self_buff_remaining_for(o.status, o.spell); return (r >= 0) ? r : (int)((o.startMs + o.durMs) - nowMs) / 1000; }   // per-SPELL : two same-status songs (Honor+Victory March) must not borrow each other's self timer
             if (o.expTick) return (int)(o.expTick - now) / 60;   // frozen on the exact self expiry (same FFXI clock as self rows)
             return (int)((o.startMs + o.durMs) - nowMs) / 1000;  // estimate
         };
@@ -374,7 +384,14 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // both carried expTick 682 while the Victory March self timer read 712 -- the frozen expiry is shared
             // between same-status songs, not per cast. Gating the fold on it made the fold never fire for the second
             // song, so every March was drawn TWICE (own row + group row).
-            const bool folds = (gi >= 0 && countHas(bt[i].id) >= 2 && (grp[gi].aoe || C.tmAllyGroup != 0) && !allyHides);
+            // Count = 0x076 real carriers (countHas), FLOORED by the allies you just sang to (grp[].allies, from ob[]).
+            // After a //reload the 0x076 ally-buff cache is empty -- the server won't re-send it until a member's buffs
+            // change -- so countHas saw only YOU and the "(AoE N)" group never re-formed even after a recast (captured :
+            // countHas=1 while gi=0/aoe=1). ob[] holds your OWN fresh casts (restored rows are discarded on load), so it
+            // is an authoritative floor ; prune_other_buffs_worn drops it once 0x076 flows again and shows a real loss.
+            int effHas = countHas(bt[i].id);
+            if (gi >= 0) { const int est = grp[gi].allies + (meHas(bt[i].id) ? 1 : 0); if (est > effHas) effHas = est; }
+            const bool folds = (gi >= 0 && effHas >= 2 && (grp[gi].aoe || C.tmAllyGroup != 0) && !allyHides);
             // THROTTLE : this runs per timer per FRAME. Unthrottled it is 60 Hz x the whole window -- the log would be
             // useless and huge. Log a status only when its verdict or its whole-second countdown actually changed.
             static unsigned sfKey[32] = { 0 }; static int sfRem[32] = { 0 }; static int sfFold[32] = { 0 };
@@ -399,9 +416,12 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // For BANDING, unknown is its own thing. The source filter already treats caster==0 as "infer", but the
             // sort treated it as "mine", so every unattributed row -- food, gear, a 3000-TP boost we failed to parse --
             // sorted ABOVE your own live songs, which is the exact complaint this banding was added to fix.
-            bufs[nb].order = (rowCaster == party().self_id()) ? 0
-                           : (rowCaster == 0)                 ? 1
-                           : party().is_trust(rowCaster)      ? 3 : 2;
+            // Display tiers (top -> bottom) : (1) YOUR buffs 0-1, (3) buffs YOU cast on allies 10-28, (2) buffs a
+            // PLAYER put on you -- GROUPED BY that player (party position) 40-57, (4) TRUSTS last 90-107.
+            bufs[nb].order = (rowCaster == party().self_id()) ? 0                                        // your own buffs -> very top
+                           : (rowCaster == 0)                 ? 1                                        // unknown caster (food/gear) = probably yours
+                           : party().is_trust(rowCaster)      ? (90 + party().party_order(rowCaster))    // a trust's buff on you -> LAST, grouped by trust
+                                                              : (40 + party().party_order(rowCaster));   // a real player's buff on you (Kaories' rolls...) -> grouped BY that player
             // Owner name for anything you did not cast -- rolls included. This used to live only in the song branch,
             // so a party COR's roll on you showed its pips with no idea whose roll it was.
             const char* rowOwner = rowMine ? 0 : party().pc_name_by_id(rowCaster);
@@ -452,25 +472,27 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         if (C.tmMine) for (int k = 0; k < ng && nb < 50; ++k) {
             const int total = countHas(grp[k].status);   // self + party members who REALLY carry it right now
             int effN = total;
-            if (graceOB) { const int est = grp[k].allies + (meHas(grp[k].status) ? 1 : 0); if (est > effN) effN = est; }   // across a zone : fall back to the estimated target count
+            // Floor the real-carrier count by the allies you FRESHLY cast on (ob[]) -- not only across a zone (graceOB)
+            // but ALWAYS : right after a //reload the 0x076 ally-buff cache is empty and never re-counts them, so a song
+            // you AoE'd onto the party stopped regrouping as "(AoE N)" until a zone. ob[] is your own recent casts
+            // (honest -- pruned against 0x076 once it flows), so it is the right floor here too.
+            { const int est = grp[k].allies + (meHas(grp[k].status) ? 1 : 0); if (est > effN) effN = est; }
             if (effN < 1) continue;                        // nobody has it anymore (worn / replaced roll) -> drop the group
             if (C.tm_buff_off((unsigned)grp[k].status)) {   // hidden buff (family filter) -- UNLESS Hidden+Focus & expiring (pops under the warn threshold)
                 if (!(C.tm_buff_off(UiConfig::TM_KEY_FOCUS | (unsigned)grp[k].status) && grp[k].rem < C.tmFocusWarn)) continue;
             }
             const char* en = grp[k].isAbil ? abil_name_by_id(grp[k].spell) : (spell_info(grp[k].spell) ? spell_info(grp[k].spell)->en : 0);   // rolls -> ability name ; spells -> spell name
             int rem = grp[k].rem;
-            if (grp[k].aoe) { int sr = party().self_buff_remaining(grp[k].status); if (sr > 0) rem = sr; }   // a REAL AoE shares your exact self 0x063 timer ; a single-target buff you ALSO happen to have on yourself does NOT -> keep the ally estimate (else e.g. Haste on an ally shows YOUR self-Haste duration)
+            if (grp[k].aoe) { int sr = party().self_buff_remaining_for(grp[k].status, grp[k].spell); if (sr > 0) rem = sr; }   // a REAL AoE shares your exact self 0x063 timer -- for the SPECIFIC song (two Marches run two 214 timers ; borrowing the first showed Victory March with Honor's countdown). A single-target buff you ALSO have on yourself keeps the ally estimate (else Haste on an ally shows YOUR self-Haste duration)
             // GROUP into one "(AoE N)" row when : it was a REAL AoE cast (Protectra / a spell under SCH Accession /
             // a roll) OR the user keeps "group ally buffs" on. Otherwise (single-target spread) -> one row PER ally.
             const bool group = (grp[k].aoe || C.tmAllyGroup != 0) && effN >= 2;
             if (group) {   // AoE : one grouped row (Minuet V (AoE 6))
                 PartyState::RollInfo ri = grp[k].isAbil ? party().roll_info(grp[k].status) : PartyState::RollInfo{ 0, 0 };   // COR roll -> pip value (double-up included)
                 bufs[nb].rem = rem; bufs[nb].icon = grp[k].status; bufs[nb].both = meHas(grp[k].status) ? 0 : 1;
-                // Bands: yours(0) > players-on-you(1) > trusts-on-you(2) > other AoE groups(3) > per-ally(4+).
-                // A group whose SELF copy folded in (grp[].selfHas) is still YOUR OWN buff -- it must stay in band 0.
-                // Otherwise your own AoE song left the top band the moment the fold fired and sorted BELOW a trust's
-                // buff on you, which is exactly the "my casts are not at the top" complaint.
-                bufs[nb].order = grp[k].selfHas ? 0 : 4;
+                // A group whose SELF copy folded in (grp[].selfHas) is YOUR OWN buff -> stays in the top tier (0).
+                // One you only put on allies goes to the "your ally-casts" tier (10), above the players-on-you tier (40+).
+                bufs[nb].order = grp[k].selfHas ? 0 : 10;
                 if (grp[k].isAbil && ri.value && en) {   // roll : "Chaos Roll [11] (CC) (AoE 6)" -- ONLY the pip tinted
                     _snprintf(obLabel[nb], sizeof(obLabel[nb]), " (AoE %d)", effN); obLabel[nb][sizeof(obLabel[nb]) - 1] = 0;
                     bufs[nb].name = en; bufs[nb].pip = ri.value; bufs[nb].post = obLabel[nb];
@@ -492,7 +514,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     if (!has && !graceOB) continue;   // that ally lost it (stale) -> skip ; during the zone grace trust the estimate
                     if (en) { _snprintf(obLabel[nb], sizeof(obLabel[nb]), "%s - %s", ob[i].name, en); obLabel[nb][sizeof(obLabel[nb]) - 1] = 0; bufs[nb].name = obLabel[nb]; }
                     else bufs[nb].name = ob[i].name;
-                    bufs[nb].rem = obRem(ob[i]); bufs[nb].icon = ob[i].status; bufs[nb].both = 1; bufs[nb].order = 5 + party().party_order(ob[i].target); bufs[nb].src = 5; ++nb;   // individual allies -> after yours(0), others-on-you(1) and AoE(2)
+                    bufs[nb].rem = obRem(ob[i]); bufs[nb].icon = ob[i].status; bufs[nb].both = 1; bufs[nb].order = 11 + party().party_order(ob[i].target); bufs[nb].src = 5; ++nb;   // your ally-casts tier, GROUPED BY ally (after your own buffs, before players-on-you)
                 }
             }
         }
@@ -534,6 +556,13 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 }
                 if (st >= 1024 || is_debuff_status(st) || !meHas((int)st) || !tm_self_focus_on(C, trkJob, st)) continue;
                 if (!srcKeeps((unsigned short)st, bt2[i].expiry, i)) continue;   // the source filter hides this row -> it must not alert either   // gate on meHas (same source as the emit check) -> no false alert while it's up ; per-SPELL focus key (see tm_self_keys)
+                // OUT alerts fire ONLY for buffs YOU cast : a buff someone ELSE put on YOU (a box-mate's Corsair roll,
+                // a trust's Protect) is not yours to keep up -- losing it (the roller re-rolls and replaces it) is
+                // normal, so it must just DEPOP, never a red OUT. Buffs YOU cast on OTHERS keep alerting -- they live
+                // in the separate ally-focus path below (an RDM still wants his Haste/Refresh on a party-mate to OUT).
+                // Unknown caster (food / gear / a self-cast whose 0x028 we never saw) counts as yours -> keep alerting.
+                { const unsigned oc = party().buff_caster_for((unsigned short)st, bt2[i].expiry, i);
+                  if (oc && oc != meId) continue; }
                 int s = -1; for (int q = 0; q < fmN; ++q) if (fm[q].self && fm[q].status == st) { s = q; break; }
                 if (s < 0 && fmN < 24) { s = fmN++; fm[s].target = meId; fm[s].status = (unsigned short)st; fm[s].self = 1; fm[s].isAbil = 0; fm[s].lostMs = 0; fm[s].zoneCheck = 0; fm[s].name[0] = 0; }
                 if (s >= 0) fm[s].spell = party().self_buff_spell_ranked((unsigned short)st, bt2[i].expiry, i);   // refresh the spell/tier each frame (a re-cast at a higher tier updates the OUT label)
@@ -546,6 +575,38 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 if (s >= 0) { fm[s].spell = ob[i].spell; fm[s].isAbil = ob[i].isAbil; int j = 0; for (; j < 19 && ob[i].name[j]; ++j) fm[s].name[j] = ob[i].name[j]; fm[s].name[j] = 0; }
             }
             if (zoneGrace) for (int q = 0; q < fmN; ++q) fm[q].zoneCheck = 1;                 // through the WHOLE settle : flag every entry (incl. ones just re-populated from a stale list) for post-grace validation
+            // ---- BRD song "OUT" suppression : a song BEYOND your no-Clarion-Call maximum, once Clarion Call is spent,
+            //      cannot be re-cast -- so a lost 5th (Clarion Call) song must NOT raise a permanent red OUT ("pour 4
+            //      songs c'est ok"). The count and the max are NOT in memory (Ghidra 2026-07-22 : both server-side, and
+            //      the status array family-collapses two same-family songs), so both are RECONSTRUCTED :
+            //        count = distinct song SPELLS you are maintaining, from ob[] (keyed on SPELL, so two Marches count
+            //                as two ; single-target etudes on allies are included -- neither is true of the status array).
+            //        base  = high-water of that count while Clarion Call is FULLY AVAILABLE (buff DOWN and recast READY).
+            //                That window carries no CC bonus, so the count IS your no-CC max -- and it auto-learns the
+            //                instrument / merit setup (Daurdabla / Loughnashade +2, Blurred Harp +1, song merits) with
+            //                ZERO gear reads. Gating learning on "recast ready" excludes the post-CC window, so the
+            //                transient extra-song count right after CC drops can never poison the base upward.
+            //      Clarion Call : buff = status 499 ; recast = the SP2 shared recast id 254 (a BRD's SP2 IS Clarion Call).
+            int songCount = 0;
+            { unsigned short seenSp[24]; int nSeen = 0;
+              for (int i = 0; i < no; ++i) { if (song_family(ob[i].spell) <= 0 || obRem(ob[i]) <= 0) continue;
+                  bool dup = false; for (int s = 0; s < nSeen; ++s) if (seenSp[s] == ob[i].spell) { dup = true; break; }
+                  if (!dup && nSeen < 24) seenSp[nSeen++] = ob[i].spell; }
+              songCount = nSeen; }
+            bool ccUp = false, ccOnRecast = false;
+            if (f.game) {
+                for (int i = 0; i < f.game->nbuff; ++i) if (f.game->buffs[i] == 499) { ccUp = true; break; }
+                for (int i = 0; i < f.game->nRecast; ++i) if (f.game->recasts[i].kind == 0 && f.game->recasts[i].recastId == 254 && f.game->recasts[i].sec > 0) { ccOnRecast = true; break; }
+            }
+            static int songBase = 0; static bool songBaseValid = false; static int songBaseJob = 0;
+            if (songBaseJob != trkJob) { songBase = 0; songBaseValid = false; songBaseJob = trkJob; }   // learned per main job -> reset on a job change
+            if (!ccUp && !ccOnRecast && songCount > 0) { if (songCount > songBase) songBase = songCount; songBaseValid = true; }   // CC fully available + real songs up -> this count IS the no-CC base
+            // a MISSING ally song is unrecoverable (-> suppress the OUT) only when : base is known, you are STILL at/above
+            // it (the lost song was the extra), Clarion Call's buff is down AND its recast is not ready (slot can't come
+            // back). Refillable songs (below base, or CC available) keep their normal permanent OUT -- exactly as wanted.
+            auto songUnrecoverable = [&](const FocusMem& e) -> bool {
+                return songBaseValid && !e.self && song_family(e.spell) > 0 && !ccUp && ccOnRecast && songCount >= songBase;
+            };
             int w = 0;                                                                        // prune : ally left the party/alliance, or the focus flag was turned off
             for (int q = 0; q < fmN; ++q) {
                 const bool live = fm[q].self ? true : (zoneGrace || party().party_order(fm[q].target) <= 17);   // 0..5 party, 6..17 alliance ; 99 = gone (roster is unstable mid-zone -> keep during grace)
@@ -554,6 +615,17 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     windower::debug::log("FOCUSPRUNE st=%u '%s' DROPPED (live=%d focusOn=%d) -> no OUT row possible",
                                          (unsigned)fm[q].status, buff_status_name(fm[q].status), live ? 1 : 0, fkOn ? 1 : 0);
                 if (!(live && fkOn)) continue;                                                 // gone / focus off -> drop
+                // SONG on an ally who is no longer in YOUR zone (they stayed behind, or YOU zoned away) : their 0x076
+                // stops refreshing, so the buff set FREEZES -- the row would either linger on a drifting estimate or
+                // fire a wrong OUT off the stale list. User rule : CLEAN ally song rows the moment the target is
+                // out-of-zone. Songs only (song_family, spell-keyed) -- ally RDM/enh buffs behave and are left alone.
+                // Gated past the zone grace so the roster's per-member zone id has settled first (no false clean).
+                if (!fm[q].self && !zoneGrace && song_family(fm[q].spell) > 0 && party().member_offzone(fm[q].target)) {
+                    if (focus_trace_live())
+                        windower::debug::log("SONGOFFZONE st=%u '%s' target=%08X out-of-zone -> CLEAN (no OUT, no stale row)",
+                                             (unsigned)fm[q].status, buff_status_name(fm[q].status), fm[q].target);
+                    continue;
+                }
                 if (fm[q].zoneCheck) {                                                         // pending post-zone check : decide ONLY after the grace ends AND the list is back.
                     if (zoneGrace || !listReady(fm[q])) { /* still settling : keep, no decision, no alert */ }
                     else if (focusHas(fm[q])) fm[q].zoneCheck = 0;                             //   grace over + list stable + present -> survived the zone, track normally
@@ -563,6 +635,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 // (the emit stops drawing it at that point ; without this it lingers forever and can fill fm[24]).
                 if (!fm[q].zoneCheck && fm[q].lostMs && !focusHas(fm[q])) {
                     const bool dkOn = C.tm_buff_off((unsigned)fm[q].status);   // self & ally share ONE global hidden state
+                    if (songUnrecoverable(fm[q])) continue;   // un-refillable 5th Clarion-Call song -> free the slot (no OUT will ever draw ; without this the un-drawn entry lingers and fills fm[24])
                     if (dkOn && (unsigned)(nowMs - fm[q].lostMs) > (unsigned)C.tmFocusHold * 1000u) continue;
                 }
                 if (w != q) fm[w] = fm[q]; ++w;
@@ -576,12 +649,13 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     // nbuff is the crux : meHas() FAILS OPEN (returns true for everything) when the live buff list is
                     // empty, so nbuff==0 would pin has=1 forever and make the alert unreachable. Log the list too.
                     const int nb2 = f.game ? f.game->nbuff : -1;
+                    const int okv = f.game ? (f.game->buffsOk ? 1 : 0) : -1;   // THE discriminator : buffsOk=1 nbuff=0 = a REAL "no buffs" (bug if they persisted) ; buffsOk=0 = read not ready (correct to wait)
                     char lst[160]; int o = 0; lst[0] = 0;
                     for (int j = 0; f.game && j < f.game->nbuff && j < 32 && o < 150; ++j)
                         o += _snprintf(lst + o, sizeof(lst) - o, "%u ", (unsigned)f.game->buffs[j]);
-                    windower::debug::log("FOCUSEMIT st=%u '%s' self=%d has=%d lostMs=%u zoneGrace=%d nbuff=%d list=[%s]",
+                    windower::debug::log("FOCUSEMIT st=%u '%s' self=%d has=%d lostMs=%u zoneGrace=%d buffsOk=%d nbuff=%d list=[%s]",
                                          (unsigned)fm[q].status, buff_status_name(fm[q].status), fm[q].self, has ? 1 : 0,
-                                         fm[q].lostMs, zoneGrace ? 1 : 0, nb2, lst);
+                                         fm[q].lostMs, zoneGrace ? 1 : 0, okv, nb2, lst);
                 }
                 if (has) { fm[q].lostMs = 0; continue; }                                       // still up -> the normal row covers it, reset the loss timer
                 if (zoneGrace) { fm[q].lostMs = 0; continue; }                                 // just zoned : buff lists still arriving -> don't false-alert (persist across the zone)
@@ -597,6 +671,12 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                                          (unsigned)(nowMs - fm[q].lostMs), C.tmFocusHold, dkOn ? 1 : 0,
                                          (dkOn && (unsigned)(nowMs - fm[q].lostMs) > (unsigned)C.tmFocusHold * 1000u) ? "DROP (hold expired)" : "DRAW red OUT row");
                 if (dkOn && (unsigned)(nowMs - fm[q].lostMs) > (unsigned)C.tmFocusHold * 1000u) continue;
+                if (songUnrecoverable(fm[q])) {   // a lost 5th Clarion-Call song can't be refilled -> suppress the OUT entirely (never even a one-frame flash before the prune frees it)
+                    if (focus_trace_live())
+                        windower::debug::log("SONGOUT st=%u '%s' SUPPRESSED count=%d base=%d ccUp=%d ccRc=%d -> no OUT (unrecoverable extra song)",
+                                             (unsigned)fm[q].status, buff_status_name(fm[q].status), songCount, songBase, ccUp ? 1 : 0, ccOnRecast ? 1 : 0);
+                    continue;
+                }
                 if (fm[q].self) {
                     const SpellRow* sp = fm[q].spell ? spell_info(fm[q].spell) : 0;
                     _snprintf(obLabel[nb], sizeof(obLabel[nb]), "%s", (sp && sp->en) ? sp->en : buff_status_name(fm[q].status));
@@ -628,8 +708,9 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         }
     }
     if (nb == 0 && nr == 0 && !editing) return;
-    // GROUP first (order : your own buffs, then allies in party order), then soonest-first, then a DETERMINISTIC
-    // tiebreak (icon, name) so rows with equal remaining -- e.g. your AoE buff and its mirrored ally copy -- are stable.
+    // GROUP by `order` first, then soonest-first, then a DETERMINISTIC tiebreak (icon, name) so rows with equal
+    // remaining are stable. Tiers, top->bottom : OUT alerts + YOUR buffs (0-1) ; buffs YOU cast on allies, grouped by
+    // ally (10-28) ; buffs a PLAYER put on you, grouped by that player (40-57) ; TRUSTS last (90+).
     auto after = [](const Row& x, const Row& y) -> bool {   // does x sort AFTER y ?
         if (x.order != y.order) return x.order > y.order;
         if (x.rem != y.rem) return x.rem > y.rem;
