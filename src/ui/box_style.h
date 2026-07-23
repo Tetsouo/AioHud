@@ -13,4 +13,8 @@ struct WindowSkin;
 void draw_themed_box(u32 dev, const WindowSkin* partySkin, float x, float y, float w, float h,
                      const BoxStyle& bs, float base, float S);
 
+// Per-box "Custom -> FFXI" skins own their own textures (independent of the shared party skin). Wired from Hud :
+void box_skins_forget();    // device recreate : forget the handles (reload lazily)
+void box_skins_dispose();   // shutdown : release them
+
 } // namespace aio

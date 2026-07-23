@@ -43,6 +43,8 @@ void zonetracker_help_forget();
 void debuffs_help_forget();
 void timers_help_forget();
 void treasure_help_forget();
+void box_skins_forget();    // per-box Custom->FFXI skins (box_style.cpp) : forget on a device change
+void box_skins_dispose();   // ... release at shutdown
 
 // Poll the OS cursor + left button and map into the HUD coord space. The plugin runs inside the
 // game process, so Win32 gives us the cursor directly (the IPlugin mouse slot doesn't carry it).
@@ -198,6 +200,7 @@ void Hud::render(u32 dev) {
         // The Help SAMPLES keep their own lazy copies at file scope in their hud_*.cpp -- unreachable from here
         // otherwise, so they used to survive a device recreate and hand a dead device's texture to SetTexture.
         zonetracker_help_forget(); debuffs_help_forget(); timers_help_forget(); treasure_help_forget();
+        box_skins_forget();        // per-box Custom->FFXI skins belong to the old device too
         for (size_t i = 0; i < widgets_.size(); ++i) widgets_[i]->on_device_lost();
     }
     fonts_.get(0, 0);          // register the default slot so ensure_all builds it this frame
@@ -230,7 +233,7 @@ void Hud::render(u32 dev) {
         if (saved) save_ui_config();
         if (needPlace) place_widgets();
     }
-    if (!window_theme_is_proc(skinIdx_) && !skin_.ready()) skin_.load(dev, window_theme_name(skinIdx_));   // FFXI window skin (lazy) ; procedural colour themes have no texture to load
+    if (!window_theme_is_proc(skinIdx_) && !skin_.ready()) skin_.load(dev, window_theme_name(skinIdx_));   // FFXI window skin (lazy, shared by the party + Same-as-Party boxes) ; procedural themes have no texture. A Custom->FFXI box uses its OWN variant via box_ffxi_skin (box_style.cpp).
 
     // ONE poll of live game memory for the WHOLE frame -> the shared snapshot every widget
     // draws from (player vitals/jobs, target, leaders, action menu). Read each pointer-chain
@@ -385,6 +388,7 @@ void Hud::dispose() {
     clear_widgets();
     fonts_.dispose();
     skin_.dispose();
+    box_skins_dispose();          // per-box Custom->FFXI skins (else they leak per //unload)
     window_materials_dispose();   // Release the procedural box-theme material textures (else they leak per //unload)
     if (tpCoffer_) { release_texture(tpCoffer_); tpCoffer_ = 0; }   // treasure-pool coffer icon
     if (weaponIcons_) { release_texture(weaponIcons_); weaponIcons_ = 0; }   // Sheol weapon-type icon atlas

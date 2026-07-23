@@ -17,6 +17,22 @@ static inline u32 mula(u32 c, float a) {                       // scale a colour
     return (c & 0x00FFFFFFu) | ((u32)(((c >> 24) & 0xFFu) * a) << 24);
 }
 
+// ---- Per-box FFXI window skins. A box on its OWN "Custom -> FFXI" theme picks WHICH of the game skins it wants (the
+// config below already offers the chip grid, writing bs.theme). draw_themed_box used to ignore that and draw the SHARED
+// party skin, so every FFXI box showed the party's skin -- and a box could not use FFXI at all unless the global theme
+// was FFXI too. Give each variant its OWN lazily-loaded WindowSkin (the Target/Player pattern) so a box's FFXI choice is
+// honoured independently of the party. Only a variant a box actually uses is loaded ; forgotten on a device change,
+// disposed at shutdown (both wired from Hud). ----
+static const int BOX_SKIN_MAX = 16;   // >= window_tex_theme_count() (currently 9)
+static WindowSkin g_boxSkin[BOX_SKIN_MAX];
+static const WindowSkin* box_ffxi_skin(u32 dev, int variant) {
+    if (variant < 0 || variant >= BOX_SKIN_MAX || variant >= window_tex_theme_count()) return nullptr;
+    if (!g_boxSkin[variant].ready()) g_boxSkin[variant].load(dev, window_theme_name(variant));   // atomic load ; retries next frame on a miss (no give-up latch)
+    return &g_boxSkin[variant];
+}
+void box_skins_forget()  { for (int i = 0; i < BOX_SKIN_MAX; ++i) g_boxSkin[i].on_device_lost(); }   // device recreate : forget handles, reload lazily
+void box_skins_dispose() { for (int i = 0; i < BOX_SKIN_MAX; ++i) g_boxSkin[i].dispose(); }           // shutdown : release textures
+
 void draw_themed_box(u32 dev, const WindowSkin* partySkin, float x, float y, float w, float h,
                      const BoxStyle& bs, float base, float S) {
     if (!bs.on) return;
@@ -30,11 +46,16 @@ void draw_themed_box(u32 dev, const WindowSkin* partySkin, float x, float y, flo
     const bool border = bs.border != 0;                          // Border off -> background only (draw_window's drawBorder=false)
     if (window_theme_is_proc(theme)) {
         draw_proc_window(dev, theme, x, y, w, h, tint, false, border, lum, hue);
-    } else if (partySkin && partySkin->ready()) {                // FFXI family : reuse the shared skin texture
-        draw_window(dev, *partySkin, x, y, w, h, tint, S, false, border);
     } else {
-        const float R = 6.0f * S;                                // last-resort flat panel (skin not ready)
-        rrect_bordered(dev, x, y, w, h, R, mula(0xFF232E54u, a), mula(0xFF080B1Au, a), mula(border ? 0x6699BBFFu : 0x00000000u, a), 1.0f);
+        // FFXI family : Same-as-Party reuses the SHARED party skin (f.skin) ; a Custom box uses ITS OWN variant so it can
+        // pick a different FFXI window skin than the party -- and render even when the global theme is procedural.
+        const WindowSkin* skin = cp ? partySkin : box_ffxi_skin(dev, window_theme_variant(theme));
+        if (skin && skin->ready()) {
+            draw_window(dev, *skin, x, y, w, h, tint, S, false, border);
+        } else {
+            const float R = 6.0f * S;                            // last-resort flat panel (skin not ready yet)
+            rrect_bordered(dev, x, y, w, h, R, mula(0xFF232E54u, a), mula(0xFF080B1Au, a), mula(border ? 0x6699BBFFu : 0x00000000u, a), 1.0f);
+        }
     }
 }
 

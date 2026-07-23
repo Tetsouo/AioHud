@@ -275,6 +275,10 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_57[] = {
+    { "*Each box can now use its OWN FFXI window skin, independent of the party.* Set a box (Timers, Hate List, Debuffs, ...) to Custom -> FFXI and pick any of the game skins in the grid -- it no longer has to match the party's skin, and it works even when the party is on a procedural theme. (Before, every FFXI box was forced to show the party's skin, and could not use FFXI at all unless the party did too.)",
+      "*Chaque boite peut desormais utiliser son PROPRE skin de fenetre FFXI, independamment de la party.* Mets une boite (Timers, Hate List, Debuffs...) en Custom -> FFXI et choisis n'importe quel skin du jeu dans la grille -- il n'est plus oblige de suivre le skin de la party, et ca marche meme quand la party est sur un theme procedural. (Avant, toute boite FFXI etait forcee d'afficher le skin de la party, et ne pouvait meme pas etre en FFXI si la party ne l'etait pas.)" },
+};
 static const ChangeLine CL_56[] = {
     { "*Your HUD layout can no longer be corrupted by a crash while it saves.* The edit-mode layout file is now written to a temporary copy and swapped in atomically, so a crash mid-save can never leave it half-written or empty.",
       "*Ta disposition HUD ne peut plus etre corrompue par un crash pendant sa sauvegarde.* Le fichier de disposition (mode edition) est desormais ecrit dans une copie temporaire puis echange de facon atomique, donc un crash en pleine sauvegarde ne peut plus le laisser a moitie ecrit ou vide." },
@@ -342,6 +346,7 @@ static const ChangeLine CL_49[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.57", CL_57, (int)(sizeof(CL_57) / sizeof(CL_57[0])) },
     { "1.0.56", CL_56, (int)(sizeof(CL_56) / sizeof(CL_56[0])) },
     { "1.0.55", CL_55, (int)(sizeof(CL_55) / sizeof(CL_55[0])) },
     { "1.0.54", CL_54, (int)(sizeof(CL_54) / sizeof(CL_54[0])) },
