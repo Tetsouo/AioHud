@@ -275,6 +275,10 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_60[] = {
+    { "*More packet guards (continued).* The truncated-packet protection added in 1.0.58 now also covers the PointWatch handlers (XP / CP / Merits / Master Level). Purely defensive : no change to normal behaviour.",
+      "*Plus de protections paquets (suite).* La protection contre les paquets tronques ajoutee en 1.0.58 couvre maintenant aussi les handlers PointWatch (XP / CP / Merites / Master Level). Purement defensif : aucun changement en fonctionnement normal." },
+};
 static const ChangeLine CL_59[] = {
     { "Small fix : the gold bullets in the Update and Debug tabs no longer spill outside the list when you scroll -- only the bullet markers were affected (the text was already clipped to the box).",
       "Petit correctif : les puces dorees des onglets Mise a jour et Debug ne debordent plus hors de la liste quand on fait defiler -- seules les puces etaient concernees (le texte etait deja clippe a la box)." },
@@ -354,6 +358,7 @@ static const ChangeLine CL_49[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.60", CL_60, (int)(sizeof(CL_60) / sizeof(CL_60[0])) },
     { "1.0.59", CL_59, (int)(sizeof(CL_59) / sizeof(CL_59[0])) },
     { "1.0.58", CL_58, (int)(sizeof(CL_58) / sizeof(CL_58[0])) },
     { "1.0.57", CL_57, (int)(sizeof(CL_57) / sizeof(CL_57[0])) },
